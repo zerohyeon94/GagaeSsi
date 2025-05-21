@@ -14,7 +14,7 @@
 		E20EC1F62DDDC0790014FAD7 /* Exceptions for "GagaeSsi" folder in "GagaeSsi" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Info.plist,
+				App/Info.plist,
 			);
 			target = E20EC1E02DDDC0770014FAD7 /* GagaeSsi */;
 		};
