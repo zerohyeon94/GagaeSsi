@@ -147,7 +147,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = ZE232G8NYV;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = GagaeSsi/Info.plist;
+				INFOPLIST_FILE = GagaeSsi/App/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
@@ -175,7 +175,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = ZE232G8NYV;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = GagaeSsi/Info.plist;
+				INFOPLIST_FILE = GagaeSsi/App/Info.plist;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
