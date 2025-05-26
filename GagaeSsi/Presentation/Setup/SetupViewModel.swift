@@ -14,8 +14,12 @@ final class SetupViewModel {
     init() {
         self.model = BudgetConfigModel(salary: 0, payday: Date(), fixedCosts: [])
     }
+    
+    // 실시간 유효성 체크용 임시 변수 (화면과 연결)
+    var tempSalary: Int = 0
+    var tempPayday: Date = Date()
 
     var isValid: Bool {
-        return model.salary > 0 && model.payday <= Date()
+        return tempSalary > 0 && tempPayday <= Date()
     }
 }

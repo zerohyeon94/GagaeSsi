@@ -89,19 +89,39 @@ final class SetupFixedCostViewController: UIViewController {
         alert.addTextField {
             $0.placeholder = "금액 (예: 500000)"
             $0.keyboardType = .numberPad
+            $0.addTarget(self, action: #selector(self.alertAmountChanged(_:)), for: .editingChanged)
         }
         let add = UIAlertAction(title: "추가", style: .default) { _ in
             guard let title = alert.textFields?[0].text,
-                  let amountText = alert.textFields?[1].text,
-                  let amount = Int(amountText),
+                  let rawAmountText = alert.textFields?[1].text,
                   !title.isEmpty else { return }
+
+            let plainText = rawAmountText.replacingOccurrences(of: ",", with: "")
+            guard let amount = Int(plainText) else { return }
             
+            print("amount : \(amount)")
+
             self.viewModel.model.fixedCosts.append(FixedCostModel(title: title, amount: amount))
             self.tableView.reloadData()
         }
+
         alert.addAction(add)
         alert.addAction(UIAlertAction(title: "취소", style: .cancel))
         present(alert, animated: true)
+    }
+    
+    @objc private func alertAmountChanged(_ textField: UITextField) {
+        let formatter = FormatterUtils.currencyFormatter
+
+        let raw = textField.text ?? ""
+        let plain = raw.replacingOccurrences(of: ",", with: "")
+
+        if let number = Int(plain) {
+            let formatted = formatter.string(from: NSNumber(value: number))
+            textField.text = formatted
+        } else {
+            textField.text = nil
+        }
     }
 
     @objc private func skipTapped() {

@@ -76,53 +76,41 @@ final class SetupSalaryViewController: UIViewController {
         nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
     }
     
-    private let numberFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal // 천 단위 쉼표
-        formatter.locale = Locale(identifier: "ko_KR")
-        return formatter
-    }()
-    
     @objc private func salaryChanged() {
         // 현재 입력된 문자열 (예: "1,200,000")
         guard let rawText = salaryTextField.text else { return }
         
         // 쉼표 제거된 숫자 문자열 (예: "1200000")
         let plainText = rawText.replacingOccurrences(of: ",", with: "")
-        
-        // 숫자로 변환
-        if let number = Int(plainText) {
-            // 모델에 저장
-            viewModel.model.salary = number
-            
-            // 다시 포맷된 문자열로 업데이트
-            let formatted = numberFormatter.string(from: NSNumber(value: number))
-            
-            // 커서 위치 보존 없이 업데이트 (간단한 방식)
-            salaryTextField.text = formatted
-        } else {
-            // 숫자가 아님 → 0 처리
-            viewModel.model.salary = 0
-            salaryTextField.text = nil
-        }
-        
+        let number = Int(plainText) ?? 0
+
+        // ViewModel 임시 값에 저장 (실시간 유효성 검사용)
+        viewModel.tempSalary = number
+
+        // 텍스트 포맷
+        let formatted = FormatterUtils.currencyFormatter.string(from: NSNumber(value: number))
+        salaryTextField.text = formatted
+
         updateNextButtonState()
     }
 
-
     @objc private func paydayChanged() {
-        viewModel.model.payday = paydayPicker.date
+        viewModel.tempPayday = paydayPicker.date
         updateNextButtonState()
+    }
+
+    @objc private func nextTapped() {
+        // 여기서만 실제 모델에 확정 저장
+        viewModel.model.salary = viewModel.tempSalary
+        viewModel.model.payday = viewModel.tempPayday
+
+        // 다음 화면 이동
+        let fixedCostVC = SetupFixedCostViewController(viewModel: viewModel)
+        navigationController?.pushViewController(fixedCostVC, animated: true)
     }
 
     private func updateNextButtonState() {
         nextButton.isEnabled = viewModel.isValid
         nextButton.backgroundColor = viewModel.isValid ? .systemBlue : .systemGray
-    }
-
-    @objc private func nextTapped() {
-        print("next Button")
-        let nextVC = SetupFixedCostViewController(viewModel: viewModel)
-        navigationController?.pushViewController(nextVC, animated: true)
     }
 }
