@@ -5,15 +5,28 @@
         <attribute name="salary" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
         <relationship name="fixedCosts" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FixedCost" inverseName="budgetConfig" inverseEntity="FixedCost"/>
     </entity>
+    <entity name="CarryOverSource" representedClassName="CarryOverSource" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="toDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="dailyBudget" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="DailyBudget" inverseName="carryOverSources" inverseEntity="DailyBudget"/>
+    </entity>
     <entity name="DailyBudget" representedClassName="DailyBudget" syncable="YES" codeGenerationType="class">
         <attribute name="availableAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
-        <attribute name="carryOverAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
         <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="spentAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <relationship name="carryOverSources" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="CarryOverSource" inverseName="dailyBudget" inverseEntity="CarryOverSource"/>
+        <relationship name="spendingRecords" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SpendingRecord" inverseName="dailyBudget" inverseEntity="SpendingRecord"/>
     </entity>
     <entity name="FixedCost" representedClassName="FixedCost" syncable="YES" codeGenerationType="class">
         <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
         <attribute name="title" optional="YES" attributeType="String"/>
         <relationship name="budgetConfig" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="BudgetConfig" inverseName="fixedCosts" inverseEntity="BudgetConfig"/>
+    </entity>
+    <entity name="SpendingRecord" representedClassName="SpendingRecord" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <relationship name="dailyBudget" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="DailyBudget" inverseName="spendingRecords" inverseEntity="DailyBudget"/>
     </entity>
 </model>
