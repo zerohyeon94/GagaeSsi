@@ -103,6 +103,5 @@ final class CoreDataManager {
 
         return BudgetConfigModel(salary: salary, payday: payday, fixedCosts: fixedModels)
     }
-
 }
 

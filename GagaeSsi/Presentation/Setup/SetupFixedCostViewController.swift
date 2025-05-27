@@ -124,18 +124,32 @@ final class SetupFixedCostViewController: UIViewController {
         }
     }
 
+    // 고정비 추가 없이 홈화면으로 이동
     @objc private func skipTapped() {
-        print("skip tap")
-        // 저장 없이 홈화면으로 이동
-//        let homeVC = HomeViewController()
-//        navigationController?.setViewControllers([homeVC], animated: true)
-    }
-
-    @objc private func saveTapped() {
-        print("save tap")
 //        CoreDataManager.shared.save(budgetModel: viewModel.model)
-//        let homeVC = HomeViewController()
-//        navigationController?.setViewControllers([homeVC], animated: true)
+        
+        switchToMainTabBar()
+    }
+    
+    @objc private func saveTapped() {
+//        CoreDataManager.shared.save(budgetModel: viewModel.model)
+        
+        switchToMainTabBar()
+    }
+    
+    private func switchToMainTabBar() {
+        let tabBar = MainTabBarController()
+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let sceneDelegate = windowScene.delegate as? SceneDelegate,
+           let window = sceneDelegate.window {
+            window.rootViewController = tabBar
+            UIView.transition(with: window,
+                              duration: 0.3,
+                              options: .transitionCrossDissolve, // transitionFlipFromRight
+                              animations: nil,
+                              completion: nil)
+        }
     }
 }
 

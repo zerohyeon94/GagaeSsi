@@ -8,7 +8,7 @@
 import UIKit
 
 final class SetupSalaryViewController: UIViewController {
-
+    
     // MARK: - UI Components
     private let salaryTextField: UITextField = {
         let tf = UITextField()
@@ -37,7 +37,16 @@ final class SetupSalaryViewController: UIViewController {
     }()
 
     // MARK: - ViewModel
-    private let viewModel = SetupViewModel()
+    private let viewModel: SetupViewModel
+    
+    init(viewModel: SetupViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     // MARK: - View Lifecycle
     override func viewDidLoad() {
