@@ -9,7 +9,7 @@ import Foundation
 
 struct BudgetConfigModel {
     var salary: Int
-    var payday: Date
+    var payday: Int
     var fixedCosts: [FixedCostModel]
 }
 

@@ -8,6 +8,8 @@
 import UIKit
 
 final class HomeViewController: BaseViewController {
+    
+    private let viewModel = HomeViewModel()
 
     // MARK: - UI Components
     private let availableTodayLabel: UILabel = {
@@ -71,25 +73,25 @@ final class HomeViewController: BaseViewController {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
         }
-
+        
         recentSummaryView.addSubview(recentSummaryLabel)
         recentSummaryLabel.translatesAutoresizingMaskIntoConstraints = false
-
+        
         NSLayoutConstraint.activate([
             availableTodayLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 32),
             availableTodayLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-
+            
             calculationInfoLabel.topAnchor.constraint(equalTo: availableTodayLabel.bottomAnchor, constant: 8),
             calculationInfoLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-
+            
             recentSummaryView.topAnchor.constraint(equalTo: calculationInfoLabel.bottomAnchor, constant: 32),
             recentSummaryView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             recentSummaryView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             recentSummaryView.heightAnchor.constraint(equalToConstant: 120),
-
+            
             recentSummaryLabel.centerXAnchor.constraint(equalTo: recentSummaryView.centerXAnchor),
             recentSummaryLabel.centerYAnchor.constraint(equalTo: recentSummaryView.centerYAnchor),
-
+            
             recordButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -32),
             recordButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             recordButton.widthAnchor.constraint(equalToConstant: 200),
@@ -99,13 +101,10 @@ final class HomeViewController: BaseViewController {
 
     // MARK: - Data Binding
     private func loadBudgetData() {
-        // 추후 CoreData에서 실제 데이터 불러오기 예정
-        let rollover = 4100
-        let todayBudget = 28300
-        let total = rollover + todayBudget
+        viewModel.fetchTodayBudget()
 
-        updateBudgetLabel(total: total)
-        calculationInfoLabel.text = "(전일 이월 ₩\(rollover.formatted()) + 오늘 예산 ₩\(todayBudget.formatted()))"
+        updateBudgetLabel(total: viewModel.todayAvailableAmount)
+        calculationInfoLabel.text = "(이월 ₩\(viewModel.carryOverAmount.formatted()) + 오늘 예산 ₩\(viewModel.baseBudget.formatted()) - 소비 ₩\(viewModel.spentAmount.formatted()))"
     }
     
     private func updateBudgetLabel(total: Int) {

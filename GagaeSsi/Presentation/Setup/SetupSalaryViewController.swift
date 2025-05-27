@@ -18,19 +18,19 @@ final class SetupSalaryViewController: BaseViewController {
         return tf
     }()
 
-    private let paydayPicker: UIDatePicker = {
-        let picker = UIDatePicker()
-        picker.datePickerMode = .date
-        picker.preferredDatePickerStyle = .compact
-        picker.translatesAutoresizingMaskIntoConstraints = false
-        return picker
+    private let paydayTextField: UITextField = {
+        let tf = UITextField()
+        tf.placeholder = "월급일을 입력하세요 (예: 1 ~ 31)"
+        tf.borderStyle = .roundedRect
+        tf.keyboardType = .numberPad
+        return tf
     }()
 
     private let nextButton: UIButton = {
         let btn = UIButton(type: .system)
         btn.setTitle("다음", for: .normal)
         btn.isEnabled = false
-        btn.backgroundColor = .systemBlue
+        btn.backgroundColor = .systemGray
         btn.setTitleColor(.white, for: .normal)
         btn.layer.cornerRadius = 8
         return btn
@@ -58,7 +58,7 @@ final class SetupSalaryViewController: BaseViewController {
 
     // MARK: - Layout
     private func setupLayout() {
-        [salaryTextField, paydayPicker, nextButton].forEach {
+        [salaryTextField, paydayTextField, nextButton].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
         }
@@ -68,10 +68,10 @@ final class SetupSalaryViewController: BaseViewController {
             salaryTextField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             salaryTextField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             
-            paydayPicker.topAnchor.constraint(equalTo: salaryTextField.bottomAnchor, constant: 30),
-            paydayPicker.leadingAnchor.constraint(equalTo: salaryTextField.leadingAnchor),
+            paydayTextField.topAnchor.constraint(equalTo: salaryTextField.bottomAnchor, constant: 30),
+            paydayTextField.leadingAnchor.constraint(equalTo: salaryTextField.leadingAnchor),
             
-            nextButton.topAnchor.constraint(equalTo: paydayPicker.bottomAnchor, constant: 40),
+            nextButton.topAnchor.constraint(equalTo: paydayTextField.bottomAnchor, constant: 40),
             nextButton.leadingAnchor.constraint(equalTo: salaryTextField.leadingAnchor),
             nextButton.trailingAnchor.constraint(equalTo: salaryTextField.trailingAnchor),
             nextButton.heightAnchor.constraint(equalToConstant: 50)
@@ -81,7 +81,7 @@ final class SetupSalaryViewController: BaseViewController {
     // MARK: - Actions
     private func setupActions() {
         salaryTextField.addTarget(self, action: #selector(salaryChanged), for: .editingChanged)
-        paydayPicker.addTarget(self, action: #selector(paydayChanged), for: .valueChanged)
+        paydayTextField.addTarget(self, action: #selector(paydayChanged), for: .editingChanged)
         nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
     }
     
@@ -104,7 +104,9 @@ final class SetupSalaryViewController: BaseViewController {
     }
 
     @objc private func paydayChanged() {
-        viewModel.tempPayday = paydayPicker.date
+        guard let rawText = paydayTextField.text else { return }
+        
+        viewModel.tempPayday = Int(rawText) ?? 0
         updateNextButtonState()
     }
 
