@@ -103,5 +103,58 @@ final class CoreDataManager {
 
         return BudgetConfigModel(salary: salary, payday: payday, fixedCosts: fixedModels)
     }
+    
+    // MARK: Spend
+    func saveSpending(title: String, amount: Int, date: Date) {
+        let context = self.context
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: date)
+        
+        print("day : \(day)")
+        print("date : \(date)")
+
+        // 1. DailyBudget 가져오기 or 생성
+        let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
+        request.predicate = NSPredicate(format: "date == %@", day as NSDate) // 해당 날짜의 예산 데이터 가져오기
+
+        let dailyBudget = (try? context.fetch(request).first) ?? DailyBudget(context: context)
+        dailyBudget.date = day
+
+        // 2. SpendingRecord 생성
+        let record = SpendingRecord(context: context)
+        record.title = title
+        record.amount = NSDecimalNumber(value: amount)
+        record.date = date
+        record.dailyBudget = dailyBudget
+        dailyBudget.addToSpendingRecords(record)
+
+        // 3. spentAmount 갱신 - 사용한 금액 갱신
+        let records = dailyBudget.spendingRecords as? Set<SpendingRecord> ?? []
+        let total = records
+            .compactMap { $0.amount?.intValue }
+            .reduce(0, +)
+        
+        dailyBudget.spentAmount = NSDecimalNumber(value: total)
+
+        saveContext()
+    }
+    
+    func fetchSpending(on date: Date) -> [SpendingRecord] {
+        let context = self.context
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+
+        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
+
+        do {
+            return try context.fetch(request)
+        } catch {
+            print("❌ 지출 내역 가져오기 실패:", error)
+            return []
+        }
+    }
 }
 

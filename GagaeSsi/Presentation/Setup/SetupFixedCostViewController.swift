@@ -7,7 +7,7 @@
 
 import UIKit
 
-final class SetupFixedCostViewController: UIViewController {
+final class SetupFixedCostViewController: BaseViewController {
     
     // MARK: - UI
     private let tableView = UITableView()

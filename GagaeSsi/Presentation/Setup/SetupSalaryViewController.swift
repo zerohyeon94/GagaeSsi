@@ -7,7 +7,7 @@
 
 import UIKit
 
-final class SetupSalaryViewController: UIViewController {
+final class SetupSalaryViewController: BaseViewController {
     
     // MARK: - UI Components
     private let salaryTextField: UITextField = {
