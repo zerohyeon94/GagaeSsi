@@ -219,5 +219,29 @@ final class CoreDataManager {
             return []
         }
     }
+    
+    // MARK: Setting View
+    func resetAllData() {
+        let entityNames = ["BudgetConfig", "FixedCost", "DailyBudget", "SpendingRecord", "CarryOverSource"]
+        
+        for entityName in entityNames {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
+            let batchDeleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
+            batchDeleteRequest.resultType = .resultTypeObjectIDs
+
+            do {
+                let result = try context.execute(batchDeleteRequest) as? NSBatchDeleteResult
+                if let objectIDs = result?.result as? [NSManagedObjectID] {
+                    let changes = [NSDeletedObjectsKey: objectIDs]
+                    NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [context])
+                }
+            } catch {
+                print("❌ Failed to reset \(entityName): \(error)")
+            }
+        }
+
+        saveContext()
+        print("✅ CoreData reset completed")
+    }
 }
 
