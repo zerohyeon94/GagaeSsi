@@ -31,18 +31,20 @@ final class SettingsViewController: BaseViewController {
         tableView.dataSource = self
         tableView.delegate = self
     }
-
-    private func handle(action: String) {
+    
+    private func handle(action: SettingsAction) {
         switch action {
-        case "EditBudget":
+        case .editBudget:
             print("➡️ 월급 수정 화면으로 이동")
-        case "ManageFixedExpenses":
+            let vc = EditBudgetViewController()
+            navigationController?.pushViewController(vc, animated: true)
+        case .manageFixedExpenses:
             print("➡️ 고정비 관리 화면으로 이동")
-        case "ResetData":
+        case .resetData:
             print("🗑 데이터 초기화")
-        case "BackupData":
+        case .backupData:
             print("📦 데이터 백업")
-        case "SendFeedback":
+        case .sendFeedback:
             print("📧 피드백 전송")
         default:
             break

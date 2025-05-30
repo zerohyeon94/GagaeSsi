@@ -28,3 +28,10 @@ struct SettingItem {
     let action: () -> Void
 }
 
+enum SettingsAction: String {
+    case editBudget = "EditBudget"
+    case manageFixedExpenses = "ManageFixedExpenses"
+    case resetData = "ResetData"
+    case backupData = "BackupData"
+    case sendFeedback = "SendFeedback"
+}
