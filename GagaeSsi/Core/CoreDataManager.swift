@@ -243,5 +243,52 @@ final class CoreDataManager {
         saveContext()
         print("✅ CoreData reset completed")
     }
-}
+    
+    // MARK: - BudgetConfig Fetch
+    func fetchBudgetConfig() -> BudgetConfigModel {
+        let request: NSFetchRequest<BudgetConfig> = BudgetConfig.fetchRequest()
 
+        do {
+            if let config = try context.fetch(request).first {
+                // 💡 FixedCost -> FixedCostModel로 변환
+                let fixedCostEntities = config.fixedCosts?.allObjects as? [FixedCost] ?? []
+                let fixedCostModels: [FixedCostModel] = fixedCostEntities.map {
+                    FixedCostModel(title: $0.title ?? "", amount: Int($0.amount ?? 0))
+                }
+
+                return BudgetConfigModel(
+                    salary: Int(config.salary ?? 0),
+                    payday: Int(config.payday ?? 0),
+                    fixedCosts: fixedCostModels
+                )
+            } else {
+                // 초기값 없으면 새로 생성
+                let newConfig = BudgetConfig(context: context)
+                newConfig.salary = 3000000
+                newConfig.payday = 25
+                try context.save()
+
+                return BudgetConfigModel(salary: 3000000, payday: 25, fixedCosts: [])
+            }
+        } catch {
+            print("❌ BudgetConfig fetch 실패: \(error)")
+            return BudgetConfigModel(salary: 0, payday: 1, fixedCosts: [])
+        }
+    }
+
+
+    // MARK: - BudgetConfig Update
+    func updateBudgetConfig(salary: Int, payday: Int) {
+        let request: NSFetchRequest<BudgetConfig> = BudgetConfig.fetchRequest()
+
+        do {
+            if let config = try context.fetch(request).first {
+                config.salary = NSDecimalNumber(value: salary)
+                config.payday = NSDecimalNumber(value: payday)
+                try context.save()
+            }
+        } catch {
+            print("❌ BudgetConfig 저장 실패: \(error)")
+        }
+    }
+}
