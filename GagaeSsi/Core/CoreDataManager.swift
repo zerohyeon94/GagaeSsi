@@ -276,7 +276,6 @@ final class CoreDataManager {
         }
     }
 
-
     // MARK: - BudgetConfig Update
     func updateBudgetConfig(salary: Int, payday: Int) {
         let request: NSFetchRequest<BudgetConfig> = BudgetConfig.fetchRequest()
@@ -291,4 +290,34 @@ final class CoreDataManager {
             print("❌ BudgetConfig 저장 실패: \(error)")
         }
     }
+    
+    // MARK: - Fetch Fixed Costs
+    func fetchFixedCosts() -> [FixedCostModel] {
+        let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
+        do {
+            let results = try context.fetch(request)
+            return results.map {
+                FixedCostModel(title: $0.title ?? "", amount: Int($0.amount ?? 0))
+            }
+        } catch {
+            print("❌ 고정비 fetch 실패: \(error)")
+            return []
+        }
+    }
+
+    // MARK: - Delete Fixed Cost
+    func deleteFixedCost(named name: String) {
+        let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
+        request.predicate = NSPredicate(format: "name == %@", name)
+
+        do {
+            if let target = try context.fetch(request).first {
+                context.delete(target)
+                try context.save()
+            }
+        } catch {
+            print("❌ 고정비 삭제 실패: \(error)")
+        }
+    }
+
 }

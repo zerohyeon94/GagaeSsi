@@ -49,6 +49,9 @@ final class SettingsViewController: BaseViewController {
             navigationController?.pushViewController(vc, animated: true)
         case .manageFixedExpenses:
             print("➡️ 고정비 관리 화면으로 이동")
+            let vc = FixedExpenseListViewController()
+            
+            navigationController?.pushViewController(vc, animated: true)
         case .resetData:
             print("🗑 데이터 초기화")
         case .backupData:
