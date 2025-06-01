@@ -45,8 +45,12 @@ final class FixedExpenseListViewController: BaseViewController {
     }
 
     @objc private func didTapAdd() {
-        print("➕ 고정비 추가 화면 이동 예정")
-        // navigationController?.pushViewController(FixedExpenseEditViewController(), animated: true)
+        let editVC = FixedExpenseEditViewController()
+        editVC.onSave { [weak self] newItem in
+            CoreDataManager.shared.insertOrUpdateFixedCost(newItem)
+            self?.viewModel.fetchFixedCosts()
+        }
+        navigationController?.pushViewController(editVC, animated: true)
     }
 }
 
@@ -71,4 +75,22 @@ extension FixedExpenseListViewController: UITableViewDataSource, UITableViewDele
         }
         return UISwipeActionsConfiguration(actions: [delete])
     }
+    
+    // 사용자가 특정 셀을 탭한 경우
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        let model = viewModel.fixedCosts[indexPath.row]
+        let name = model.title
+
+        // CoreData 객체도 함께 찾기
+        let fixedObjects = CoreDataManager.shared.fetchFixedCostEntity(named: name)
+        let editVC = FixedExpenseEditViewController(editingItem: model, object: fixedObjects)
+
+        editVC.onSave { [weak self] model, original in
+            CoreDataManager.shared.updateFixedCost(model, original: original)
+            self?.viewModel.fetchFixedCosts()
+        }
+
+        navigationController?.pushViewController(editVC, animated: true)
+    }
+
 }

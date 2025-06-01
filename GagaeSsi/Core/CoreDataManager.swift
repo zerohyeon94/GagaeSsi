@@ -308,7 +308,7 @@ final class CoreDataManager {
     // MARK: - Delete Fixed Cost
     func deleteFixedCost(named name: String) {
         let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
-        request.predicate = NSPredicate(format: "name == %@", name)
+        request.predicate = NSPredicate(format: "title == %@", name)
 
         do {
             if let target = try context.fetch(request).first {
@@ -317,6 +317,49 @@ final class CoreDataManager {
             }
         } catch {
             print("❌ 고정비 삭제 실패: \(error)")
+        }
+    }
+    
+    func fetchFixedCostEntity(named name: String) -> FixedCost? {
+        let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
+        request.predicate = NSPredicate(format: "title == %@", name)
+        return try? context.fetch(request).first
+    }
+
+    // MARK: - Insert
+    func insertOrUpdateFixedCost(_ model: FixedCostModel) {
+        let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
+        request.predicate = NSPredicate(format: "title == %@", model.title)
+
+        do {
+            if let existing = try context.fetch(request).first {
+                existing.amount = NSDecimalNumber(value: model.amount)
+            } else {
+                let new = FixedCost(context: context)
+                new.title = model.title
+                new.amount = NSDecimalNumber(value: model.amount)
+            }
+            try context.save()
+        } catch {
+            print("❌ 고정비 저장 실패: \(error)")
+        }
+    }
+
+    func updateFixedCost(_ model: FixedCostModel, original: FixedCost?) {
+        do {
+            if let target = original {
+                // 수정 모드
+                target.title = model.title
+                target.amount = NSDecimalNumber(value: model.amount)
+            } else {
+                // 새로 추가
+                let new = FixedCost(context: context)
+                new.title = model.title
+                new.amount = NSDecimalNumber(value: model.amount)
+            }
+            try context.save()
+        } catch {
+            print("❌ 고정비 저장 실패: \(error)")
         }
     }
 
