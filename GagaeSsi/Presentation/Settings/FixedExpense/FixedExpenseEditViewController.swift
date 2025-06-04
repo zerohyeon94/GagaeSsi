@@ -7,7 +7,7 @@
 
 import UIKit
 
-final class FixedExpenseEditViewController: UIViewController {
+final class FixedExpenseEditViewController: BaseViewController {
     private let viewModel: FixedExpenseEditViewModel
 
     private let titleField: UITextField = {
@@ -34,7 +34,7 @@ final class FixedExpenseEditViewController: UIViewController {
 
     init(editingItem: FixedCostModel? = nil, object: FixedCost? = nil) {
         if let item = editingItem {
-            viewModel = FixedExpenseEditViewModel(title: item.title, amount: item.amount)
+            viewModel = FixedExpenseEditViewModel(title: item.title, amount: item.amount, object: object)
         } else {
             viewModel = FixedExpenseEditViewModel()
         }
@@ -67,7 +67,7 @@ final class FixedExpenseEditViewController: UIViewController {
         ])
 
         titleField.text = viewModel.title
-        amountField.text = "\(viewModel.amount)"
+        amountField.text = viewModel.amount == 0 ? "" : "\(viewModel.amount)"
     }
 
     private func bind() {
@@ -81,8 +81,8 @@ final class FixedExpenseEditViewController: UIViewController {
             return
         }
 
-//        viewModel.updateTitle(titleText)
-//        viewModel.updateAmount(amountText)
+        viewModel.updateTitle(titleText)
+        viewModel.updateAmount(amountText)
         viewModel.save()
         navigationController?.popViewController(animated: true)
     }

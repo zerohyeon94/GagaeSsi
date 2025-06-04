@@ -19,35 +19,17 @@ final class FixedExpenseEditViewModel {
         self.amount = amount
         self.originalObject = object
     }
+    
+    func updateTitle(_ text: String) {
+        self.title = text
+    }
+    
+    func updateAmount(_ text: String) {
+        self.amount = Int(text) ?? 0
+    }
 
     func save() {
         let model = FixedCostModel(title: title, amount: amount)
         onSave?(model, originalObject)
     }
 }
-
-//
-//final class FixedExpenseEditViewModel {
-//    var title: String
-//    var amount: Int
-//
-//    var onSave: ((FixedCostModel) -> Void)?
-//
-//    init(title: String = "", amount: Int = 0) {
-//        self.title = title
-//        self.amount = amount
-//    }
-//
-//    func updateTitle(_ text: String) {
-//        self.title = text
-//    }
-//
-//    func updateAmount(_ text: String) {
-//        self.amount = Int(text) ?? 0
-//    }
-//
-//    func save() {
-//        let model = FixedCostModel(title: title, amount: amount)
-//        onSave?(model)
-//    }
-//}
