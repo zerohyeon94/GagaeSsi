@@ -69,6 +69,17 @@ final class FixedExpenseEditViewController: BaseViewController {
         titleField.text = viewModel.title
         amountField.text = viewModel.amount == 0 ? "" : "\(viewModel.amount)"
     }
+    
+    // MARK: - Actions
+    private func setupActions() {
+        amountField.addTarget(self, action: #selector(amountChanged), for: .editingChanged)
+    }
+    
+    @objc private func amountChanged() {
+        guard let result = FormatterUtils.formatCurrencyInput(amountField.text) else { return }
+        
+        amountField.text = result.formatted
+    }
 
     private func bind() {
         saveButton.addTarget(self, action: #selector(didTapSave), for: .touchUpInside)

@@ -20,7 +20,7 @@ final class SpendViewController: BaseViewController {
 
     private let amountTextField: UITextField = {
         let tf = UITextField()
-        tf.placeholder = "금액 (예: 5000)"
+        tf.placeholder = "금액 (예: 5,000)"
         tf.borderStyle = .roundedRect
         tf.keyboardType = .numberPad
         return tf
@@ -36,7 +36,11 @@ final class SpendViewController: BaseViewController {
     private let saveButton: UIButton = {
         let btn = UIButton(type: .system)
         btn.setTitle("저장", for: .normal)
-        btn.titleLabel?.font = .boldSystemFont(ofSize: 16)
+        btn.isEnabled = false
+        btn.backgroundColor = .systemGray
+        btn.setTitleColor(.white, for: .normal)
+        btn.layer.cornerRadius = 8
+//        btn.titleLabel?.font = .boldSystemFont(ofSize: 16)
         return btn
     }()
 
@@ -83,6 +87,33 @@ final class SpendViewController: BaseViewController {
         tableView.dataSource = self
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
     }
+    // MARK: - Actions
+    private func setupActions() {
+        titleTextField.addTarget(self, action: #selector(titleChanged), for: .editingChanged)
+        amountTextField.addTarget(self, action: #selector(amountChanged), for: .editingChanged)
+    }
+    
+    @objc private func titleChanged() {
+        guard let text = titleTextField.text else { return }
+        
+        viewModel.tempTitle = text
+
+        updateSaveButtonState()
+    }
+    
+    @objc private func amountChanged() {
+        guard let result = FormatterUtils.formatCurrencyInput(amountTextField.text) else { return }
+
+        viewModel.tempAmount = result.plainNumber
+        amountTextField.text = result.formatted
+
+        updateSaveButtonState()
+    }
+    
+    private func updateSaveButtonState() {
+        saveButton.isEnabled = viewModel.isValid
+        saveButton.backgroundColor = viewModel.isValid ? .systemBlue : .systemGray
+    }
 
     @objc private func saveTapped() {
         guard let amountText = amountTextField.text, let amount = Int(amountText) else { return }
@@ -102,6 +133,10 @@ final class SpendViewController: BaseViewController {
         titleTextField.text = ""
         amountTextField.text = ""
         datePicker.date = Date()
+        
+        viewModel.tempTitle = ""
+        viewModel.tempAmount = 0
+        viewModel.tempDate = Date()
     }
 
     private func showAlert(_ title: String, _ message: String) {
@@ -120,11 +155,14 @@ extension SpendViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         let record = viewModel.spendingRecords[indexPath.row]
+        
+        guard let title = record.title, let amount = record.amount else {
+            cell.textLabel?.text = "데이터를 불러오지 못함."
+            
+            return cell
+        }
 
-        let amount = FormatterUtils.currencyFormatter.string(from: NSNumber(value: record.amount?.intValue ?? 0)) ?? "₩0"
-        let title = record.title ?? "(제목 없음)"
-
-        cell.textLabel?.text = "\(title) - \(amount)"
+        cell.textLabel?.text = "\(title) : \(FormatterUtils.currencyString(from: Int(truncating: amount)))"
         return cell
     }
 }

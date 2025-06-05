@@ -87,7 +87,7 @@ final class SetupFixedCostViewController: BaseViewController {
         let alert = UIAlertController(title: "고정비 추가", message: nil, preferredStyle: .alert)
         alert.addTextField { $0.placeholder = "이름 (예: 집세)" }
         alert.addTextField {
-            $0.placeholder = "금액 (예: 500000)"
+            $0.placeholder = "금액 (예: 500,000)"
             $0.keyboardType = .numberPad
             $0.addTarget(self, action: #selector(self.alertAmountChanged(_:)), for: .editingChanged)
         }
@@ -111,17 +111,9 @@ final class SetupFixedCostViewController: BaseViewController {
     }
     
     @objc private func alertAmountChanged(_ textField: UITextField) {
-        let formatter = FormatterUtils.currencyFormatter
-
-        let raw = textField.text ?? ""
-        let plain = raw.replacingOccurrences(of: ",", with: "")
-
-        if let number = Int(plain) {
-            let formatted = formatter.string(from: NSNumber(value: number))
-            textField.text = formatted
-        } else {
-            textField.text = nil
-        }
+        guard let result = FormatterUtils.formatCurrencyInput(textField.text) else { return }
+        
+        textField.text = result.formatted
     }
 
     // 고정비 추가 없이 홈화면으로 이동

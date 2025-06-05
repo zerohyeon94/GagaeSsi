@@ -86,19 +86,12 @@ final class SetupSalaryViewController: BaseViewController {
     }
     
     @objc private func salaryChanged() {
-        // 현재 입력된 문자열 (예: "1,200,000")
-        guard let rawText = salaryTextField.text else { return }
-        
-        // 쉼표 제거된 숫자 문자열 (예: "1200000")
-        let plainText = rawText.replacingOccurrences(of: ",", with: "")
-        let number = Int(plainText) ?? 0
+        guard let result = FormatterUtils.formatCurrencyInput(salaryTextField.text) else { return }
 
         // ViewModel 임시 값에 저장 (실시간 유효성 검사용)
-        viewModel.tempSalary = number
-
-        // 텍스트 포맷
-        let formatted = FormatterUtils.currencyFormatter.string(from: NSNumber(value: number))
-        salaryTextField.text = formatted
+        viewModel.tempSalary = result.plainNumber
+        
+        salaryTextField.text = result.formatted
 
         updateNextButtonState()
     }

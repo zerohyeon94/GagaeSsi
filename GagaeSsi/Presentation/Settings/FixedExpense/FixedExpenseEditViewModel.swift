@@ -20,6 +20,15 @@ final class FixedExpenseEditViewModel {
         self.originalObject = object
     }
     
+    // 실시간 유효성 체크용 임시 변수 (화면과 연결)
+    var tempTitle: String = ""
+    var tempAmount: Int = 0
+    var tempDate: Date = Date()
+
+    var isValid: Bool {
+        return tempTitle != "" && tempAmount > 0
+    }
+    
     func updateTitle(_ text: String) {
         self.title = text
     }

@@ -60,6 +60,6 @@ final class FixedCostCell: UITableViewCell {
     // MARK: - Configuration
     func configure(with model: FixedCostModel) {
         titleLabel.text = model.title
-        amountLabel.text = "₩\(model.amount.formatted())"
+        amountLabel.text = FormatterUtils.currencyString(from: model.amount)
     }
 }

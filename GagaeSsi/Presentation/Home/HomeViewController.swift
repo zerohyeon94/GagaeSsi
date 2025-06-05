@@ -104,12 +104,17 @@ final class HomeViewController: BaseViewController {
         viewModel.fetchTodayBudget()
 
         updateBudgetLabel(total: viewModel.todayAvailableAmount)
-        calculationInfoLabel.text = "(이월 ₩\(viewModel.carryOverAmount.formatted()) + 오늘 예산 ₩\(viewModel.baseBudget.formatted()) - 소비 ₩\(viewModel.spentAmount.formatted()))"
+        
+        let carryOverText = FormatterUtils.currencyString(from: viewModel.carryOverAmount)
+        let baseBudgetText = FormatterUtils.currencyString(from: viewModel.baseBudget)
+        let spentAmountText = FormatterUtils.currencyString(from: viewModel.spentAmount)
+
+        calculationInfoLabel.text = "(이월 \(carryOverText) + 오늘 예산 \(baseBudgetText) - 소비 \(spentAmountText))"
     }
     
     private func updateBudgetLabel(total: Int) {
         let title = "오늘 사용할 수 있는 금액: "
-        let value = "₩\(total.formatted())"
+        let value = FormatterUtils.currencyString(from: total)
 
         let attributedText = NSMutableAttributedString(
             string: title,

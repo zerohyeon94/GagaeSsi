@@ -8,25 +8,34 @@
 import Foundation
 
 final class SpendViewModel {
-
+    
     // 입력 중인 지출 모델
-       var currentInput = SpendingInputModel()
-       var spendingRecords: [SpendingRecord] = []
+    var currentInput = SpendingInputModel()
+    var spendingRecords: [SpendingRecord] = []
+    
+    func fetchSpending(on date: Date) {
+        spendingRecords = CoreDataManager.shared.fetchSpending(on: date)
+    }
+    
+    func saveSpending(completion: (() -> Void)? = nil) {
+        guard !currentInput.title.isEmpty, currentInput.amount > 0 else { return }
+        
+        CoreDataManager.shared.saveSpending(
+            title: currentInput.title,
+            amount: currentInput.amount,
+            date: currentInput.date
+        )
+        
+        fetchSpending(on: currentInput.date)
+        completion?()
+    }
+    
+    // 실시간 유효성 체크용 임시 변수 (화면과 연결)
+    var tempTitle: String = ""
+    var tempAmount: Int = 0
+    var tempDate: Date = Date()
 
-       func fetchSpending(on date: Date) {
-           spendingRecords = CoreDataManager.shared.fetchSpending(on: date)
-       }
-
-       func saveSpending(completion: (() -> Void)? = nil) {
-           guard !currentInput.title.isEmpty, currentInput.amount > 0 else { return }
-
-           CoreDataManager.shared.saveSpending(
-               title: currentInput.title,
-               amount: currentInput.amount,
-               date: currentInput.date
-           )
-
-           fetchSpending(on: currentInput.date)
-           completion?()
-       }
+    var isValid: Bool {
+        return tempTitle != "" && tempAmount > 0
+    }
 }
