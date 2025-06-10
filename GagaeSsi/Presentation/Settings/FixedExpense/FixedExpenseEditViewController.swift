@@ -10,16 +10,16 @@ import UIKit
 final class FixedExpenseEditViewController: BaseViewController {
     private let viewModel: FixedExpenseEditViewModel
 
-    private let titleField: UITextField = {
+    private let titleTextField: UITextField = {
         let tf = UITextField()
         tf.placeholder = "고정비 이름 (예: 월세)"
         tf.borderStyle = .roundedRect
         return tf
     }()
 
-    private let amountField: UITextField = {
+    private let amountTextField: UITextField = {
         let tf = UITextField()
-        tf.placeholder = "금액 입력 (예: 500000)"
+        tf.placeholder = "금액 입력 (예: 500,000)"
         tf.keyboardType = .numberPad
         tf.borderStyle = .roundedRect
         return tf
@@ -29,6 +29,9 @@ final class FixedExpenseEditViewController: BaseViewController {
         let btn = UIButton(type: .system)
         btn.setTitle("저장", for: .normal)
         btn.titleLabel?.font = .boldSystemFont(ofSize: 18)
+        btn.backgroundColor = .systemBlue
+        btn.setTitleColor(.white, for: .normal)
+        btn.layer.cornerRadius = 8
         return btn
     }()
 
@@ -50,11 +53,13 @@ final class FixedExpenseEditViewController: BaseViewController {
         title = "고정비 항목"
         view.backgroundColor = .systemBackground
         setupUI()
-        bind()
+        setupActions()
+        
+        setText()
     }
 
     private func setupUI() {
-        let stack = UIStackView(arrangedSubviews: [titleField, amountField, saveButton])
+        let stack = UIStackView(arrangedSubviews: [titleTextField, amountTextField, saveButton])
         stack.axis = .vertical
         stack.spacing = 16
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -65,54 +70,54 @@ final class FixedExpenseEditViewController: BaseViewController {
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             stack.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
-
-        titleField.text = viewModel.title
-        amountField.text = viewModel.amount == 0 ? "" : "\(viewModel.amount)"
+    }
+    
+    private func setText() {
+        let titleText = viewModel.fixedCost.title
+        let amountText = FormatterUtils.inputAmountString(from: viewModel.fixedCost.amount)
+        
+        titleTextField.text = titleText
+        amountTextField.text = amountText
+        
+        print("")
+        
+        updateNextButtonState()
     }
     
     // MARK: - Actions
     private func setupActions() {
-        amountField.addTarget(self, action: #selector(amountChanged), for: .editingChanged)
+        titleTextField.addTarget(self, action: #selector(titleChanged), for: .editingChanged)
+        amountTextField.addTarget(self, action: #selector(amountChanged), for: .editingChanged)
+        saveButton.addTarget(self, action: #selector(didTapSave), for: .touchUpInside)
     }
     
-    @objc private func amountChanged() {
-        guard let result = FormatterUtils.formatCurrencyInput(amountField.text) else { return }
-        
-        amountField.text = result.formatted
+    @objc private func titleChanged() {
+        guard let result = titleTextField.text else { return }
+
+        viewModel.tempTitle = result
+
+        updateNextButtonState()
     }
 
-    private func bind() {
-        saveButton.addTarget(self, action: #selector(didTapSave), for: .touchUpInside)
+    @objc private func amountChanged() {
+        guard let result = FormatterUtils.formatCurrencyInput(amountTextField.text) else { return }
+        
+        viewModel.tempAmount = result.plainNumber
+        amountTextField.text = result.formatted
+        updateNextButtonState()
     }
 
     @objc private func didTapSave() {
-        guard let titleText = titleField.text, !titleText.isEmpty,
-              let amountText = amountField.text, Int(amountText) != nil else {
-            showAlert("입력값을 확인해주세요.")
-            return
-        }
-
-        viewModel.updateTitle(titleText)
-        viewModel.updateAmount(amountText)
-        viewModel.save()
+        viewModel.fixedCost.title = viewModel.tempTitle
+        viewModel.fixedCost.amount = viewModel.tempAmount
+        
+        viewModel.saveFixedExpense()
+        
         navigationController?.popViewController(animated: true)
     }
-
-    private func showAlert(_ message: String) {
-        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "확인", style: .default))
-        present(alert, animated: true)
-    }
-
-    // 1. 기본 저장용 (추가)
-    func onSave(_ handler: @escaping (FixedCostModel) -> Void) {
-        viewModel.onSave = { model, _ in
-            handler(model)
-        }
-    }
-
-    // 2. 수정용
-    func onSave(_ handler: @escaping (FixedCostModel, FixedCost?) -> Void) {
-        viewModel.onSave = handler
+    
+    private func updateNextButtonState() {
+        saveButton.isEnabled = viewModel.isValid
+        saveButton.backgroundColor = viewModel.isValid ? .systemBlue : .systemGray
     }
 }

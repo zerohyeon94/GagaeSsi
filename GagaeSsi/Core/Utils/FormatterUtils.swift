@@ -30,4 +30,9 @@ enum FormatterUtils {
         
         return (number, formatted)
     }
+    
+    // MARK: - 고정비 text 표시용
+    static func inputAmountString(from value: Int) -> String {
+        return value == 0 ? "" : "\(currencyFormatter.string(from: NSNumber(value: value)) ?? "")"
+    }
 }

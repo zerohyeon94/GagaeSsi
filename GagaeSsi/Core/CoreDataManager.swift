@@ -37,7 +37,7 @@ final class CoreDataManager {
 
     // MARK: - Create BudgetConfig
     func createBudgetConfig(salary: Int, payday: Date) {
-        let config = BudgetConfig(context: context) // NSEntityDescription.insertNewObject(forEntityName: "BudgetConfig", into: context)
+        let config = BudgetConfig(context: context)
         config.setValue(NSDecimalNumber(value: salary), forKey: "salary")
         config.setValue(payday, forKey: "payday")
         saveContext()
@@ -59,12 +59,12 @@ final class CoreDataManager {
     func save(budgetModel: BudgetConfigModel) {
         let context = self.context
 
-        let config = BudgetConfig(context: context) // NSEntityDescription.insertNewObject(forEntityName: "BudgetConfig", into: context) as! BudgetConfig
+        let config = BudgetConfig(context: context)
         config.setValue(NSDecimalNumber(value: budgetModel.salary), forKey: "salary")
         config.setValue(NSDecimalNumber(value: budgetModel.payday), forKey: "payday")
 
         for fixed in budgetModel.fixedCosts {
-            let fixedCost = FixedCost(context: context)// NSEntityDescription.insertNewObject(forEntityName: "FixedCost", into: context) as! FixedCost
+            let fixedCost = FixedCost(context: context)
             fixedCost.setValue(fixed.title, forKey: "title")
             fixedCost.setValue(NSDecimalNumber(value: fixed.amount), forKey: "amount")
             
@@ -91,6 +91,8 @@ final class CoreDataManager {
             let amount = ($0.value(forKey: "amount") as? NSDecimalNumber)?.intValue ?? 0
             return FixedCostModel(title: title, amount: amount)
         }
+        
+        print("fetchBudgetModel - fixedModels : \(fixedModels.count)")
 
         return BudgetConfigModel(salary: salary, payday: payday, fixedCosts: fixedModels)
     }
@@ -120,10 +122,33 @@ final class CoreDataManager {
         return dailyBudget
     }
     
+    // 월급이 업데이트 되어 하루에 사용가능한 예산을 업데이트
+    func updateTodayBudget() {
+        let today = Calendar.current.startOfDay(for: Date())
+        
+        guard let config = fetchBudgetModel(),
+              let todayBudget = fetchDailyBudget(on: today) else { return }
+        
+        let newBaseAmount = calculateDailyBudget(from: config, for: today)
+        todayBudget.availableAmount = NSDecimalNumber(value: newBaseAmount)
+        
+        print("todayBudget : \(todayBudget.availableAmount)")
+        
+        saveContext()
+    }
+    
     func calculateDailyBudget(from config: BudgetConfigModel, for date: Date) -> Int {
         let fixedTotal = config.fixedCosts.map { $0.amount }.reduce(0, +)
         let usableSalary = config.salary - fixedTotal
         
+        print("config.salary : \(config.salary)")
+        print("config.fixedCosts : \(config.fixedCosts)")
+        
+        if config.fixedCosts.count > 0 {
+            for i in 0..<config.fixedCosts.count {
+                print("config.fixedCosts : \(config.fixedCosts[i])")
+            }
+        }
         print("fixedTotal : \(fixedTotal)")
         print("usableSalary : \(usableSalary)")
 
@@ -275,6 +300,18 @@ final class CoreDataManager {
             return BudgetConfigModel(salary: 0, payday: 1, fixedCosts: [])
         }
     }
+    
+    func fetchBudgetEntity() -> BudgetConfig? {
+        let request: NSFetchRequest<BudgetConfig> = BudgetConfig.fetchRequest()
+        
+        do {
+            let results = try context.fetch(request)
+            return results.first // TODO: -
+        } catch {
+            print("❌ BudgetConfig fetch 실패: \(error)")
+            return nil
+        }
+    }
 
     // MARK: - BudgetConfig Update
     func updateBudgetConfig(salary: Int, payday: Int) {
@@ -326,41 +363,32 @@ final class CoreDataManager {
         return try? context.fetch(request).first
     }
 
-    // MARK: - Insert
-    func insertOrUpdateFixedCost(_ model: FixedCostModel) {
-        let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
-        request.predicate = NSPredicate(format: "title == %@", model.title)
+    // MARK: - 고정비 추가 및 수정
+    func insertFixedCost(_ model: FixedCostModel) {
+        guard let config = fetchBudgetEntity() else { return }
+
+        let new = FixedCost(context: context)
+        new.title = model.title
+        new.amount = NSDecimalNumber(value: model.amount)
+
+        new.budgetConfig = config
+        config.addToFixedCosts(new)
 
         do {
-            if let existing = try context.fetch(request).first {
-                existing.amount = NSDecimalNumber(value: model.amount)
-            } else {
-                let new = FixedCost(context: context)
-                new.title = model.title
-                new.amount = NSDecimalNumber(value: model.amount)
-            }
             try context.save()
         } catch {
-            print("❌ 고정비 저장 실패: \(error)")
+            print("❌ 고정비 추가 실패: \(error)")
         }
     }
 
-    func updateFixedCost(_ model: FixedCostModel, original: FixedCost?) {
+    func updateFixedCost(_ model: FixedCostModel, target: FixedCost) {
+        target.title = model.title
+        target.amount = NSDecimalNumber(value: model.amount)
+
         do {
-            if let target = original {
-                // 수정 모드
-                target.title = model.title
-                target.amount = NSDecimalNumber(value: model.amount)
-            } else {
-                // 새로 추가
-                let new = FixedCost(context: context)
-                new.title = model.title
-                new.amount = NSDecimalNumber(value: model.amount)
-            }
             try context.save()
         } catch {
-            print("❌ 고정비 저장 실패: \(error)")
+            print("❌ 고정비 수정 실패: \(error)")
         }
     }
-
 }

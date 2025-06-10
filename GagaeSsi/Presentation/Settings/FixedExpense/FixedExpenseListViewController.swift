@@ -6,10 +6,13 @@
 //
 
 import UIKit
+import RxSwift
 
 final class FixedExpenseListViewController: BaseViewController {
-    private let tableView = UITableView()
+    private let disposeBag = DisposeBag()
     private let viewModel = FixedExpenseListViewModel()
+    
+    private let tableView = UITableView()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -17,8 +20,10 @@ final class FixedExpenseListViewController: BaseViewController {
         view.backgroundColor = .systemBackground
 
         setupTableView()
-        bindViewModel()
         setupNavigationBar()
+        
+        bind()
+        viewModel.bind()
         viewModel.fetchFixedCosts()
     }
 
@@ -29,11 +34,14 @@ final class FixedExpenseListViewController: BaseViewController {
         tableView.dataSource = self
         tableView.delegate = self
     }
-
-    private func bindViewModel() {
-        viewModel.onDataUpdated = { [weak self] in
-            self?.tableView.reloadData()
-        }
+    
+    private func bind() {
+        viewModel.fixedCosts
+            .observe(on: MainScheduler.instance)
+            .subscribe(onNext: { [weak self] _ in
+                self?.tableView.reloadData()
+            })
+            .disposed(by: disposeBag)
     }
 
     private func setupNavigationBar() {
@@ -46,21 +54,18 @@ final class FixedExpenseListViewController: BaseViewController {
 
     @objc private func didTapAdd() {
         let editVC = FixedExpenseEditViewController()
-        editVC.onSave { [weak self] newItem in
-            CoreDataManager.shared.insertOrUpdateFixedCost(newItem)
-            self?.viewModel.fetchFixedCosts()
-        }
+        
         navigationController?.pushViewController(editVC, animated: true)
     }
 }
 
 extension FixedExpenseListViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        viewModel.fixedCosts.count
+        viewModel.fixedCosts.value.count
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let item = viewModel.fixedCosts[indexPath.row]
+        let item = viewModel.fixedCosts.value[indexPath.row]
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         cell.textLabel?.text = item.title
         cell.detailTextLabel?.text = "₩\(item.amount.formatted())"
@@ -79,19 +84,13 @@ extension FixedExpenseListViewController: UITableViewDataSource, UITableViewDele
     
     // 사용자가 특정 셀을 탭한 경우
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        let model = viewModel.fixedCosts[indexPath.row]
+        let model = viewModel.fixedCosts.value[indexPath.row]
         let name = model.title
 
         // CoreData 객체도 함께 찾기
         let fixedObjects = CoreDataManager.shared.fetchFixedCostEntity(named: name)
         let editVC = FixedExpenseEditViewController(editingItem: model, object: fixedObjects)
 
-        editVC.onSave { [weak self] model, original in
-            CoreDataManager.shared.updateFixedCost(model, original: original)
-            self?.viewModel.fetchFixedCosts()
-        }
-
         navigationController?.pushViewController(editVC, animated: true)
     }
-
 }

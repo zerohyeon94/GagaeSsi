@@ -6,12 +6,11 @@
 //
 
 import Foundation
+import RxSwift
 
 final class SpendViewModel {
-    
-    // 입력 중인 지출 모델
-    var currentInput = SpendingInputModel()
-    var spendingRecords: [SpendingRecord] = []
+    var currentInput = SpendingInputModel() // 입력 중인 지출 모델
+    var spendingRecords: [SpendingRecord] = [] // 금일 지출 목록
     
     func fetchSpending(on date: Date) {
         spendingRecords = CoreDataManager.shared.fetchSpending(on: date)
@@ -27,6 +26,7 @@ final class SpendViewModel {
         )
         
         fetchSpending(on: currentInput.date)
+        AppEventBus.shared.spendingAdded.onNext(())
         completion?()
     }
     

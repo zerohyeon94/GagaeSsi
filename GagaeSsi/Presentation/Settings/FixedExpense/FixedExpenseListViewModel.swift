@@ -6,21 +6,35 @@
 //
 
 import Foundation
+import RxSwift
+import RxRelay
 
 final class FixedExpenseListViewModel {
-    private(set) var fixedCosts: [FixedCostModel] = []
-
-    var onDataUpdated: (() -> Void)?
+    var fixedCosts = BehaviorRelay<[FixedCostModel]>(value: [])
+    
+    private let disposeBag = DisposeBag()
+    
+    func bind() {
+        AppEventBus.shared.fixedExpenseChanged
+            .observe(on: MainScheduler.instance)
+            .subscribe(onNext: { [weak self] in
+                self?.fetchFixedCosts()
+            })
+            .disposed(by: disposeBag)
+    }
 
     func fetchFixedCosts() {
-        fixedCosts = CoreDataManager.shared.fetchFixedCosts()
-        onDataUpdated?()
+        let fixedCostList = CoreDataManager.shared.fetchFixedCosts()
+        fixedCosts.accept(fixedCostList)
     }
 
     func deleteItem(at index: Int) {
-        let item = fixedCosts[index]
+        var current = fixedCosts.value
+        let item = current[index]
+        
         CoreDataManager.shared.deleteFixedCost(named: item.title)
-        fixedCosts.remove(at: index)
-        onDataUpdated?()
+        
+        current.remove(at: index)
+        fixedCosts.accept(current)
     }
 }

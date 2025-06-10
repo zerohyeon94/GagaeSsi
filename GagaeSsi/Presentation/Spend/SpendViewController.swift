@@ -54,6 +54,8 @@ final class SpendViewController: BaseViewController {
         super.viewDidLoad()
         setupUI()
         setupTableView()
+        setupActions()
+        
         viewModel.fetchSpending(on: Date())
     }
 
@@ -116,10 +118,8 @@ final class SpendViewController: BaseViewController {
     }
 
     @objc private func saveTapped() {
-        guard let amountText = amountTextField.text, let amount = Int(amountText) else { return }
-
-        viewModel.currentInput.title = titleTextField.text ?? ""
-        viewModel.currentInput.amount = amount
+        viewModel.currentInput.title = viewModel.tempTitle
+        viewModel.currentInput.amount = viewModel.tempAmount
         viewModel.currentInput.date = datePicker.date
 
         viewModel.saveSpending {

@@ -8,16 +8,28 @@
 import Foundation
 
 final class FixedExpenseEditViewModel {
-    var title: String
-    var amount: Int
+    var fixedCost: FixedCostModel
+    
     var originalObject: FixedCost?  // CoreData 객체를 참조
 
     var onSave: ((FixedCostModel, FixedCost?) -> Void)? // 객체 함께 전달
 
     init(title: String = "", amount: Int = 0, object: FixedCost? = nil) {
-        self.title = title
-        self.amount = amount
+        self.fixedCost = FixedCostModel(title: title, amount: amount)
         self.originalObject = object
+        
+        self.tempTitle = title
+        self.tempAmount = amount
+    }
+    
+    func saveFixedExpense() {
+        if let existing = originalObject {
+            CoreDataManager.shared.updateFixedCost(fixedCost, target: existing)
+        } else {
+            CoreDataManager.shared.insertFixedCost(fixedCost)
+        }
+        
+        AppEventBus.shared.fixedExpenseChanged.onNext(())
     }
     
     // 실시간 유효성 체크용 임시 변수 (화면과 연결)
@@ -27,18 +39,5 @@ final class FixedExpenseEditViewModel {
 
     var isValid: Bool {
         return tempTitle != "" && tempAmount > 0
-    }
-    
-    func updateTitle(_ text: String) {
-        self.title = text
-    }
-    
-    func updateAmount(_ text: String) {
-        self.amount = Int(text) ?? 0
-    }
-
-    func save() {
-        let model = FixedCostModel(title: title, amount: amount)
-        onSave?(model, originalObject)
     }
 }

@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		E26DE8022DF69CE10075797A /* RxSwift in Frameworks */ = {isa = PBXBuildFile; productRef = E26DE8012DF69CE10075797A /* RxSwift */; };
+		E26DE8062DF6AED70075797A /* RxRelay in Frameworks */ = {isa = PBXBuildFile; productRef = E26DE8052DF6AED70075797A /* RxRelay */; };
+		E26DE8082DF6B3230075797A /* RxCocoa in Frameworks */ = {isa = PBXBuildFile; productRef = E26DE8072DF6B3230075797A /* RxCocoa */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		E20EC1E12DDDC0770014FAD7 /* GagaeSsi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GagaeSsi.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +42,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E26DE8082DF6B3230075797A /* RxCocoa in Frameworks */,
+				E26DE8062DF6AED70075797A /* RxRelay in Frameworks */,
+				E26DE8022DF69CE10075797A /* RxSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -46,6 +55,7 @@
 			isa = PBXGroup;
 			children = (
 				E20EC1E32DDDC0770014FAD7 /* GagaeSsi */,
+				E26DE8002DF69CE10075797A /* Frameworks */,
 				E20EC1E22DDDC0770014FAD7 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -56,6 +66,13 @@
 				E20EC1E12DDDC0770014FAD7 /* GagaeSsi.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		E26DE8002DF69CE10075797A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -78,6 +95,9 @@
 			);
 			name = GagaeSsi;
 			packageProductDependencies = (
+				E26DE8012DF69CE10075797A /* RxSwift */,
+				E26DE8052DF6AED70075797A /* RxRelay */,
+				E26DE8072DF6B3230075797A /* RxCocoa */,
 			);
 			productName = GagaeSsi;
 			productReference = E20EC1E12DDDC0770014FAD7 /* GagaeSsi.app */;
@@ -107,6 +127,9 @@
 			);
 			mainGroup = E20EC1D82DDDC0770014FAD7;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				E26DE7FF2DF69C470075797A /* XCRemoteSwiftPackageReference "RxSwift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E20EC1E22DDDC0770014FAD7 /* Products */;
 			projectDirPath = "";
@@ -337,6 +360,35 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E26DE7FF2DF69C470075797A /* XCRemoteSwiftPackageReference "RxSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ReactiveX/RxSwift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.9.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E26DE8012DF69CE10075797A /* RxSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E26DE7FF2DF69C470075797A /* XCRemoteSwiftPackageReference "RxSwift" */;
+			productName = RxSwift;
+		};
+		E26DE8052DF6AED70075797A /* RxRelay */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E26DE7FF2DF69C470075797A /* XCRemoteSwiftPackageReference "RxSwift" */;
+			productName = RxRelay;
+		};
+		E26DE8072DF6B3230075797A /* RxCocoa */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E26DE7FF2DF69C470075797A /* XCRemoteSwiftPackageReference "RxSwift" */;
+			productName = RxCocoa;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E20EC1D92DDDC0770014FAD7 /* Project object */;
 }

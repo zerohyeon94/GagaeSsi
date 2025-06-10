@@ -36,15 +36,7 @@ final class SettingsViewController: BaseViewController {
         switch action {
         case .editBudget:
             print("➡️ 월급 수정 화면으로 이동")
-            let config = CoreDataManager.shared.fetchBudgetConfig()
-            print("config.salary : \(config.salary)")
-            print("config.payday : \(config.payday)")
-            print("config.fixedCosts : \(config.fixedCosts)")
-            let vc = EditBudgetViewController(currentSalary: config.salary, currentPayday: config.payday)
-            
-            vc.onSave { salary, payday in
-                CoreDataManager.shared.updateBudgetConfig(salary: salary, payday: payday)
-            }
+            let vc = EditBudgetViewController()
             
             navigationController?.pushViewController(vc, animated: true)
         case .manageFixedExpenses:

@@ -6,9 +6,11 @@
 //
 
 import UIKit
+import RxSwift
+import RxCocoa
 
 final class HomeViewController: BaseViewController {
-    
+    private let disposeBag = DisposeBag()
     private let viewModel = HomeViewModel()
 
     // MARK: - UI Components
@@ -63,8 +65,12 @@ final class HomeViewController: BaseViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         title = "오늘 얼마?"
+        
         setupLayout()
-        loadBudgetData()
+        
+        bind()
+        viewModel.bind()
+        viewModel.fetchTodayBudget()
     }
 
     // MARK: - Layout
@@ -98,18 +104,31 @@ final class HomeViewController: BaseViewController {
             recordButton.heightAnchor.constraint(equalToConstant: 50),
         ])
     }
-
+    
     // MARK: - Data Binding
-    private func loadBudgetData() {
-        viewModel.fetchTodayBudget()
+    private func bind() {
+        viewModel.todayAvailableAmount
+            .observe(on: MainScheduler.instance)
+            .subscribe(onNext: { [weak self] total in
+                self?.updateBudgetLabel(total: total)
+            })
+            .disposed(by: disposeBag)
 
-        updateBudgetLabel(total: viewModel.todayAvailableAmount)
-        
-        let carryOverText = FormatterUtils.currencyString(from: viewModel.carryOverAmount)
-        let baseBudgetText = FormatterUtils.currencyString(from: viewModel.baseBudget)
-        let spentAmountText = FormatterUtils.currencyString(from: viewModel.spentAmount)
-
-        calculationInfoLabel.text = "(이월 \(carryOverText) + 오늘 예산 \(baseBudgetText) - 소비 \(spentAmountText))"
+        Observable.combineLatest(
+            viewModel.carryOverAmount,
+            viewModel.baseBudget,
+            viewModel.spentAmount
+        )
+        .map { carry, base, spent in
+            let carryText = FormatterUtils.currencyString(from: carry)
+            let baseText = FormatterUtils.currencyString(from: base)
+            let spentText = FormatterUtils.currencyString(from: spent)
+            
+            let resultText = "(이월 \(carryText) + 오늘 예산 \(baseText) - 소비 \(spentText))"
+            return resultText as String?
+        }
+        .bind(to: calculationInfoLabel.rx.text)
+        .disposed(by: disposeBag)
     }
     
     private func updateBudgetLabel(total: Int) {
