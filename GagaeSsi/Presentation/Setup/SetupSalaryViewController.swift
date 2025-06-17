@@ -12,7 +12,7 @@ final class SetupSalaryViewController: BaseViewController {
     // MARK: - UI Components
     private let salaryTextField: UITextField = {
         let tf = UITextField()
-        tf.placeholder = "월급을 입력하세요 (예: 3000000)"
+        tf.placeholder = "월급을 입력하세요 (예: 3,000,000)"
         tf.borderStyle = .roundedRect
         tf.keyboardType = .numberPad
         return tf
