@@ -118,13 +118,13 @@ final class SetupFixedCostViewController: BaseViewController {
 
     // 고정비 추가 없이 홈화면으로 이동
     @objc private func skipTapped() {
-        CoreDataManager.shared.save(budgetModel: viewModel.model)
+        CoreDataManager.shared.createBudgetConfig(from: viewModel.model)
         
         switchToMainTabBar()
     }
     
     @objc private func saveTapped() {
-        CoreDataManager.shared.save(budgetModel: viewModel.model)
+        CoreDataManager.shared.createBudgetConfig(from: viewModel.model)
         
         switchToMainTabBar()
     }

@@ -8,6 +8,7 @@
 import CoreData
 
 final class CoreDataManager {
+    // MARK: - Singleton & Persistent Container
     static let shared = CoreDataManager()
     let persistentContainer: NSPersistentContainer
 
@@ -25,370 +26,435 @@ final class CoreDataManager {
     }
 
     // MARK: - Save
-    func saveContext() {
+    @discardableResult
+    func saveContext() -> Bool {
         if context.hasChanges {
             do {
                 try context.save()
+                return true
             } catch {
-                print("❌ Save failed: \(error)")
+                DebugLogger.print("❌ Save failed: \(error)")
+                return false
             }
         }
-    }
-
-    // MARK: - Create BudgetConfig
-    func createBudgetConfig(salary: Int, payday: Date) {
-        let config = BudgetConfig(context: context)
-        config.setValue(NSDecimalNumber(value: salary), forKey: "salary")
-        config.setValue(payday, forKey: "payday")
-        saveContext()
-    }
-
-    // MARK: - Delete All BudgetConfig (for reset)
-    func deleteAllBudgetConfig() {
-        let request = NSFetchRequest<NSFetchRequestResult>(entityName: "BudgetConfig")
-        let deleteRequest = NSBatchDeleteRequest(fetchRequest: request)
-        do {
-            try context.execute(deleteRequest)
-            saveContext()
-        } catch {
-            print("❌ Delete failed: \(error)")
-        }
+        return true // 변경사항이 없어도 성공으로 간주
     }
     
-    // SetupModel 내
-    func save(budgetModel: BudgetConfigModel) {
-        let context = self.context
-
+    // MARK: - BudgetConfig CRUD
+    func createBudgetConfig(from model: BudgetConfigModel) -> Bool {
         let config = BudgetConfig(context: context)
-        config.setValue(NSDecimalNumber(value: budgetModel.salary), forKey: "salary")
-        config.setValue(NSDecimalNumber(value: budgetModel.payday), forKey: "payday")
+        config.salary = NSDecimalNumber(value: model.salary)
+        config.payday = NSDecimalNumber(value: model.payday)
 
-        for fixed in budgetModel.fixedCosts {
+        for fixed in model.fixedCosts {
             let fixedCost = FixedCost(context: context)
-            fixedCost.setValue(fixed.title, forKey: "title")
-            fixedCost.setValue(NSDecimalNumber(value: fixed.amount), forKey: "amount")
-            
-            // 관계 연결
-            fixedCost.budgetConfig = config // ← FixedCost → BudgetConfig (To-One)
-            config.addToFixedCosts(fixedCost) // ← BudgetConfig → FixedCost (To-Many)
+            fixedCost.title = fixed.title
+            fixedCost.amount = NSDecimalNumber(value: fixed.amount)
+            fixedCost.budgetConfig = config
+            config.addToFixedCosts(fixedCost)
         }
 
-        saveContext()
-    }
-
-    func fetchBudgetModel() -> BudgetConfigModel? {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "BudgetConfig")
-        request.fetchLimit = 1
-
-        guard let config = try? context.fetch(request).first else { return nil }
-
-        let salary = (config.value(forKey: "salary") as? NSDecimalNumber)?.intValue ?? 0
-        let payday = (config.value(forKey: "payday") as? NSDecimalNumber)?.intValue ?? 0
-
-        let fixedSet = config.value(forKey: "fixedCosts") as? Set<NSManagedObject> ?? []
-        let fixedModels: [FixedCostModel] = fixedSet.compactMap {
-            let title = $0.value(forKey: "title") as? String ?? ""
-            let amount = ($0.value(forKey: "amount") as? NSDecimalNumber)?.intValue ?? 0
-            return FixedCostModel(title: title, amount: amount)
-        }
-        
-        print("fetchBudgetModel - fixedModels : \(fixedModels.count)")
-
-        return BudgetConfigModel(salary: salary, payday: payday, fixedCosts: fixedModels)
+        return saveContext()
     }
     
-    // MARK: Home
-    // 오늘 날짜에 데이터가 있는지 확인
-    func ensureTodayDailyBudgetExists() -> DailyBudget {
-        let today = Calendar.current.startOfDay(for: Date())
-        
-        if let existing = fetchDailyBudget(on: today) {
-            return existing
-        }
-
-        guard let config = fetchBudgetModel() else {
-            // fallback
-            return DailyBudget(context: context)
-        }
-
-        let baseAmount = calculateDailyBudget(from: config, for: today)
-
-        let dailyBudget = DailyBudget(context: context)
-        dailyBudget.date = today
-        dailyBudget.availableAmount = NSDecimalNumber(value: baseAmount)
-        dailyBudget.spentAmount = 0
-
-        saveContext()
-        return dailyBudget
+    func fetchBudgetConfigEntity() -> BudgetConfig? {
+        let request: NSFetchRequest<BudgetConfig> = BudgetConfig.fetchRequest()
+        return try? context.fetch(request).first
     }
-    
-    // 월급이 업데이트 되어 하루에 사용가능한 예산을 업데이트
-    func updateTodayBudget() {
-        let today = Calendar.current.startOfDay(for: Date())
-        
-        guard let config = fetchBudgetModel(),
-              let todayBudget = fetchDailyBudget(on: today) else { return }
-        
-        let newBaseAmount = calculateDailyBudget(from: config, for: today)
-        todayBudget.availableAmount = NSDecimalNumber(value: newBaseAmount)
-        
-        print("todayBudget : \(todayBudget.availableAmount)")
-        
-        saveContext()
-    }
-    
-    func calculateDailyBudget(from config: BudgetConfigModel, for date: Date) -> Int {
-        let fixedTotal = config.fixedCosts.map { $0.amount }.reduce(0, +)
-        let usableSalary = config.salary - fixedTotal
-        
-        print("config.salary : \(config.salary)")
-        print("config.fixedCosts : \(config.fixedCosts)")
-        
-        if config.fixedCosts.count > 0 {
-            for i in 0..<config.fixedCosts.count {
-                print("config.fixedCosts : \(config.fixedCosts[i])")
+
+    func fetchBudgetConfig() -> BudgetConfigModel? {
+        let request: NSFetchRequest<BudgetConfig> = BudgetConfig.fetchRequest()
+
+        do {
+            if let config = try context.fetch(request).first { // .first를 사용한 이유: 사용되는 Budget가 1개뿐이라서.
+
+                return BudgetConfigModel(entity: config)
+            } else {
+                return nil // ❗ 자동 생성 제거
             }
+        } catch {
+            DebugLogger.print("❌ BudgetConfig fetch 실패: \(error)")
+            return nil
         }
-        print("fixedTotal : \(fixedTotal)")
-        print("usableSalary : \(usableSalary)")
-
-        let periodStart = calculateCurrentPayPeriodStart(payday: config.payday, today: date)
-        let periodEnd = Calendar.current.date(byAdding: .month, value: 1, to: periodStart)!
-        let totalDays = Calendar.current.dateComponents([.day], from: periodStart, to: periodEnd).day!
-        
-        DebugLogger.printDate("date : ", date)
-        DebugLogger.printDate("periodStart : ", periodStart)
-        DebugLogger.printDate("periodEnd : ", periodEnd)
-
-        return usableSalary / totalDays
     }
     
-    func calculateCurrentPayPeriodStart(payday: Int, today: Date) -> Date {
-        let calendar = Calendar.current
-        let todayComponents = calendar.dateComponents([.year, .month, .day], from: today)
-
-        guard let year = todayComponents.year, let month = todayComponents.month else {
-            return today // fallback
+    func updateBudgetConfig(_ model: BudgetConfigModel) -> Bool {
+        guard let config = fetchBudgetConfigEntity() else {
+            return false
         }
-
-        // 이번 달의 월급일 날짜 구성
-        let paydayThisMonth = calendar.date(from: DateComponents(year: year, month: month, day: payday))!
-
-        if today >= paydayThisMonth {
-            // 오늘이 이번 달 급여일 이후라면 → 이번 달 급여 시작
-            return paydayThisMonth
-        } else {
-            // 오늘이 이번 달 급여일 이전이라면 → 지난 달 급여 시작
-            let previousMonthDate = calendar.date(byAdding: .month, value: -1, to: paydayThisMonth)!
-            return previousMonthDate
-        }
+        
+        config.salary = NSDecimalNumber(value: model.salary)
+        config.payday = NSDecimalNumber(value: model.payday)
+        
+        return saveContext()
     }
+    
+    // TODO: DELETE가 구현되지 않음. 초기값을 초기화하여 새로 시작하는 기능.
+    
+    // MARK: - FixedCost CRUD
+    func createFixedCost(_ model: FixedCostModel) -> Bool {
+        guard let budgetConfig = fetchBudgetConfigEntity() else { return false }
 
-    func fetchDailyBudget(on date: Date) -> DailyBudget? {
-        let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
-        let startOfDay = Calendar.current.startOfDay(for: date)
-        request.predicate = NSPredicate(format: "date == %@", startOfDay as NSDate)
+        let new = FixedCost(context: context)
+        new.id = UUID()
+        new.title = model.title
+        new.amount = NSDecimalNumber(value: model.amount)
+        new.budgetConfig = budgetConfig
+        budgetConfig.addToFixedCosts(new)
 
+        return saveContext()
+    }
+    
+    func fetchFixedCostEntity(id: UUID) -> FixedCost? {
+        let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
         return try? context.fetch(request).first
     }
     
-    // MARK: Spend
-    func saveSpending(title: String, amount: Int, date: Date) {
-        let context = self.context
-        let calendar = Calendar.current
-        let day = calendar.startOfDay(for: date)
+    func fetchFixedCosts() -> [FixedCostModel] {
+        let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
         
-        print("day : \(day)")
-        print("date : \(date)")
-
-        // 1. DailyBudget 가져오기 or 생성
-        let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
-        request.predicate = NSPredicate(format: "date == %@", day as NSDate) // 해당 날짜의 예산 데이터 가져오기
-
-        let dailyBudget = (try? context.fetch(request).first) ?? DailyBudget(context: context)
-        dailyBudget.date = day
-
-        // 2. SpendingRecord 생성
-        let record = SpendingRecord(context: context)
-        record.title = title
-        record.amount = NSDecimalNumber(value: amount)
-        record.date = date
-        record.dailyBudget = dailyBudget
-        dailyBudget.addToSpendingRecords(record)
-
-        // 3. spentAmount 갱신 - 사용한 금액 갱신
-        let records = dailyBudget.spendingRecords as? Set<SpendingRecord> ?? []
-        let total = records
-            .compactMap { $0.amount?.intValue }
-            .reduce(0, +)
-        
-        dailyBudget.spentAmount = NSDecimalNumber(value: total)
-
-        saveContext()
-    }
-    
-    func fetchSpending(on date: Date) -> [SpendingRecord] {
-        let context = self.context
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: date)
-        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
-
-        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
-        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
-        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
-
         do {
-            return try context.fetch(request)
+            let results = try context.fetch(request)
+            return results.map(FixedCostModel.init)
         } catch {
-            print("❌ 지출 내역 가져오기 실패:", error)
+            DebugLogger.print("❌ 고정비 fetch 실패: \(error)")
             return []
         }
     }
     
-    // MARK: Setting View
+    func updateFixedCost(_ model: FixedCostModel) -> Bool {
+        guard let fixedCost = fetchFixedCostEntity(id: model.id) else {
+            return false // ❗ 업데이트 대상 없음
+        }
+
+        fixedCost.title = model.title
+        fixedCost.amount = NSDecimalNumber(value: model.amount)
+        
+        return saveContext() // ✅ 저장 및 성공 여부 반환
+    }
+
+    func deleteFixedCost(id: UUID) -> Bool {
+        guard let fixedCost = fetchFixedCostEntity(id: id) else {
+            return false // ❗ 삭제할 대상이 없음
+        }
+        
+        context.delete(fixedCost)
+        return saveContext() // ✅ 삭제 후 저장 성공 여부 반환
+    }
+    
+    // MARK: - DailyBudget CRUD
+    func createDailyBudget(_ model: DailyBudgetModel) -> Bool {
+        let dailyBudget = DailyBudget(context: context)
+        dailyBudget.availableAmount = NSDecimalNumber(value: model.availableAmount)
+        dailyBudget.date = model.date
+        dailyBudget.spentAmount = NSDecimalNumber(value: model.spentAmount)
+
+        for source in model.carryOverSources {
+            let carryOverSource = CarryOverSource(context: context)
+            carryOverSource.amount = NSDecimalNumber(value: source.amount)
+            carryOverSource.date = source.date
+            carryOverSource.toDate = source.toDate
+            
+            carryOverSource.dailyBudget = dailyBudget
+            dailyBudget.addToCarryOverSources(carryOverSource)
+        }
+        
+        for record in model.spendingRecords {
+            let spendingRecord = SpendingRecord(context: context)
+            spendingRecord.title = record.title
+            spendingRecord.amount = NSDecimalNumber(value: record.amount)
+            spendingRecord.date = record.date
+            
+            spendingRecord.dailyBudget = dailyBudget
+            dailyBudget.addToSpendingRecords(spendingRecord)
+        }
+
+        return saveContext()
+    }
+    
+    func fetchDailyBudgetEntity(date: Date) -> DailyBudget? {
+        let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        request.predicate = NSPredicate(format: "date == %@", startOfDay as NSDate)
+        return try? context.fetch(request).first
+    }
+    
+    func fetchDailyBudgetModel(date: Date) -> DailyBudgetModel? {
+        let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        request.predicate = NSPredicate(format: "date == %@", startOfDay as NSDate)
+
+        do {
+            if let config = try context.fetch(request).first {
+
+                return DailyBudgetModel(entity: config)
+            } else {
+                return nil
+            }
+        } catch {
+            DebugLogger.print("❌ BudgetConfig fetch 실패: \(error)")
+            return nil
+        }
+    }
+    
+    func updateDailyBudget(_ model: DailyBudgetModel) -> Bool {
+        guard let dailyBudget = fetchDailyBudgetEntity(date: model.date) else {
+            return false
+        }
+        
+        dailyBudget.availableAmount = NSDecimalNumber(value: model.availableAmount)
+        dailyBudget.date = model.date
+        dailyBudget.spentAmount = NSDecimalNumber(value: model.spentAmount)
+        
+        return saveContext()
+    }
+    
+    // TODO: - DELETE가 구현되지 않음. 오늘 예산을 지워야하는 경우가 있을까?
+    
+    // MARK: - SpendingRecord CRUD
+    func createSpendingRecord(_ model: SpendingRecordModel) -> Bool {
+        guard let dailyBudget = fetchDailyBudgetEntity(date: model.date) else {
+            return false
+        }
+        
+        let newSpendingRecord = SpendingRecord(context: context)
+        newSpendingRecord.id = UUID()
+        newSpendingRecord.title = model.title
+        newSpendingRecord.amount = NSDecimalNumber(value: model.amount)
+        newSpendingRecord.date = model.date
+        newSpendingRecord.dailyBudget = dailyBudget
+        dailyBudget.addToSpendingRecords(newSpendingRecord)
+        
+        // ✅ 추가된 후 전체 지출 합계를 갱신
+        let total = (dailyBudget.spendingRecords as? Set<SpendingRecord> ?? [])
+            .compactMap { $0.amount?.intValue }
+            .reduce(0, +)
+        dailyBudget.spentAmount = NSDecimalNumber(value: total)
+        
+        return saveContext()
+    }
+    
+    func fetchSpendingRecordEntity(id: UUID) -> SpendingRecord? {
+        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+    
+    func fetchSpendingRecords(date: Date) -> [SpendingRecordModel] {
+        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        request.predicate = NSPredicate(format: "date == %@", startOfDay as NSDate)
+        
+        do {
+            let results = try context.fetch(request)
+            return results.map(SpendingRecordModel.init)
+        } catch {
+            DebugLogger.print("❌ 지출 비용 fetch 실패: \(error)")
+            return []
+        }
+    }
+    
+    func updateSpendingRecord(_ model: SpendingRecordModel) -> Bool {
+        guard let spendingRecord = fetchSpendingRecordEntity(id: model.id) else {
+            return false
+        }
+        
+        spendingRecord.title = model.title
+        spendingRecord.amount = NSDecimalNumber(value: model.amount)
+        spendingRecord.date = model.date
+        
+        return saveContext()
+    }
+    
+    func deleteSpendingRecord(id: UUID) -> Bool {
+        guard let fixedCost = fetchSpendingRecordEntity(id: id) else {
+            return false
+        }
+        
+        context.delete(fixedCost)
+        return saveContext()
+    }
+    
+    // MARK: - CarryOverSource CRUD
+    func createCarryOverSource(_ model: CarryOverSourceModel) -> Bool {
+        guard let dailyBudget = fetchDailyBudgetEntity(date: model.date) else {
+            return false
+        }
+        
+        let newCarryOverSource = CarryOverSource(context: context)
+        newCarryOverSource.id = UUID()
+        newCarryOverSource.amount = NSDecimalNumber(value: model.amount)
+        newCarryOverSource.date = model.date
+        newCarryOverSource.toDate = model.toDate
+        newCarryOverSource.dailyBudget = dailyBudget
+        dailyBudget.addToCarryOverSources(newCarryOverSource)
+        
+        // ✅ 추가된 후 전체 이월 금액 합계를 갱신
+        let total = (dailyBudget.carryOverSources as? Set<SpendingRecord> ?? [])
+            .compactMap { $0.amount?.intValue }
+            .reduce(0, +)
+        dailyBudget.spentAmount = NSDecimalNumber(value: total)
+        
+        return saveContext()
+    }
+    
+    func fetchCarryOverSourceEntity(id: UUID) -> CarryOverSource? {
+        let request: NSFetchRequest<CarryOverSource> = CarryOverSource.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+    
+    func fetchCarryOverSources(date: Date) -> [CarryOverSourceModel] {
+        let request: NSFetchRequest<CarryOverSource> = CarryOverSource.fetchRequest()
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        request.predicate = NSPredicate(format: "date == %@", startOfDay as NSDate)
+        
+        do {
+            let results = try context.fetch(request)
+            return results.map(CarryOverSourceModel.init)
+        } catch {
+            DebugLogger.print("❌ 이월 금액 fetch 실패: \(error)")
+            return []
+        }
+    }
+    
+    func updateCarryOverSource(_ model: CarryOverSourceModel) -> Bool {
+        guard let carryOverSource = fetchCarryOverSourceEntity(id: model.id) else {
+            return false
+        }
+        
+        carryOverSource.amount = NSDecimalNumber(value: model.amount)
+        carryOverSource.date = model.date
+        carryOverSource.toDate = model.toDate
+        
+        return saveContext()
+    }
+    
+    func deleteCarryOverSource(id: UUID) -> Bool {
+        guard let carryOverSource = fetchCarryOverSourceEntity(id: id) else {
+            return false
+        }
+        
+        context.delete(carryOverSource)
+        return saveContext()
+    }
+    
+//    func addCarryOver(_ model: CarryOverSourceModel, to budget: DailyBudget) {
+//        let carry = CarryOverSource(context: context)
+//        carry.amount = NSDecimalNumber(value: model.amount)
+//        carry.date = model.date
+//        carry.toDate = model.toDate
+//        carry.dailyBudget = budget
+//        budget.addToCarryOverSources(carry)
+//        saveContext()
+//    }
+    
+    func deleteCarryOver(_ entity: CarryOverSource) {
+        context.delete(entity)
+        saveContext()
+    }
+    
+    // MARK: - DailyBudget (Home)
+//    func ensureTodayDailyBudgetExists() -> DailyBudget {
+//        let today = Calendar.current.startOfDay(for: Date())
+//
+//        if let existing = fetchDailyBudget(on: today) {
+//            return existing
+//        }
+//
+//        let config = fetchBudgetConfig()
+//        let baseAmount = calculateDailyBudget(from: config, for: today)
+//
+//        let dailyBudget = DailyBudget(context: context)
+//        dailyBudget.date = today
+//        dailyBudget.availableAmount = NSDecimalNumber(value: baseAmount)
+//        dailyBudget.spentAmount = 0
+//
+//        saveContext()
+//        return dailyBudget
+//    }
+//
+//    func updateTodayBudget() {
+//        let today = Calendar.current.startOfDay(for: Date())
+//        let config = fetchBudgetConfig()
+//
+//        guard let todayBudget = fetchDailyBudget(on: today) else { return }
+//
+//        let newBaseAmount = calculateDailyBudget(from: config, for: today)
+//        todayBudget.availableAmount = NSDecimalNumber(value: newBaseAmount)
+//
+//        saveContext()
+//    }
+
+
+//    func fetchDailyBudget(on date: Date) -> DailyBudget? {
+//        let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
+//        let startOfDay = Calendar.current.startOfDay(for: date)
+//        request.predicate = NSPredicate(format: "date == %@", startOfDay as NSDate)
+//        return try? context.fetch(request).first
+//    }
+    
+    // MARK: - Spending
+//    func saveSpending(title: String, amount: Int, date: Date) {
+//        let day = Calendar.current.startOfDay(for: date)
+//        let dailyBudget = fetchDailyBudget(on: day) ?? {
+//            let new = DailyBudget(context: context)
+//            new.date = day
+//            return new
+//        }()
+//
+//        let record = SpendingRecord(context: context)
+//        record.title = title
+//        record.amount = NSDecimalNumber(value: amount)
+//        record.date = date
+//        record.dailyBudget = dailyBudget
+//        dailyBudget.addToSpendingRecords(record)
+//
+//        let records = dailyBudget.spendingRecords as? Set<SpendingRecord> ?? []
+//        let total = records.compactMap { $0.amount?.intValue }.reduce(0, +)
+//        dailyBudget.spentAmount = NSDecimalNumber(value: total)
+//
+//        saveContext()
+//    }
+//
+//    func fetchSpending(on date: Date) -> [SpendingRecord] {
+//        let startOfDay = Calendar.current.startOfDay(for: date)
+//        let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
+//
+//        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+//        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
+//        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
+//
+//        do {
+//            return try context.fetch(request)
+//        } catch {
+//            DebugLogger.print("❌ 지출 내역 가져오기 실패: \(error)")
+//            return []
+//        }
+//    }
+
+    // MARK: - Utilities
     func resetAllData() {
         let entityNames = ["BudgetConfig", "FixedCost", "DailyBudget", "SpendingRecord", "CarryOverSource"]
-        
+
         for entityName in entityNames {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
-            let batchDeleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
-            batchDeleteRequest.resultType = .resultTypeObjectIDs
+            let deleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
+            deleteRequest.resultType = .resultTypeObjectIDs
 
             do {
-                let result = try context.execute(batchDeleteRequest) as? NSBatchDeleteResult
+                let result = try context.execute(deleteRequest) as? NSBatchDeleteResult
                 if let objectIDs = result?.result as? [NSManagedObjectID] {
                     let changes = [NSDeletedObjectsKey: objectIDs]
                     NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [context])
                 }
             } catch {
-                print("❌ Failed to reset \(entityName): \(error)")
+                DebugLogger.print("❌ Failed to reset \(entityName): \(error)")
             }
         }
 
         saveContext()
-        print("✅ CoreData reset completed")
-    }
-    
-    // MARK: - BudgetConfig Fetch
-    func fetchBudgetConfig() -> BudgetConfigModel {
-        let request: NSFetchRequest<BudgetConfig> = BudgetConfig.fetchRequest()
-
-        do {
-            if let config = try context.fetch(request).first {
-                // 💡 FixedCost -> FixedCostModel로 변환
-                let fixedCostEntities = config.fixedCosts?.allObjects as? [FixedCost] ?? []
-                let fixedCostModels: [FixedCostModel] = fixedCostEntities.map {
-                    FixedCostModel(title: $0.title ?? "", amount: Int($0.amount ?? 0))
-                }
-
-                return BudgetConfigModel(
-                    salary: Int(config.salary ?? 0),
-                    payday: Int(config.payday ?? 0),
-                    fixedCosts: fixedCostModels
-                )
-            } else {
-                // 초기값 없으면 새로 생성
-                let newConfig = BudgetConfig(context: context)
-                newConfig.salary = 3000000
-                newConfig.payday = 25
-                try context.save()
-
-                return BudgetConfigModel(salary: 3000000, payday: 25, fixedCosts: [])
-            }
-        } catch {
-            print("❌ BudgetConfig fetch 실패: \(error)")
-            return BudgetConfigModel(salary: 0, payday: 1, fixedCosts: [])
-        }
-    }
-    
-    func fetchBudgetEntity() -> BudgetConfig? {
-        let request: NSFetchRequest<BudgetConfig> = BudgetConfig.fetchRequest()
-        
-        do {
-            let results = try context.fetch(request)
-            return results.first // TODO: -
-        } catch {
-            print("❌ BudgetConfig fetch 실패: \(error)")
-            return nil
-        }
-    }
-
-    // MARK: - BudgetConfig Update
-    func updateBudgetConfig(salary: Int, payday: Int) {
-        let request: NSFetchRequest<BudgetConfig> = BudgetConfig.fetchRequest()
-
-        do {
-            if let config = try context.fetch(request).first {
-                config.salary = NSDecimalNumber(value: salary)
-                config.payday = NSDecimalNumber(value: payday)
-                try context.save()
-            }
-        } catch {
-            print("❌ BudgetConfig 저장 실패: \(error)")
-        }
-    }
-    
-    // MARK: - Fetch Fixed Costs
-    func fetchFixedCosts() -> [FixedCostModel] {
-        let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
-        do {
-            let results = try context.fetch(request)
-            return results.map {
-                FixedCostModel(title: $0.title ?? "", amount: Int($0.amount ?? 0))
-            }
-        } catch {
-            print("❌ 고정비 fetch 실패: \(error)")
-            return []
-        }
-    }
-
-    // MARK: - Delete Fixed Cost
-    func deleteFixedCost(named name: String) {
-        let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
-        request.predicate = NSPredicate(format: "title == %@", name)
-
-        do {
-            if let target = try context.fetch(request).first {
-                context.delete(target)
-                try context.save()
-            }
-        } catch {
-            print("❌ 고정비 삭제 실패: \(error)")
-        }
-    }
-    
-    func fetchFixedCostEntity(named name: String) -> FixedCost? {
-        let request: NSFetchRequest<FixedCost> = FixedCost.fetchRequest()
-        request.predicate = NSPredicate(format: "title == %@", name)
-        return try? context.fetch(request).first
-    }
-
-    // MARK: - 고정비 추가 및 수정
-    func insertFixedCost(_ model: FixedCostModel) {
-        guard let config = fetchBudgetEntity() else { return }
-
-        let new = FixedCost(context: context)
-        new.title = model.title
-        new.amount = NSDecimalNumber(value: model.amount)
-
-        new.budgetConfig = config
-        config.addToFixedCosts(new)
-
-        do {
-            try context.save()
-        } catch {
-            print("❌ 고정비 추가 실패: \(error)")
-        }
-    }
-
-    func updateFixedCost(_ model: FixedCostModel, target: FixedCost) {
-        target.title = model.title
-        target.amount = NSDecimalNumber(value: model.amount)
-
-        do {
-            try context.save()
-        } catch {
-            print("❌ 고정비 수정 실패: \(error)")
-        }
+        DebugLogger.print("✅ CoreData reset completed")
     }
 }

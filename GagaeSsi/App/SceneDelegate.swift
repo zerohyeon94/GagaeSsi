@@ -22,7 +22,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         let initialVC: UIViewController
         
-        if CoreDataManager.shared.fetchBudgetModel() != nil {
+        if let config = CoreDataManager.shared.fetchBudgetConfig() {
             // 저장된 BudgetConfig가 존재함 → 메인 탭으로 진입
             initialVC = MainTabBarController()
         } else {

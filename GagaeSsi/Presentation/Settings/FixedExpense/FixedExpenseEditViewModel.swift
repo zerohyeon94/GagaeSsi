@@ -26,7 +26,7 @@ final class FixedExpenseEditViewModel {
         if let existing = originalObject {
             CoreDataManager.shared.updateFixedCost(fixedCost, target: existing)
         } else {
-            CoreDataManager.shared.insertFixedCost(fixedCost)
+            CoreDataManager.shared.createFixedCost(fixedCost)
         }
         
         AppEventBus.shared.fixedExpenseChanged.onNext(())

@@ -65,6 +65,60 @@ final class HomeViewModel {
         print("total : \(total)")
     }
     
+    func fetchTodayBudget() {
+        let today = Calendar.current.startOfDay(for: Date())
+
+        // 1. 오늘 데이터 조회
+        if let model = CoreDataManager.shared.fetchDailyBudgetModel(date: today) {
+            applyDailyBudgetModel(model)
+        } else {
+            // 2. BudgetConfig 가져오기
+            guard let config = CoreDataManager.shared.fetchBudgetConfig() else {
+                DebugLogger.print("❌ BudgetConfig 없음 → Budget 설정 필요")
+                return
+            }
+
+            // 3. 계산
+            let baseAmount = DailyBudgetCalculator.calculate(from: config, for: today)
+
+            // 4. 모델 생성
+            let newModel = DailyBudgetModel(
+                availableAmount: baseAmount,
+                date: today,
+                spendAmount: 0,
+                carryOverSources: [],
+                spendingRecords: []
+            )
+
+            // 5. CoreData에 저장
+            let success = CoreDataManager.shared.createDailyBudget(newModel)
+            if success {
+                applyDailyBudgetModel(newModel)
+            } else {
+                DebugLogger.print("❌ DailyBudget 생성 실패")
+            }
+        }
+    }
+
+    private func applyDailyBudgetModel(_ model: DailyBudgetModel) {
+        let base = model.availableAmount
+        let spent = model.spendAmount
+        let carry = model.carryOverSources.map { $0.amount }.reduce(0, +)
+        let total = base + carry - spent
+
+        baseBudget.accept(base)
+        carryOverAmount.accept(carry)
+        spentAmount.accept(spent)
+        todayAvailableAmount.accept(total)
+
+        print("오늘 Budget")
+        print("base : \(base)")
+        print("spent : \(spent)")
+        print("carry : \(carry)")
+        print("total : \(total)")
+    }
+
+    
     func updateTodayBudget() {
         CoreDataManager.shared.updateTodayBudget()
     }

@@ -15,9 +15,15 @@ final class EditBudgetViewModel {
     }
     
     func fetchBudget() {
-        budget = CoreDataManager.shared.fetchBudgetConfig()
-        tempSalary = budget.salary
-        tempPayday = budget.payday
+        if let config = CoreDataManager.shared.fetchBudgetConfig() {
+            // ✅ 존재할 때 처리
+            budget = config
+            tempSalary = budget.salary
+            tempPayday = budget.payday
+        } else {
+            // ❗ 존재하지 않음 → 사용자에게 메시지 표시하거나 초기 설정 유도
+//            showInitialSetupUI()
+        }        
     }
     
     var tempSalary: Int = 0

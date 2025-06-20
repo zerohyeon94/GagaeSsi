@@ -8,6 +8,7 @@
     <entity name="CarryOverSource" representedClassName="CarryOverSource" syncable="YES" codeGenerationType="class">
         <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
         <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="toDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="dailyBudget" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="DailyBudget" inverseName="carryOverSources" inverseEntity="DailyBudget"/>
     </entity>
@@ -20,12 +21,14 @@
     </entity>
     <entity name="FixedCost" representedClassName="FixedCost" syncable="YES" codeGenerationType="class">
         <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="title" optional="YES" attributeType="String"/>
         <relationship name="budgetConfig" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="BudgetConfig" inverseName="fixedCosts" inverseEntity="BudgetConfig"/>
     </entity>
     <entity name="SpendingRecord" representedClassName="SpendingRecord" syncable="YES" codeGenerationType="class">
         <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
         <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="title" optional="YES" attributeType="String"/>
         <relationship name="dailyBudget" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="DailyBudget" inverseName="spendingRecords" inverseEntity="DailyBudget"/>
     </entity>

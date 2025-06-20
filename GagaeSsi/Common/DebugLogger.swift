@@ -8,6 +8,11 @@
 import Foundation
 
 enum DebugLogger {
+    static func print(_ items: Any...) {
+#if DEBUG
+        print("🪵", items.map { "\($0)" }.joined(separator: " "))
+#endif
+    }
 
     static func printDate(_ label: String, _ date: Date) {
         let formatter = DateFormatter()
