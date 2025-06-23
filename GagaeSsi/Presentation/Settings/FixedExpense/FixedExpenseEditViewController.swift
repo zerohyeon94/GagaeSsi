@@ -35,12 +35,8 @@ final class FixedExpenseEditViewController: BaseViewController {
         return btn
     }()
 
-    init(editingItem: FixedCostModel? = nil, object: FixedCost? = nil) {
-        if let item = editingItem {
-            viewModel = FixedExpenseEditViewModel(title: item.title, amount: item.amount, object: object)
-        } else {
-            viewModel = FixedExpenseEditViewModel()
-        }
+    init(editingItem: FixedCostModel? = nil) {
+        viewModel = FixedExpenseEditViewModel(fixedCost: editingItem)
         super.init(nibName: nil, bundle: nil)
     }
 

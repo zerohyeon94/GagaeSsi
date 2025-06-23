@@ -98,10 +98,9 @@ final class SetupFixedCostViewController: BaseViewController {
 
             let plainText = rawAmountText.replacingOccurrences(of: ",", with: "")
             guard let amount = Int(plainText) else { return }
-            
-            print("amount : \(amount)")
+            let id = UUID()
 
-            self.viewModel.model.fixedCosts.append(FixedCostModel(title: title, amount: amount))
+            self.viewModel.model.fixedCosts.append(FixedCostModel(id: id, title: title, amount: amount))
             self.tableView.reloadData()
         }
 
@@ -118,15 +117,16 @@ final class SetupFixedCostViewController: BaseViewController {
 
     // 고정비 추가 없이 홈화면으로 이동
     @objc private func skipTapped() {
-        CoreDataManager.shared.createBudgetConfig(from: viewModel.model)
-        
-        switchToMainTabBar()
+        viewModel.saveBudgetConfig { [weak self] success in
+            // 필요하다면 저장 실패 처리 (ex: alert)
+            self?.switchToMainTabBar()
+        }
     }
-    
+
     @objc private func saveTapped() {
-        CoreDataManager.shared.createBudgetConfig(from: viewModel.model)
-        
-        switchToMainTabBar()
+        viewModel.saveBudgetConfig { [weak self] success in
+            self?.switchToMainTabBar()
+        }
     }
     
     private func switchToMainTabBar() {

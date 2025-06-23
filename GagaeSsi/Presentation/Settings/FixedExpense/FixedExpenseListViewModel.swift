@@ -27,12 +27,16 @@ final class FixedExpenseListViewModel {
         let fixedCostList = CoreDataManager.shared.fetchFixedCosts()
         fixedCosts.accept(fixedCostList)
     }
+    
+    func fetchFixedCostEntity(id: UUID) -> FixedCost? {
+        return CoreDataManager.shared.fetchFixedCostEntity(id: id)
+    }
 
-    func deleteItem(at index: Int) {
+    func deleteFixedCost(at index: Int) {
         var current = fixedCosts.value
-        let item = current[index]
+        let fixedCost = current[index]
         
-        CoreDataManager.shared.deleteFixedCost(named: item.title)
+        CoreDataManager.shared.deleteFixedCost(id: fixedCost.id)
         
         current.remove(at: index)
         fixedCosts.accept(current)

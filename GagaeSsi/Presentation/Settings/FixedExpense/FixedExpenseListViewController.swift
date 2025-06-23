@@ -76,7 +76,7 @@ extension FixedExpenseListViewController: UITableViewDataSource, UITableViewDele
     // Swipe-to-delete
     func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         let delete = UIContextualAction(style: .destructive, title: "삭제") { [weak self] _, _, completion in
-            self?.viewModel.deleteItem(at: indexPath.row)
+            self?.viewModel.deleteFixedCost(at: indexPath.row)
             completion(true)
         }
         return UISwipeActionsConfiguration(actions: [delete])
@@ -85,11 +85,8 @@ extension FixedExpenseListViewController: UITableViewDataSource, UITableViewDele
     // 사용자가 특정 셀을 탭한 경우
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         let model = viewModel.fixedCosts.value[indexPath.row]
-        let name = model.title
 
-        // CoreData 객체도 함께 찾기
-        let fixedObjects = CoreDataManager.shared.fetchFixedCostEntity(named: name)
-        let editVC = FixedExpenseEditViewController(editingItem: model, object: fixedObjects)
+        let editVC = FixedExpenseEditViewController(editingItem: model)
 
         navigationController?.pushViewController(editVC, animated: true)
     }

@@ -33,6 +33,12 @@ struct FixedCostModel {
     var title: String
     var amount: Int
     
+    init(id: UUID, title: String, amount: Int) {
+        self.id = id
+        self.title = title
+        self.amount = amount
+    }
+    
     init(entity: FixedCost) {
         self.id = entity.id ?? UUID()
         self.title = entity.title ?? ""

@@ -22,4 +22,9 @@ final class SetupViewModel {
     var isValid: Bool {
         return tempSalary > 0 && tempPayday > 0
     }
+    
+    func saveBudgetConfig(completion: @escaping (Bool) -> Void) {
+        let success = CoreDataManager.shared.createBudgetConfig(from: model)
+        completion(success)
+    }
 }

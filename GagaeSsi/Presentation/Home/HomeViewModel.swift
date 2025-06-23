@@ -28,7 +28,6 @@ final class HomeViewModel {
         AppEventBus.shared.budgetChanged
             .observe(on: MainScheduler.instance)
             .subscribe(onNext: { [weak self] in
-                self?.updateTodayBudget()
                 self?.fetchTodayBudget()
             })
             .disposed(by: disposeBag)
@@ -36,33 +35,9 @@ final class HomeViewModel {
         AppEventBus.shared.fixedExpenseChanged
             .observe(on: MainScheduler.instance)
             .subscribe(onNext: { [weak self] in
-                self?.updateTodayBudget()
                 self?.fetchTodayBudget()
             })
             .disposed(by: disposeBag)
-    }
-    
-    func fetchTodayBudget() {
-        let dailyBudget = CoreDataManager.shared.ensureTodayDailyBudgetExists()
-        
-        let base = dailyBudget.availableAmount?.intValue ?? 0
-        let spent = dailyBudget.spentAmount?.intValue ?? 0
-        let carry = dailyBudget.carryOverSources?
-            .compactMap { ($0 as? CarryOverSource)?.amount?.intValue }
-            .reduce(0, +) ?? 0
-        let total = base + carry - spent
-        
-        baseBudget.accept(base)
-        carryOverAmount.accept(carry)
-        spentAmount.accept(spent)
-        
-        todayAvailableAmount.accept(total)
-        
-        print("오늘 Budget")
-        print("base : \(base)")
-        print("spent : \(spent)")
-        print("carry : \(carry)")
-        print("total : \(total)")
     }
     
     func fetchTodayBudget() {
@@ -85,7 +60,6 @@ final class HomeViewModel {
             let newModel = DailyBudgetModel(
                 availableAmount: baseAmount,
                 date: today,
-                spendAmount: 0,
                 carryOverSources: [],
                 spendingRecords: []
             )
@@ -102,24 +76,13 @@ final class HomeViewModel {
 
     private func applyDailyBudgetModel(_ model: DailyBudgetModel) {
         let base = model.availableAmount
-        let spent = model.spendAmount
+        let spent = model.spendingRecords.map { $0.amount }.reduce(0, +)
         let carry = model.carryOverSources.map { $0.amount }.reduce(0, +)
-        let total = base + carry - spent
+        let total = model.todayAvailable
 
         baseBudget.accept(base)
         carryOverAmount.accept(carry)
         spentAmount.accept(spent)
         todayAvailableAmount.accept(total)
-
-        print("오늘 Budget")
-        print("base : \(base)")
-        print("spent : \(spent)")
-        print("carry : \(carry)")
-        print("total : \(total)")
-    }
-
-    
-    func updateTodayBudget() {
-        CoreDataManager.shared.updateTodayBudget()
     }
 }

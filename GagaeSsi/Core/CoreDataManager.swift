@@ -148,7 +148,6 @@ final class CoreDataManager {
         let dailyBudget = DailyBudget(context: context)
         dailyBudget.availableAmount = NSDecimalNumber(value: model.availableAmount)
         dailyBudget.date = model.date
-        dailyBudget.spentAmount = NSDecimalNumber(value: model.spentAmount)
 
         for source in model.carryOverSources {
             let carryOverSource = CarryOverSource(context: context)
@@ -205,7 +204,6 @@ final class CoreDataManager {
         
         dailyBudget.availableAmount = NSDecimalNumber(value: model.availableAmount)
         dailyBudget.date = model.date
-        dailyBudget.spentAmount = NSDecimalNumber(value: model.spentAmount)
         
         return saveContext()
     }
@@ -225,12 +223,6 @@ final class CoreDataManager {
         newSpendingRecord.date = model.date
         newSpendingRecord.dailyBudget = dailyBudget
         dailyBudget.addToSpendingRecords(newSpendingRecord)
-        
-        // ✅ 추가된 후 전체 지출 합계를 갱신
-        let total = (dailyBudget.spendingRecords as? Set<SpendingRecord> ?? [])
-            .compactMap { $0.amount?.intValue }
-            .reduce(0, +)
-        dailyBudget.spentAmount = NSDecimalNumber(value: total)
         
         return saveContext()
     }
@@ -256,23 +248,26 @@ final class CoreDataManager {
     }
     
     func updateSpendingRecord(_ model: SpendingRecordModel) -> Bool {
-        guard let spendingRecord = fetchSpendingRecordEntity(id: model.id) else {
+        guard let spendingRecord = fetchSpendingRecordEntity(id: model.id),
+              let dailyBudget = spendingRecord.dailyBudget else {
             return false
         }
-        
+
         spendingRecord.title = model.title
         spendingRecord.amount = NSDecimalNumber(value: model.amount)
         spendingRecord.date = model.date
-        
+
         return saveContext()
     }
     
     func deleteSpendingRecord(id: UUID) -> Bool {
-        guard let fixedCost = fetchSpendingRecordEntity(id: id) else {
+        guard let spendingRecord = fetchSpendingRecordEntity(id: id),
+              let dailyBudget = spendingRecord.dailyBudget else {
             return false
         }
-        
-        context.delete(fixedCost)
+
+        context.delete(spendingRecord)
+
         return saveContext()
     }
     
@@ -289,12 +284,6 @@ final class CoreDataManager {
         newCarryOverSource.toDate = model.toDate
         newCarryOverSource.dailyBudget = dailyBudget
         dailyBudget.addToCarryOverSources(newCarryOverSource)
-        
-        // ✅ 추가된 후 전체 이월 금액 합계를 갱신
-        let total = (dailyBudget.carryOverSources as? Set<SpendingRecord> ?? [])
-            .compactMap { $0.amount?.intValue }
-            .reduce(0, +)
-        dailyBudget.spentAmount = NSDecimalNumber(value: total)
         
         return saveContext()
     }
@@ -340,99 +329,10 @@ final class CoreDataManager {
         return saveContext()
     }
     
-//    func addCarryOver(_ model: CarryOverSourceModel, to budget: DailyBudget) {
-//        let carry = CarryOverSource(context: context)
-//        carry.amount = NSDecimalNumber(value: model.amount)
-//        carry.date = model.date
-//        carry.toDate = model.toDate
-//        carry.dailyBudget = budget
-//        budget.addToCarryOverSources(carry)
-//        saveContext()
-//    }
-    
     func deleteCarryOver(_ entity: CarryOverSource) {
         context.delete(entity)
         saveContext()
     }
-    
-    // MARK: - DailyBudget (Home)
-//    func ensureTodayDailyBudgetExists() -> DailyBudget {
-//        let today = Calendar.current.startOfDay(for: Date())
-//
-//        if let existing = fetchDailyBudget(on: today) {
-//            return existing
-//        }
-//
-//        let config = fetchBudgetConfig()
-//        let baseAmount = calculateDailyBudget(from: config, for: today)
-//
-//        let dailyBudget = DailyBudget(context: context)
-//        dailyBudget.date = today
-//        dailyBudget.availableAmount = NSDecimalNumber(value: baseAmount)
-//        dailyBudget.spentAmount = 0
-//
-//        saveContext()
-//        return dailyBudget
-//    }
-//
-//    func updateTodayBudget() {
-//        let today = Calendar.current.startOfDay(for: Date())
-//        let config = fetchBudgetConfig()
-//
-//        guard let todayBudget = fetchDailyBudget(on: today) else { return }
-//
-//        let newBaseAmount = calculateDailyBudget(from: config, for: today)
-//        todayBudget.availableAmount = NSDecimalNumber(value: newBaseAmount)
-//
-//        saveContext()
-//    }
-
-
-//    func fetchDailyBudget(on date: Date) -> DailyBudget? {
-//        let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
-//        let startOfDay = Calendar.current.startOfDay(for: date)
-//        request.predicate = NSPredicate(format: "date == %@", startOfDay as NSDate)
-//        return try? context.fetch(request).first
-//    }
-    
-    // MARK: - Spending
-//    func saveSpending(title: String, amount: Int, date: Date) {
-//        let day = Calendar.current.startOfDay(for: date)
-//        let dailyBudget = fetchDailyBudget(on: day) ?? {
-//            let new = DailyBudget(context: context)
-//            new.date = day
-//            return new
-//        }()
-//
-//        let record = SpendingRecord(context: context)
-//        record.title = title
-//        record.amount = NSDecimalNumber(value: amount)
-//        record.date = date
-//        record.dailyBudget = dailyBudget
-//        dailyBudget.addToSpendingRecords(record)
-//
-//        let records = dailyBudget.spendingRecords as? Set<SpendingRecord> ?? []
-//        let total = records.compactMap { $0.amount?.intValue }.reduce(0, +)
-//        dailyBudget.spentAmount = NSDecimalNumber(value: total)
-//
-//        saveContext()
-//    }
-//
-//    func fetchSpending(on date: Date) -> [SpendingRecord] {
-//        let startOfDay = Calendar.current.startOfDay(for: date)
-//        let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
-//
-//        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
-//        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
-//        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
-//
-//        do {
-//            return try context.fetch(request)
-//        } catch {
-//            DebugLogger.print("❌ 지출 내역 가져오기 실패: \(error)")
-//            return []
-//        }
-//    }
 
     // MARK: - Utilities
     func resetAllData() {

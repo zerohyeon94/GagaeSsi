@@ -10,14 +10,26 @@ import Foundation
 struct DailyBudgetModel {
     var availableAmount: Int
     var date: Date
-    var spentAmount: Int
     var carryOverSources: [CarryOverSourceModel]
     var spendingRecords: [SpendingRecordModel]
+    
+    // 실제 오늘 쓸 수 있는 총 금액
+    var todayAvailable: Int {
+        let carry = carryOverSources.map { $0.amount }.reduce(0, +)
+        let spent = spendingRecords.map { $0.amount }.reduce(0, +)
+        return availableAmount + carry - spent
+    }
+    
+    init(availableAmount: Int, date: Date, carryOverSources: [CarryOverSourceModel], spendingRecords: [SpendingRecordModel]) {
+        self.availableAmount = availableAmount
+        self.date = date
+        self.carryOverSources = carryOverSources
+        self.spendingRecords = spendingRecords
+    }
     
     init(entity: DailyBudget) {
         self.availableAmount = Int(truncating: entity.availableAmount ?? 0)
         self.date = entity.date ?? Date()
-        self.spentAmount = Int(truncating: entity.spentAmount ?? 0)
         
         let sources = entity.carryOverSources?.allObjects as? [CarryOverSource] ?? []
         self.carryOverSources = sources.map(CarryOverSourceModel.init)

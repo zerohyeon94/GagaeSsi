@@ -15,7 +15,6 @@
     <entity name="DailyBudget" representedClassName="DailyBudget" syncable="YES" codeGenerationType="class">
         <attribute name="availableAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
         <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="spentAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
         <relationship name="carryOverSources" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="CarryOverSource" inverseName="dailyBudget" inverseEntity="CarryOverSource"/>
         <relationship name="spendingRecords" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SpendingRecord" inverseName="dailyBudget" inverseEntity="SpendingRecord"/>
     </entity>

@@ -118,14 +118,19 @@ final class SpendViewController: BaseViewController {
     }
 
     @objc private func saveTapped() {
-        viewModel.currentInput.title = viewModel.tempTitle
-        viewModel.currentInput.amount = viewModel.tempAmount
-        viewModel.currentInput.date = datePicker.date
+        viewModel.model.title = viewModel.tempTitle
+        viewModel.model.amount = viewModel.tempAmount
+        viewModel.model.date = datePicker.date
 
-        viewModel.saveSpending {
-            self.tableView.reloadData()
-            self.clearForm()
-            self.showAlert("저장 완료", "소비 기록이 저장되었습니다.")
+        viewModel.saveSpending { [weak self] success in
+            guard let self = self else { return }
+            
+            if success {
+                AlertHelper.showConfirm(on: self, title: "성공", message: "지출 내역 저장에 성공했습니다.")
+                self.navigationController?.popViewController(animated: true)
+            } else {
+                AlertHelper.showError(on: self, message: "지출 내역 저장에 실패했습니다.")
+            }
         }
     }
 
@@ -155,14 +160,8 @@ extension SpendViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         let record = viewModel.spendingRecords[indexPath.row]
-        
-        guard let title = record.title, let amount = record.amount else {
-            cell.textLabel?.text = "데이터를 불러오지 못함."
-            
-            return cell
-        }
 
-        cell.textLabel?.text = "\(title) : \(FormatterUtils.currencyString(from: Int(truncating: amount)))"
+        cell.textLabel?.text = "\(title) : \(FormatterUtils.currencyString(from: record.amount))"
         return cell
     }
 }

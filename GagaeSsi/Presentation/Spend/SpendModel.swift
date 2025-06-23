@@ -13,6 +13,13 @@ struct SpendingRecordModel {
     var amount: Int
     var date: Date
     
+    init(id: UUID, title: String, amount: Int, date: Date) {
+        self.id = id
+        self.title = title
+        self.amount = amount
+        self.date = date
+    }
+    
     init(entity: SpendingRecord) {
         self.id = entity.id ?? UUID()
         self.title = entity.title ?? ""
