@@ -12,8 +12,20 @@ final class CoreDataManager {
     static let shared = CoreDataManager()
     let persistentContainer: NSPersistentContainer
 
-    private init() {
+//    private init() {
+//        persistentContainer = NSPersistentContainer(name: "GagaeSsi")
+//        persistentContainer.loadPersistentStores { (desc, error) in
+//            if let error = error {
+//                fatalError("Core Data store failed: \(error)")
+//            }
+//        }
+//    }
+    
+    init(inMemory: Bool = false) {
         persistentContainer = NSPersistentContainer(name: "GagaeSsi")
+        if inMemory {
+            persistentContainer.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
+        }
         persistentContainer.loadPersistentStores { (desc, error) in
             if let error = error {
                 fatalError("Core Data store failed: \(error)")
