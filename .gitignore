@@ -12,6 +12,10 @@ DerivedData/
 xcuserdata/
 *.xcscmblueprint
 
+# Xcode workspace UI state
+*.xcuserstate
+*.xcuserdatad/
+
 # SwiftPM
 .build/
 
