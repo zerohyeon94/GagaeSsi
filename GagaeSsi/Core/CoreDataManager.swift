@@ -11,15 +11,6 @@ final class CoreDataManager {
     // MARK: - Singleton & Persistent Container
     static let shared = CoreDataManager()
     let persistentContainer: NSPersistentContainer
-
-//    private init() {
-//        persistentContainer = NSPersistentContainer(name: "GagaeSsi")
-//        persistentContainer.loadPersistentStores { (desc, error) in
-//            if let error = error {
-//                fatalError("Core Data store failed: \(error)")
-//            }
-//        }
-//    }
     
     init(inMemory: Bool = false) {
         persistentContainer = NSPersistentContainer(name: "GagaeSsi")
@@ -128,6 +119,7 @@ final class CoreDataManager {
         
         do {
             let results = try context.fetch(request)
+            print("results : \(results.count)")
             return results.map(FixedCostModel.init)
         } catch {
             DebugLogger.print("❌ 고정비 fetch 실패: \(error)")
@@ -248,7 +240,10 @@ final class CoreDataManager {
     func fetchSpendingRecords(date: Date) -> [SpendingRecordModel] {
         let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
         let startOfDay = Calendar.current.startOfDay(for: date)
-        request.predicate = NSPredicate(format: "date == %@", startOfDay as NSDate)
+        let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
         
         do {
             let results = try context.fetch(request)
