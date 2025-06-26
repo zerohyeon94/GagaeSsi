@@ -11,9 +11,12 @@ final class CoreDataManager {
     // MARK: - Singleton & Persistent Container
     static let shared = CoreDataManager()
     let persistentContainer: NSPersistentContainer
-
-    private init() {
+    
+    init(inMemory: Bool = false) {
         persistentContainer = NSPersistentContainer(name: "GagaeSsi")
+        if inMemory {
+            persistentContainer.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
+        }
         persistentContainer.loadPersistentStores { (desc, error) in
             if let error = error {
                 fatalError("Core Data store failed: \(error)")
@@ -236,7 +239,10 @@ final class CoreDataManager {
     func fetchSpendingRecords(date: Date) -> [SpendingRecordModel] {
         let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
         let startOfDay = Calendar.current.startOfDay(for: date)
-        request.predicate = NSPredicate(format: "date == %@", startOfDay as NSDate)
+        let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
         
         do {
             let results = try context.fetch(request)
@@ -356,5 +362,30 @@ final class CoreDataManager {
 
         saveContext()
         DebugLogger.print("✅ CoreData reset completed")
+    }
+}
+
+extension CoreDataManager {
+    /// 오늘 날짜의 DailyBudgetModel을 "항상" 반환 (없으면 생성)
+    func fetchOrCreateTodayDailyBudget() -> DailyBudgetModel? {
+        let today = Calendar.current.startOfDay(for: Date())
+        
+        if let model = fetchDailyBudgetModel(date: today) {
+            return model
+        }
+        // BudgetConfig 없으면 nil
+        guard let config = fetchBudgetConfig() else {
+            DebugLogger.print("❌ BudgetConfig 없음 → Budget 설정 필요")
+            return nil
+        }
+        let baseAmount = DailyBudgetCalculator.calculate(from: config, for: today)
+        let newModel = DailyBudgetModel(
+            availableAmount: baseAmount,
+            date: today,
+            carryOverSources: [],
+            spendingRecords: []
+        )
+        let success = createDailyBudget(newModel)
+        return success ? newModel : nil
     }
 }

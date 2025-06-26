@@ -45,6 +45,13 @@ struct CarryOverSourceModel {
     var date: Date      // 남은 금액이 발생한 날짜
     var toDate: Date    // 이월된 날짜 (다음날)
     
+    init(id: UUID, amount: Int, date: Date, toDate: Date) {
+        self.id = id
+        self.amount = amount
+        self.date = date
+        self.toDate = toDate
+    }
+    
     init(entity: CarryOverSource) {
         self.id = entity.id ?? UUID()
         self.amount = Int(truncating: entity.amount ?? 0)

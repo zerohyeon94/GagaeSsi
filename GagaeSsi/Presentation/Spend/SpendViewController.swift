@@ -56,7 +56,10 @@ final class SpendViewController: BaseViewController {
         setupTableView()
         setupActions()
         
-        viewModel.fetchSpending(on: Date())
+        let today = Calendar.current.startOfDay(for: Date())
+        
+        viewModel.fetchSpending(on: today)
+        print("viewDidLoad : \(viewModel.spendingRecords)")
     }
 
     private func setupUI() {
@@ -128,6 +131,7 @@ final class SpendViewController: BaseViewController {
             if success {
                 AlertHelper.showConfirm(on: self, title: "성공", message: "지출 내역 저장에 성공했습니다.")
                 self.navigationController?.popViewController(animated: true)
+                self.tableView.reloadData()
             } else {
                 AlertHelper.showError(on: self, message: "지출 내역 저장에 실패했습니다.")
             }
@@ -154,14 +158,16 @@ final class SpendViewController: BaseViewController {
 // MARK: - UITableViewDataSource
 extension SpendViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        viewModel.spendingRecords.count
+        print("tableView : \(viewModel.spendingRecords)")
+        
+        return viewModel.spendingRecords.count
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         let record = viewModel.spendingRecords[indexPath.row]
 
-        cell.textLabel?.text = "\(title) : \(FormatterUtils.currencyString(from: record.amount))"
+        cell.textLabel?.text = "\(record.title) : \(FormatterUtils.currencyString(from: record.amount))"
         return cell
     }
 }

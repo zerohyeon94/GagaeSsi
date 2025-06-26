@@ -9,14 +9,17 @@ import Foundation
 
 final class FixedExpenseEditViewModel {
     var fixedCost: FixedCostModel
+    let isNew: Bool // init 시점에서 신규 or 수정 구분하는 Flag사용
     var onSave: ((FixedCostModel, FixedCost?) -> Void)? // 객체 함께 전달
 
     init(fixedCost: FixedCostModel? = nil) {
         if let fixedCost = fixedCost {
             self.fixedCost = fixedCost
+            self.isNew = false
         } else {
             // 신규 생성 시: id를 새로 부여하고, 값은 비워둠
             self.fixedCost = FixedCostModel(id: UUID(), title: "", amount: 0)
+            self.isNew = true
         }
         self.tempTitle = self.fixedCost.title
         self.tempAmount = self.fixedCost.amount
@@ -25,15 +28,14 @@ final class FixedExpenseEditViewModel {
     func saveFixedExpense() {
         let success: Bool
 
-        if fixedCost.id == nil {
-            // 새로 생성
+        if isNew {
             success = CoreDataManager.shared.createFixedCost(fixedCost)
         } else {
-            // 기존 엔티티 수정
             success = CoreDataManager.shared.updateFixedCost(fixedCost)
         }
 
         if success {
+            print("create or update success")
             AppEventBus.shared.fixedExpenseChanged.onNext(())
         } else {
             // 실패 시 에러 안내(알럿 등) 처리 가능

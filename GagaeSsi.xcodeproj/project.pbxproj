@@ -12,7 +12,18 @@
 		E26DE8082DF6B3230075797A /* RxCocoa in Frameworks */ = {isa = PBXBuildFile; productRef = E26DE8072DF6B3230075797A /* RxCocoa */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		E205A01F2E0BC67800D13995 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E20EC1D92DDDC0770014FAD7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E20EC1E02DDDC0770014FAD7;
+			remoteInfo = GagaeSsi;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		E205A01B2E0BC67800D13995 /* GagaeSsiTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GagaeSsiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E20EC1E12DDDC0770014FAD7 /* GagaeSsi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GagaeSsi.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -27,6 +38,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		E205A01C2E0BC67800D13995 /* GagaeSsiTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = GagaeSsiTests;
+			sourceTree = "<group>";
+		};
 		E20EC1E32DDDC0770014FAD7 /* GagaeSsi */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -38,6 +54,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		E205A0182E0BC67800D13995 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E20EC1DE2DDDC0770014FAD7 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -55,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				E20EC1E32DDDC0770014FAD7 /* GagaeSsi */,
+				E205A01C2E0BC67800D13995 /* GagaeSsiTests */,
 				E26DE8002DF69CE10075797A /* Frameworks */,
 				E20EC1E22DDDC0770014FAD7 /* Products */,
 			);
@@ -64,6 +88,7 @@
 			isa = PBXGroup;
 			children = (
 				E20EC1E12DDDC0770014FAD7 /* GagaeSsi.app */,
+				E205A01B2E0BC67800D13995 /* GagaeSsiTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -78,6 +103,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		E205A01A2E0BC67800D13995 /* GagaeSsiTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E205A0232E0BC67800D13995 /* Build configuration list for PBXNativeTarget "GagaeSsiTests" */;
+			buildPhases = (
+				E205A0172E0BC67800D13995 /* Sources */,
+				E205A0182E0BC67800D13995 /* Frameworks */,
+				E205A0192E0BC67800D13995 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E205A0202E0BC67800D13995 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				E205A01C2E0BC67800D13995 /* GagaeSsiTests */,
+			);
+			name = GagaeSsiTests;
+			packageProductDependencies = (
+			);
+			productName = GagaeSsiTests;
+			productReference = E205A01B2E0BC67800D13995 /* GagaeSsiTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		E20EC1E02DDDC0770014FAD7 /* GagaeSsi */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = E20EC1F72DDDC0790014FAD7 /* Build configuration list for PBXNativeTarget "GagaeSsi" */;
@@ -113,6 +161,10 @@
 				LastSwiftUpdateCheck = 1630;
 				LastUpgradeCheck = 1630;
 				TargetAttributes = {
+					E205A01A2E0BC67800D13995 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = E20EC1E02DDDC0770014FAD7;
+					};
 					E20EC1E02DDDC0770014FAD7 = {
 						CreatedOnToolsVersion = 16.3;
 					};
@@ -136,11 +188,19 @@
 			projectRoot = "";
 			targets = (
 				E20EC1E02DDDC0770014FAD7 /* GagaeSsi */,
+				E205A01A2E0BC67800D13995 /* GagaeSsiTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		E205A0192E0BC67800D13995 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E20EC1DF2DDDC0770014FAD7 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -151,6 +211,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		E205A0172E0BC67800D13995 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E20EC1DD2DDDC0770014FAD7 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -160,7 +227,51 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		E205A0202E0BC67800D13995 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E20EC1E02DDDC0770014FAD7 /* GagaeSsi */;
+			targetProxy = E205A01F2E0BC67800D13995 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		E205A0212E0BC67800D13995 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZE232G8NYV;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yhjo.GagaeSsiTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GagaeSsi.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/GagaeSsi";
+			};
+			name = Debug;
+		};
+		E205A0222E0BC67800D13995 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZE232G8NYV;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yhjo.GagaeSsiTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GagaeSsi.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/GagaeSsi";
+			};
+			name = Release;
+		};
 		E20EC1F82DDDC0790014FAD7 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -341,6 +452,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		E205A0232E0BC67800D13995 /* Build configuration list for PBXNativeTarget "GagaeSsiTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E205A0212E0BC67800D13995 /* Debug */,
+				E205A0222E0BC67800D13995 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		E20EC1DC2DDDC0770014FAD7 /* Build configuration list for PBXProject "GagaeSsi" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

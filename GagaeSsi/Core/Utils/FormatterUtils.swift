@@ -36,3 +36,14 @@ enum FormatterUtils {
         return value == 0 ? "" : "\(currencyFormatter.string(from: NSNumber(value: value)) ?? "")"
     }
 }
+
+extension FormatterUtils {
+    // "yyyy-MM-dd" 형식으로 날짜를 문자열로 변환
+    static func formattedDate(_ date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+}

@@ -28,49 +28,46 @@ final class HomeViewModel {
         AppEventBus.shared.budgetChanged
             .observe(on: MainScheduler.instance)
             .subscribe(onNext: { [weak self] in
-                self?.fetchTodayBudget()
+                self?.recalculateTodayBudget()
             })
             .disposed(by: disposeBag)
         
         AppEventBus.shared.fixedExpenseChanged
             .observe(on: MainScheduler.instance)
             .subscribe(onNext: { [weak self] in
-                self?.fetchTodayBudget()
+                self?.recalculateTodayBudget()
             })
             .disposed(by: disposeBag)
     }
     
-    func fetchTodayBudget() {
+    func recalculateTodayBudget() {
         let today = Calendar.current.startOfDay(for: Date())
+        guard let config = CoreDataManager.shared.fetchBudgetConfig() else {
+            DebugLogger.print("❌ BudgetConfig 없음 → Budget 설정 필요")
+            return
+        }
+        let baseAmount = DailyBudgetCalculator.calculate(from: config, for: today)
 
-        // 1. 오늘 데이터 조회
-        if let model = CoreDataManager.shared.fetchDailyBudgetModel(date: today) {
-            applyDailyBudgetModel(model)
-        } else {
-            // 2. BudgetConfig 가져오기
-            guard let config = CoreDataManager.shared.fetchBudgetConfig() else {
-                DebugLogger.print("❌ BudgetConfig 없음 → Budget 설정 필요")
-                return
-            }
-
-            // 3. 계산
-            let baseAmount = DailyBudgetCalculator.calculate(from: config, for: today)
-
-            // 4. 모델 생성
-            let newModel = DailyBudgetModel(
+        if var model = CoreDataManager.shared.fetchOrCreateTodayDailyBudget() {
+            // 기존 carryOverSources, spendingRecords 유지
+            let updatedModel = DailyBudgetModel(
                 availableAmount: baseAmount,
-                date: today,
-                carryOverSources: [],
-                spendingRecords: []
+                date: model.date,
+                carryOverSources: model.carryOverSources,
+                spendingRecords: model.spendingRecords
             )
-
-            // 5. CoreData에 저장
-            let success = CoreDataManager.shared.createDailyBudget(newModel)
+            let success = CoreDataManager.shared.updateDailyBudget(updatedModel)
             if success {
-                applyDailyBudgetModel(newModel)
+                applyDailyBudgetModel(updatedModel)
             } else {
-                DebugLogger.print("❌ DailyBudget 생성 실패")
+                DebugLogger.print("❌ DailyBudget 업데이트 실패")
             }
+        }
+    }
+    
+    func fetchTodayBudget() {
+        if let model = CoreDataManager.shared.fetchOrCreateTodayDailyBudget() {
+            applyDailyBudgetModel(model)
         }
     }
 

@@ -32,7 +32,7 @@ class BaseViewController: UIViewController {
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        logLifeCycle("viewDidDisappear")
+        logLifeCycle("viewDidDisappear") 
     }
 
     private func logLifeCycle(_ methodName: String) {
