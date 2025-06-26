@@ -119,7 +119,6 @@ final class CoreDataManager {
         
         do {
             let results = try context.fetch(request)
-            print("results : \(results.count)")
             return results.map(FixedCostModel.init)
         } catch {
             DebugLogger.print("❌ 고정비 fetch 실패: \(error)")
@@ -363,5 +362,30 @@ final class CoreDataManager {
 
         saveContext()
         DebugLogger.print("✅ CoreData reset completed")
+    }
+}
+
+extension CoreDataManager {
+    /// 오늘 날짜의 DailyBudgetModel을 "항상" 반환 (없으면 생성)
+    func fetchOrCreateTodayDailyBudget() -> DailyBudgetModel? {
+        let today = Calendar.current.startOfDay(for: Date())
+        
+        if let model = fetchDailyBudgetModel(date: today) {
+            return model
+        }
+        // BudgetConfig 없으면 nil
+        guard let config = fetchBudgetConfig() else {
+            DebugLogger.print("❌ BudgetConfig 없음 → Budget 설정 필요")
+            return nil
+        }
+        let baseAmount = DailyBudgetCalculator.calculate(from: config, for: today)
+        let newModel = DailyBudgetModel(
+            availableAmount: baseAmount,
+            date: today,
+            carryOverSources: [],
+            spendingRecords: []
+        )
+        let success = createDailyBudget(newModel)
+        return success ? newModel : nil
     }
 }
