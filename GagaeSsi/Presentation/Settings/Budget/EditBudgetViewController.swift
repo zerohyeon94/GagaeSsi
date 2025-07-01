@@ -8,9 +8,10 @@
 import UIKit
 
 final class EditBudgetViewController: BaseViewController {
-    
+    // MARK: - Properties
     private let viewModel = EditBudgetViewModel()
 
+    // MARK: - UI Components
     private let salaryTextField: UITextField = {
         let tf = UITextField()
         tf.placeholder = "월급 입력 (예: 3,000,000)"
@@ -37,6 +38,7 @@ final class EditBudgetViewController: BaseViewController {
         return btn
     }()
 
+    // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "예산 설정"
@@ -48,6 +50,7 @@ final class EditBudgetViewController: BaseViewController {
         setText()
     }
 
+    // MARK: - UI Setup
     private func setupUI() {
         let stack = UIStackView(arrangedSubviews: [salaryTextField, paydayTextField, saveButton])
         stack.axis = .vertical
@@ -103,6 +106,7 @@ final class EditBudgetViewController: BaseViewController {
         navigationController?.popViewController(animated: true)
     }
     
+    // MARK: - Helpers
     private func updateNextButtonState() {
         saveButton.isEnabled = viewModel.isValid
         saveButton.backgroundColor = viewModel.isValid ? .systemBlue : .systemGray

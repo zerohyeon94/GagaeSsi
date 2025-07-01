@@ -7,6 +7,7 @@
 
 import Foundation
 
+// MARK: - 날짜별 예산 모델
 struct DailyBudgetModel {
     var availableAmount: Int
     var date: Date
@@ -14,12 +15,15 @@ struct DailyBudgetModel {
     var spendingRecords: [SpendingRecordModel]
     
     // 실제 오늘 쓸 수 있는 총 금액
+    // MARK: - Computed
     var todayAvailable: Int {
         let carry = carryOverSources.map { $0.amount }.reduce(0, +)
         let spent = spendingRecords.map { $0.amount }.reduce(0, +)
         return availableAmount + carry - spent
     }
     
+    // MARK: - Initializer
+    /// 일반 생성자
     init(availableAmount: Int, date: Date, carryOverSources: [CarryOverSourceModel], spendingRecords: [SpendingRecordModel]) {
         self.availableAmount = availableAmount
         self.date = date
@@ -27,6 +31,7 @@ struct DailyBudgetModel {
         self.spendingRecords = spendingRecords
     }
     
+    /// CoreData Entity -> Model 변환 생성자
     init(entity: DailyBudget) {
         self.availableAmount = Int(truncating: entity.availableAmount ?? 0)
         self.date = entity.date ?? Date()
@@ -39,6 +44,7 @@ struct DailyBudgetModel {
     }
 }
 
+// MARK: - 이월 금액 모델
 struct CarryOverSourceModel {
     var id: UUID
     var amount: Int

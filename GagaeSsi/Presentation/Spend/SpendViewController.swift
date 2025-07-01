@@ -8,9 +8,10 @@
 import UIKit
 
 final class SpendViewController: BaseViewController {
+    // MARK: - Properties
+    private let viewModel: SpendViewModel
 
-    private let viewModel = SpendViewModel()
-
+    // MARK: - UI Components
     private let titleTextField: UITextField = {
         let tf = UITextField()
         tf.placeholder = "내용 (예: 커피)"
@@ -49,7 +50,18 @@ final class SpendViewController: BaseViewController {
         tv.translatesAutoresizingMaskIntoConstraints = false
         return tv
     }()
+    
+    // MARK: - Initializer
+    init(viewModel: SpendViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
 
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()

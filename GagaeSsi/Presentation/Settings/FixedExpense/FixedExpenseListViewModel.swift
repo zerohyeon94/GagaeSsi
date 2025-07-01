@@ -10,10 +10,13 @@ import RxSwift
 import RxRelay
 
 final class FixedExpenseListViewModel {
+    // MARK: - Output State
     var fixedCosts = BehaviorRelay<[FixedCostModel]>(value: [])
     
+    // MARK: - Private
     private let disposeBag = DisposeBag()
     
+    // MARK: - Init/Bind
     func bind() {
         AppEventBus.shared.fixedExpenseChanged
             .observe(on: MainScheduler.instance)
@@ -23,6 +26,7 @@ final class FixedExpenseListViewModel {
             .disposed(by: disposeBag)
     }
 
+    // MARK: - Public Methods
     func fetchFixedCosts() {
         let fixedCostList = CoreDataManager.shared.fetchFixedCosts()
         fixedCosts.accept(fixedCostList)

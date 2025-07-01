@@ -10,8 +10,9 @@ import RxSwift
 import RxCocoa
 
 final class HomeViewController: BaseViewController {
+    // MARK: - Properties
+    private let viewModel: HomeViewModel
     private let disposeBag = DisposeBag()
-    private let viewModel = HomeViewModel()
 
     // MARK: - UI Components
     private let availableTodayLabel: UILabel = {
@@ -59,8 +60,18 @@ final class HomeViewController: BaseViewController {
         button.layer.cornerRadius = 10
         return button
     }()
+    
+    // MARK: - Initializer
+    init(viewModel: HomeViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
 
-    // MARK: - View Lifecycle
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -73,7 +84,7 @@ final class HomeViewController: BaseViewController {
         viewModel.fetchTodayBudget()
     }
 
-    // MARK: - Layout
+    // MARK: - UI Setup
     private func setupLayout() {
         [availableTodayLabel, calculationInfoLabel, recentSummaryView, recordButton].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
@@ -105,7 +116,7 @@ final class HomeViewController: BaseViewController {
         ])
     }
     
-    // MARK: - Data Binding
+    // MARK: - Bindings
     private func bind() {
         viewModel.todayAvailableAmount
             .observe(on: MainScheduler.instance)
@@ -131,6 +142,7 @@ final class HomeViewController: BaseViewController {
         .disposed(by: disposeBag)
     }
     
+    // MARK: - Event Handlers
     private func updateBudgetLabel(total: Int) {
         let title = "오늘 사용할 수 있는 금액: "
         let value = FormatterUtils.currencyString(from: total)

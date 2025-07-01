@@ -8,8 +8,10 @@
 import UIKit
 
 final class FixedExpenseEditViewController: BaseViewController {
+    // MARK: - Properties
     private let viewModel: FixedExpenseEditViewModel
 
+    // MARK: - UI Components
     private let titleTextField: UITextField = {
         let tf = UITextField()
         tf.placeholder = "고정비 이름 (예: 월세)"
@@ -35,6 +37,7 @@ final class FixedExpenseEditViewController: BaseViewController {
         return btn
     }()
 
+    // MARK: - Initializer
     init(editingItem: FixedCostModel? = nil) {
         viewModel = FixedExpenseEditViewModel(fixedCost: editingItem)
         super.init(nibName: nil, bundle: nil)
@@ -44,6 +47,7 @@ final class FixedExpenseEditViewController: BaseViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "고정비 항목"
@@ -54,6 +58,7 @@ final class FixedExpenseEditViewController: BaseViewController {
         setText()
     }
 
+    // MARK: - UI Setup
     private func setupUI() {
         let stack = UIStackView(arrangedSubviews: [titleTextField, amountTextField, saveButton])
         stack.axis = .vertical
@@ -112,6 +117,7 @@ final class FixedExpenseEditViewController: BaseViewController {
         navigationController?.popViewController(animated: true)
     }
     
+    // MARK: - Helpers
     private func updateNextButtonState() {
         saveButton.isEnabled = viewModel.isValid
         saveButton.backgroundColor = viewModel.isValid ? .systemBlue : .systemGray

@@ -8,10 +8,20 @@
 import Foundation
 
 final class FixedExpenseEditViewModel {
+    // MARK: - Properties
     var fixedCost: FixedCostModel
     let isNew: Bool // init 시점에서 신규 or 수정 구분하는 Flag사용
+    /// 실시간 유효성 체크용 임시 변수 (화면과 연결)
+    var tempTitle: String = ""
+    var tempAmount: Int = 0
+    var tempDate: Date = Date()
     var onSave: ((FixedCostModel, FixedCost?) -> Void)? // 객체 함께 전달
-
+    // MARK: - Computed
+    var isValid: Bool {
+        return tempTitle != "" && tempAmount > 0
+    }
+    
+    // MARK: - Init
     init(fixedCost: FixedCostModel? = nil) {
         if let fixedCost = fixedCost {
             self.fixedCost = fixedCost
@@ -25,6 +35,7 @@ final class FixedExpenseEditViewModel {
         self.tempAmount = self.fixedCost.amount
     }
     
+    // MARK: - Public Methods
     func saveFixedExpense() {
         let success: Bool
 
@@ -40,14 +51,5 @@ final class FixedExpenseEditViewModel {
         } else {
             // 실패 시 에러 안내(알럿 등) 처리 가능
         }
-    }
-    
-    // 실시간 유효성 체크용 임시 변수 (화면과 연결)
-    var tempTitle: String = ""
-    var tempAmount: Int = 0
-    var tempDate: Date = Date()
-
-    var isValid: Bool {
-        return tempTitle != "" && tempAmount > 0
     }
 }

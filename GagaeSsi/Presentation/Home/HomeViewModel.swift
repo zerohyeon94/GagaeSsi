@@ -10,13 +10,16 @@ import RxSwift
 import RxRelay
 
 final class HomeViewModel {
-    var todayAvailableAmount = BehaviorRelay<Int>(value: 0)
+    // MARK: - Output State
+    let todayAvailableAmount = BehaviorRelay<Int>(value: 0)
     let baseBudget = BehaviorRelay<Int>(value: 0)
     let carryOverAmount = BehaviorRelay<Int>(value: 0)
     let spentAmount = BehaviorRelay<Int>(value: 0)
     
+    // MARK: - Private
     private let disposeBag = DisposeBag()
     
+    // MARK: - Init/Bind
     func bind() {
         AppEventBus.shared.spendingAdded
             .observe(on: MainScheduler.instance)
@@ -38,6 +41,13 @@ final class HomeViewModel {
                 self?.recalculateTodayBudget()
             })
             .disposed(by: disposeBag)
+    }
+    
+    // MARK: - Public Methods
+    func fetchTodayBudget() {
+        if let model = CoreDataManager.shared.fetchOrCreateTodayDailyBudget() {
+            applyDailyBudgetModel(model)
+        }
     }
     
     func recalculateTodayBudget() {
@@ -65,12 +75,7 @@ final class HomeViewModel {
         }
     }
     
-    func fetchTodayBudget() {
-        if let model = CoreDataManager.shared.fetchOrCreateTodayDailyBudget() {
-            applyDailyBudgetModel(model)
-        }
-    }
-
+    // MARK: - Private Methods
     private func applyDailyBudgetModel(_ model: DailyBudgetModel) {
         let base = model.availableAmount
         let spent = model.spendingRecords.map { $0.amount }.reduce(0, +)

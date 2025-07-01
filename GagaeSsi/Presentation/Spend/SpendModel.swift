@@ -7,12 +7,15 @@
 
 import Foundation
 
+// MARK: - 소비 기록 모델
 struct SpendingRecordModel {
     var id: UUID
     var title: String
     var amount: Int
     var date: Date
     
+    // MARK: - Initializer
+    /// 일반 생성자
     init(id: UUID, title: String, amount: Int, date: Date) {
         self.id = id
         self.title = title
@@ -20,6 +23,7 @@ struct SpendingRecordModel {
         self.date = date
     }
     
+    /// CoreData Entity -> Model 변환 생성자
     init(entity: SpendingRecord) {
         self.id = entity.id ?? UUID()
         self.title = entity.title ?? ""

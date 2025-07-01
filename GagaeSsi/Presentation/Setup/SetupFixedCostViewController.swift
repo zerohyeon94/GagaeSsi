@@ -8,17 +8,16 @@
 import UIKit
 
 final class SetupFixedCostViewController: BaseViewController {
+    // MARK: - Properties
+    private let viewModel: SetupViewModel
     
-    // MARK: - UI
+    // MARK: - UI Components
     private let tableView = UITableView()
     private let addButton = UIButton(type: .system)
     private let skipButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
 
-    // MARK: - ViewModel
-    private let viewModel: SetupViewModel
-
-    // MARK: - Init
+    // MARK: - Initializer
     init(viewModel: SetupViewModel) {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
@@ -37,7 +36,7 @@ final class SetupFixedCostViewController: BaseViewController {
         setupActions()
     }
 
-    // MARK: - UI 구성
+    // MARK: - UI Setup
     private func setupUI() {
         addButton.setTitle("＋ 고정비 추가", for: .normal)
         skipButton.setTitle("건너뛰기", for: .normal)
@@ -73,16 +72,16 @@ final class SetupFixedCostViewController: BaseViewController {
     private func setupTableView() {
         tableView.register(FixedCostCell.self, forCellReuseIdentifier: "FixedCostCell")
         tableView.dataSource = self
-        tableView.delegate = self
     }
 
+    // MARK: - Actions/Bindings
     private func setupActions() {
         addButton.addTarget(self, action: #selector(addFixedCostTapped), for: .touchUpInside)
         skipButton.addTarget(self, action: #selector(skipTapped), for: .touchUpInside)
         saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
     }
-
-    // MARK: - Actions
+    
+    // MARK: - Event Handlers
     @objc private func addFixedCostTapped() {
         let alert = UIAlertController(title: "고정비 추가", message: nil, preferredStyle: .alert)
         alert.addTextField { $0.placeholder = "이름 (예: 집세)" }
@@ -114,8 +113,7 @@ final class SetupFixedCostViewController: BaseViewController {
         
         textField.text = result.formatted
     }
-
-    // 고정비 추가 없이 홈화면으로 이동
+    
     @objc private func skipTapped() {
         viewModel.saveBudgetConfig { [weak self] success in
             // 필요하다면 저장 실패 처리 (ex: alert)
@@ -146,7 +144,7 @@ final class SetupFixedCostViewController: BaseViewController {
 }
 
 // MARK: - TableView DataSource
-extension SetupFixedCostViewController: UITableViewDataSource, UITableViewDelegate {
+extension SetupFixedCostViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return viewModel.model.fixedCosts.count
     }

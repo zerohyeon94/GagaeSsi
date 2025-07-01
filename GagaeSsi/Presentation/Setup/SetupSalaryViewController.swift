@@ -8,6 +8,8 @@
 import UIKit
 
 final class SetupSalaryViewController: BaseViewController {
+    // MARK: - Properties
+    private let viewModel: SetupViewModel
     
     // MARK: - UI Components
     private let salaryTextField: UITextField = {
@@ -35,10 +37,8 @@ final class SetupSalaryViewController: BaseViewController {
         btn.layer.cornerRadius = 8
         return btn
     }()
-
-    // MARK: - ViewModel
-    private let viewModel: SetupViewModel
     
+    // MARK: - Initializer
     init(viewModel: SetupViewModel) {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
@@ -48,7 +48,7 @@ final class SetupSalaryViewController: BaseViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    // MARK: - View Lifecycle
+    // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -56,7 +56,7 @@ final class SetupSalaryViewController: BaseViewController {
         setupActions()
     }
 
-    // MARK: - Layout
+    // MARK: - UI Setup
     private func setupLayout() {
         [salaryTextField, paydayTextField, nextButton].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
@@ -78,19 +78,18 @@ final class SetupSalaryViewController: BaseViewController {
         ])
     }
 
-    // MARK: - Actions
+    // MARK: - Actions/Bindings
     private func setupActions() {
         salaryTextField.addTarget(self, action: #selector(salaryChanged), for: .editingChanged)
         paydayTextField.addTarget(self, action: #selector(paydayChanged), for: .editingChanged)
         nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
     }
     
+    // MARK: - Event Handlers
     @objc private func salaryChanged() {
         guard let result = FormatterUtils.formatCurrencyInput(salaryTextField.text) else { return }
 
-        // ViewModel 임시 값에 저장 (실시간 유효성 검사용)
         viewModel.tempSalary = result.plainNumber
-        
         salaryTextField.text = result.formatted
 
         updateNextButtonState()
@@ -113,6 +112,7 @@ final class SetupSalaryViewController: BaseViewController {
         navigationController?.pushViewController(fixedCostVC, animated: true)
     }
 
+    // MARK: - Helpers
     private func updateNextButtonState() {
         nextButton.isEnabled = viewModel.isValid
         nextButton.backgroundColor = viewModel.isValid ? .systemBlue : .systemGray

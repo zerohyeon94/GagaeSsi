@@ -9,11 +9,19 @@ import UIKit
 import RxSwift
 
 final class FixedExpenseListViewController: BaseViewController {
-    private let disposeBag = DisposeBag()
+    // MARK: - Properties
     private let viewModel = FixedExpenseListViewModel()
+    private let disposeBag = DisposeBag()
     
-    private let tableView = UITableView()
+    // MARK: - UI Components
+    private let tableView: UITableView = {
+        let tv = UITableView()
+        
+        tv.translatesAutoresizingMaskIntoConstraints = false
+        return tv
+    }()
 
+    // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "고정비 목록"
@@ -27,6 +35,7 @@ final class FixedExpenseListViewController: BaseViewController {
         viewModel.fetchFixedCosts()
     }
 
+    // MARK: - UI Setup
     private func setupTableView() {
         view.addSubview(tableView)
         tableView.frame = view.bounds
@@ -35,6 +44,14 @@ final class FixedExpenseListViewController: BaseViewController {
         tableView.delegate = self
     }
     
+    // MARK: - Actions
+    @objc private func didTapAdd() {
+        let editVC = FixedExpenseEditViewController()
+        
+        navigationController?.pushViewController(editVC, animated: true)
+    }
+    
+    // MARK: - Bindings
     private func bind() {
         viewModel.fixedCosts
             .observe(on: MainScheduler.instance)
@@ -44,6 +61,7 @@ final class FixedExpenseListViewController: BaseViewController {
             .disposed(by: disposeBag)
     }
 
+    // MARK: - Event Handlers
     private func setupNavigationBar() {
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .add,
@@ -51,15 +69,10 @@ final class FixedExpenseListViewController: BaseViewController {
             action: #selector(didTapAdd)
         )
     }
-
-    @objc private func didTapAdd() {
-        let editVC = FixedExpenseEditViewController()
-        
-        navigationController?.pushViewController(editVC, animated: true)
-    }
 }
 
-extension FixedExpenseListViewController: UITableViewDataSource, UITableViewDelegate {
+// MARK: - UITableViewDataSource
+extension FixedExpenseListViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         viewModel.fixedCosts.value.count
     }
@@ -72,7 +85,10 @@ extension FixedExpenseListViewController: UITableViewDataSource, UITableViewDele
         
         return cell
     }
+}
 
+// MARK: - UITableViewDelegate
+extension FixedExpenseListViewController: UITableViewDelegate {
     // Swipe-to-delete
     func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         let delete = UIContextualAction(style: .destructive, title: "삭제") { [weak self] _, _, completion in

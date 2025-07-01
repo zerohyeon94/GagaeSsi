@@ -8,23 +8,27 @@
 import UIKit
 
 final class MainTabBarController: UITabBarController {
-
+    // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
         setupTabs()
     }
 
+    // MARK: - UI Setup
     private func setupTabs() {
-        let homeVC = HomeViewController()
+        let homeVM = HomeViewModel()
+        let homeVC = HomeViewController(viewModel: homeVM)
         homeVC.tabBarItem = UITabBarItem(title: "홈", image: UIImage(systemName: "house"), tag: 0)
 
-        let spendVC = SpendViewController()
+        let spendVM = SpendViewModel()
+        let spendVC = SpendViewController(viewModel: spendVM)
         spendVC.tabBarItem = UITabBarItem(title: "소비", image: UIImage(systemName: "creditcard"), tag: 1)
 
         let statsVC = StatsViewController()
         statsVC.tabBarItem = UITabBarItem(title: "통계", image: UIImage(systemName: "chart.bar"), tag: 2)
 
-        let settingsVC = SettingsViewController()
+        let settingVM = setSettingViewModel()
+        let settingsVC = SettingsViewController(viewModel: settingVM)
         settingsVC.tabBarItem = UITabBarItem(title: "설정", image: UIImage(systemName: "gearshape"), tag: 3)
 
         let homeNav = UINavigationController(rootViewController: homeVC)
@@ -33,5 +37,34 @@ final class MainTabBarController: UITabBarController {
         let settingsNav = UINavigationController(rootViewController: settingsVC)
 
         viewControllers = [homeNav, spendNav, statsNav, settingsNav]
+    }
+    
+    // MARK: - Private Methods
+    private func setSettingViewModel() -> SettingsViewModel {
+        let settingVM = SettingsViewModel { [weak self] action in
+            guard let self = self else { return }
+            switch action {
+            case .editBudget:
+                print("➡️ 월급 수정 화면으로 이동")
+                let editVC = EditBudgetViewController()
+                if let nav = self.selectedViewController as? UINavigationController {
+                    nav.pushViewController(editVC, animated: true)
+                }
+            case .manageFixedExpenses:
+                print("➡️ 고정비 관리 화면으로 이동")
+                let fixedVC = FixedExpenseListViewController()
+                if let nav = self.selectedViewController as? UINavigationController {
+                    nav.pushViewController(fixedVC, animated: true)
+                }
+            case .resetData:
+                print("🗑 데이터 초기화")
+            case .backupData:
+                print("📦 데이터 백업")
+            case .sendFeedback:
+                print("📧 피드백 전송")
+            }
+        }
+        
+        return settingVM
     }
 }

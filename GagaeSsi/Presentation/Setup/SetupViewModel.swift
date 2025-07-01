@@ -8,21 +8,22 @@
 import Foundation
 
 final class SetupViewModel {
-    // 모델 상태 보관용
+    // MARK: - Properties
     var model: BudgetConfigModel
+    var tempSalary: Int = 0
+    var tempPayday: Int = 0
 
+    // MARK: - Computed
+    var isValid: Bool {
+        tempSalary > 0 && tempPayday > 0
+    }
+    
+    // MARK: - Init
     init() {
         self.model = BudgetConfigModel(salary: 0, payday: 0, fixedCosts: [])
     }
     
-    // 실시간 유효성 체크용 임시 변수 (화면과 연결)
-    var tempSalary: Int = 0
-    var tempPayday: Int = 0
-
-    var isValid: Bool {
-        return tempSalary > 0 && tempPayday > 0
-    }
-    
+    // MARK: - Public Methods
     func saveBudgetConfig(completion: @escaping (Bool) -> Void) {
         let success = CoreDataManager.shared.createBudgetConfig(from: model)
         completion(success)

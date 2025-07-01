@@ -8,8 +8,10 @@
 import Foundation
 
 final class SettingsViewModel {
+    // MARK: - Properties
     var settingSections: [[SettingItem]] = []
 
+    // MARK: - Init
     init(onSelect: @escaping (SettingsAction) -> Void) {
         settingSections = [
             [
