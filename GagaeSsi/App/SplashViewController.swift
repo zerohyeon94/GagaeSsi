@@ -10,7 +10,8 @@ import UIKit
 class SplashViewController: UIViewController {
     
     private let imageView: UIImageView = {
-        let imageView = UIImageView(image: UIImage(named: "splashImage"))
+        let imageView = UIImageView()
+        imageView.image = UIImage(named: "splashImage")
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         return imageView
