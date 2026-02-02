@@ -12,12 +12,42 @@ final class SetupSalaryViewController: BaseViewController {
     private let viewModel: SetupViewModel
     
     // MARK: - UI Components
+    private let characterImageView: UIImageView = {
+       let iv = UIImageView()
+        iv.image = UIImage(named: "characterPig")
+        iv.contentMode = .scaleAspectFit
+        return iv
+    }()
+    
+    private let titleLabel: UILabel = {
+        let label = UILabel()
+        label.text = "월급을 입력해주세요."
+        label.textColor = UIColor(named: "textColor")
+        return label
+    }()
+    
+    private let currencyLabel: UILabel = {
+        let label = UILabel()
+        label.text = "₩"
+        label.font = UIFont.boldSystemFont(ofSize: 20)
+        return label
+    }()
+    
     private let salaryTextField: UITextField = {
         let tf = UITextField()
-        tf.placeholder = "월급을 입력하세요 (예: 3,000,000)"
-        tf.borderStyle = .roundedRect
+        tf.placeholder = "0,000,000"
+//        tf.borderStyle = .roundedRect
         tf.keyboardType = .numberPad
         return tf
+    }()
+    
+    private let salaryStackView: UIStackView = {
+        let sv = UIStackView()
+        sv.axis = .horizontal
+        sv.alignment = .fill
+        sv.distribution = .equalSpacing
+        sv.spacing = 8
+        return sv
     }()
 
     private let paydayTextField: UITextField = {
@@ -58,18 +88,30 @@ final class SetupSalaryViewController: BaseViewController {
 
     // MARK: - UI Setup
     private func setupLayout() {
-        [salaryTextField, paydayTextField, nextButton].forEach {
+        [characterImageView, titleLabel, salaryStackView, paydayTextField, nextButton].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
         }
+        
+        [currencyLabel, salaryTextField].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            salaryStackView.addArrangedSubview($0)
+        }
 
         NSLayoutConstraint.activate([
-            salaryTextField.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
-            salaryTextField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            salaryTextField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            characterImageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            characterImageView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            characterImageView.widthAnchor.constraint(equalToConstant: 100),
+            characterImageView.heightAnchor.constraint(equalToConstant: 100),
             
-            paydayTextField.topAnchor.constraint(equalTo: salaryTextField.bottomAnchor, constant: 30),
-            paydayTextField.leadingAnchor.constraint(equalTo: salaryTextField.leadingAnchor),
+            titleLabel.topAnchor.constraint(equalTo: characterImageView.bottomAnchor, constant: 20),
+            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            
+            salaryStackView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            salaryStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            
+            paydayTextField.topAnchor.constraint(equalTo: salaryStackView.bottomAnchor, constant: 30),
+            paydayTextField.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             
             nextButton.topAnchor.constraint(equalTo: paydayTextField.bottomAnchor, constant: 40),
             nextButton.leadingAnchor.constraint(equalTo: salaryTextField.leadingAnchor),
@@ -88,6 +130,8 @@ final class SetupSalaryViewController: BaseViewController {
     // MARK: - Event Handlers
     @objc private func salaryChanged() {
         guard let result = FormatterUtils.formatCurrencyInput(salaryTextField.text) else { return }
+        
+        currencyLabel.textColor = .text
 
         viewModel.tempSalary = result.plainNumber
         salaryTextField.text = result.formatted

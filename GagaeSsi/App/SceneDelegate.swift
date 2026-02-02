@@ -20,18 +20,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         let window = UIWindow(windowScene: windowScene)
         
-        let initialVC: UIViewController
-        
-        if let config = CoreDataManager.shared.fetchBudgetConfig() {
-            // 저장된 BudgetConfig가 존재함 → 메인 탭으로 진입
-            initialVC = MainTabBarController()
-        } else {
-            // 설정 정보 없음 → Setup 진행
-            let viewModel = SetupViewModel()
-            initialVC = UINavigationController(rootViewController: SetupSalaryViewController(viewModel: viewModel))
-        }
-        
-        window.rootViewController = initialVC
+        let splashVC = SplashViewController()
+        window.rootViewController = splashVC
         window.makeKeyAndVisible()
         
         self.window = window
