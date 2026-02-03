@@ -28,8 +28,7 @@ final class MainTabBarController: UITabBarController {
         let statsVC = StatsViewController()
         statsVC.tabBarItem = UITabBarItem(title: "통계", image: UIImage(systemName: "chart.bar"), tag: 2)
 
-        let settingVM = setSettingViewModel()
-        let settingsVC = SettingsViewController(viewModel: settingVM)
+        let settingsVC = SettingsViewController()
         settingsVC.tabBarItem = UITabBarItem(title: "설정", image: UIImage(systemName: "gearshape"), tag: 3)
 
         let homeNav = UINavigationController(rootViewController: homeVC)
@@ -38,40 +37,5 @@ final class MainTabBarController: UITabBarController {
         let settingsNav = UINavigationController(rootViewController: settingsVC)
 
         viewControllers = [homeNav, spendNav, statsNav, settingsNav]
-    }
-    
-    // MARK: - Private Methods
-    private func setSettingViewModel() -> SettingsViewModel {
-        let settingVM = SettingsViewModel { [weak self] action in
-            guard let self = self else { return }
-            switch action {
-            case .editBudget:
-                print("➡️ 월급 수정 화면으로 이동")
-                let editView = EditBudgetView()
-                let hostingVC = UIHostingController(rootView: editView)
-                hostingVC.title = "월급 수정 설정"
-                
-                if let nav = self.selectedViewController as? UINavigationController {
-                    nav.pushViewController(hostingVC, animated: true)
-                }
-            case .manageFixedExpenses:
-                print("➡️ 고정비 관리 화면으로 이동")
-                let fixedListView = FixedExpenseListView()
-                let hostingVC = UIHostingController(rootView: fixedListView)
-                hostingVC.title = "고정비 관리"
-                
-                if let nav = self.selectedViewController as? UINavigationController {
-                    nav.pushViewController(hostingVC, animated: true)
-                }
-            case .resetData:
-                print("🗑 데이터 초기화")
-            case .backupData:
-                print("📦 데이터 백업")
-            case .sendFeedback:
-                print("📧 피드백 전송")
-            }
-        }
-        
-        return settingVM
     }
 }
