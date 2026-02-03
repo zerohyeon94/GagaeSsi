@@ -31,7 +31,7 @@ struct BudgetConfigModel: Equatable, Codable {
 }
 
 // MARK: - 고정비 모델
-struct FixedCostModel: Equatable, Codable {
+struct FixedCostModel: Identifiable, Equatable, Codable {
     var id: UUID
     var title: String
     var amount: Int

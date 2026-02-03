@@ -21,6 +21,7 @@ final class HomeViewModel {
     
     // MARK: - Init/Bind
     func bind() {
+        // TODO: SwiftUI로 적용하지 화면은 UIKit에서 사용하기 때문에 유지
         AppEventBus.shared.spendingAdded
             .observe(on: MainScheduler.instance)
             .subscribe(onNext: { [weak self] in

@@ -8,7 +8,7 @@
 import Foundation
 
 // MARK: - 소비 기록 모델
-struct SpendingRecordModel {
+struct SpendingRecordModel: Identifiable {
     var id: UUID
     var title: String
     var amount: Int

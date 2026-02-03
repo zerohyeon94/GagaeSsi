@@ -47,7 +47,7 @@ final class FixedExpenseEditViewModel {
 
         if success {
             print("create or update success")
-            AppEventBus.shared.fixedExpenseChanged.onNext(())
+            AppEventBus.shared.notifyFixedExpenseChanged()
         } else {
             // 실패 시 에러 안내(알럿 등) 처리 가능
         }

@@ -37,7 +37,7 @@ final class EditBudgetViewModel {
         let success = CoreDataManager.shared.updateBudgetConfig(budget)
         if success {
             print("✅ 업데이트 성공")
-            AppEventBus.shared.budgetChanged.onNext(())
+            AppEventBus.shared.notifyBudgetChanged()
         } else {
             print("⚠️ BudgetConfig가 존재하지 않아 업데이트 실패")
             // → 설정화면 유도 or alert

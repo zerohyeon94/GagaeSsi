@@ -45,7 +45,7 @@ final class SpendViewModel {
         }
 
         fetchSpending(on: model.date)
-        AppEventBus.shared.spendingAdded.onNext(())
+        AppEventBus.shared.notifySpendingAdded()
         completion(true)
     }
 }
