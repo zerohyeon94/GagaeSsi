@@ -2,40 +2,36 @@
 //  AppEventBus.swift
 //  GagaeSsi
 //
-//  Created by 조영현 on 6/9/25.
+//  앱 전역 이벤트 관리 (RxSwift → @Observable)
 //
 
-// TODO: RxSwift 의존성 제거 필요 (각 적용 후 최종적으로 제거)
-import RxSwift
-import Combine
+import SwiftUI
+import Observation
 
+/// 앱 전역에서 사용하는 이벤트 버스
+/// RxSwift의 PublishSubject를 @Observable로 대체
+@Observable
 final class AppEventBus {
-    static let shared = AppEventBus()
-    private init() {}
-
-    // MARK: 기존 RxSwift (UIKit 화면용)
-    let spendingAdded = PublishSubject<Void>() // 소비 기록
-    let budgetChanged = PublishSubject<Void>() // 월급
-    let fixedExpenseChanged = PublishSubject<Void>() // 고정비 목록
+    // MARK: - Event Triggers
+    /// 소비 기록이 추가되었을 때 트리거
+    var spendingAddedTrigger: UUID = UUID()
     
-    // MARK: Combine (SwiftUI 화면용)
-    let spendingAddedPublisher = PassthroughSubject<Void, Never>()
-    let budgetChangedPublisher = PassthroughSubject<Void, Never>()
-    let fixedExpenseChangedPublisher = PassthroughSubject<Void, Never>()
+    /// 예산 설정이 변경되었을 때 트리거
+    var budgetChangedTrigger: UUID = UUID()
     
-    // 통합 발행 메서드
+    /// 고정비가 변경되었을 때 트리거
+    var fixedExpenseChangedTrigger: UUID = UUID()
+    
+    // MARK: - Event Methods
     func notifySpendingAdded() {
-        spendingAdded.onNext(())           // RxSwift
-        spendingAddedPublisher.send(())    // Combine
+        spendingAddedTrigger = UUID()
     }
     
     func notifyBudgetChanged() {
-        budgetChanged.onNext(())
-        budgetChangedPublisher.send(())
+        budgetChangedTrigger = UUID()
     }
     
     func notifyFixedExpenseChanged() {
-        fixedExpenseChanged.onNext(())
-        fixedExpenseChangedPublisher.send(())
+        fixedExpenseChangedTrigger = UUID()
     }
 }

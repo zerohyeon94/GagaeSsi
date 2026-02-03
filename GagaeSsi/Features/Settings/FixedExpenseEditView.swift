@@ -2,7 +2,7 @@
 //  FixedExpenseEditView.swift
 //  GagaeSsi
 //
-//  Created by 조영현 on 2/3/26.
+//  고정비 추가/편집 화면
 //
 
 import SwiftUI

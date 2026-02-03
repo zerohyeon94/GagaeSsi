@@ -1,12 +1,13 @@
 //
-//  SettingsModel.swift
+//  SettingsModels.swift
 //  GagaeSsi
 //
-//  Created by 조영현 on 5/30/25.
+//  설정 관련 모델들
 //
 
 import Foundation
 
+// MARK: - 설정 섹션
 enum SettingSection: Int, CaseIterable, Identifiable {
     case budget
     case fixedExpense

@@ -2,12 +2,13 @@
 //  StatsView.swift
 //  GagaeSsi
 //
-//  Created by 조영현 on 2/3/26.
+//  통계 화면 (StatsViewController 대체)
 //
 
 import SwiftUI
 
 struct StatsView: View {
+    // MARK: - Body
     var body: some View {
         VStack {
             Spacer()
@@ -33,6 +34,7 @@ struct StatsView: View {
     }
 }
 
+// MARK: - Preview
 #Preview {
     NavigationStack {
         StatsView()
