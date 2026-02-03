@@ -21,8 +21,7 @@ final class MainTabBarController: UITabBarController {
         let homeVC = HomeViewController(viewModel: homeVM)
         homeVC.tabBarItem = UITabBarItem(title: "홈", image: UIImage(systemName: "house"), tag: 0)
 
-        let spendVM = SpendViewModel()
-        let spendVC = SpendViewController(viewModel: spendVM)
+        let spendVC = SpendViewController()
         spendVC.tabBarItem = UITabBarItem(title: "소비", image: UIImage(systemName: "creditcard"), tag: 1)
 
         let statsVC = StatsViewController()
