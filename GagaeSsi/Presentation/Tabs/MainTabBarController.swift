@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import SwiftUI
 
 final class MainTabBarController: UITabBarController {
     // MARK: - Lifecycle
@@ -46,15 +47,21 @@ final class MainTabBarController: UITabBarController {
             switch action {
             case .editBudget:
                 print("➡️ 월급 수정 화면으로 이동")
-                let editVC = EditBudgetViewController()
+                let editView = EditBudgetView()
+                let hostingVC = UIHostingController(rootView: editView)
+                hostingVC.title = "월급 수정 설정"
+                
                 if let nav = self.selectedViewController as? UINavigationController {
-                    nav.pushViewController(editVC, animated: true)
+                    nav.pushViewController(hostingVC, animated: true)
                 }
             case .manageFixedExpenses:
                 print("➡️ 고정비 관리 화면으로 이동")
-                let fixedVC = FixedExpenseListViewController()
+                let fixedListView = FixedExpenseListView()
+                let hostingVC = UIHostingController(rootView: fixedListView)
+                hostingVC.title = "고정비 관리"
+                
                 if let nav = self.selectedViewController as? UINavigationController {
-                    nav.pushViewController(fixedVC, animated: true)
+                    nav.pushViewController(hostingVC, animated: true)
                 }
             case .resetData:
                 print("🗑 데이터 초기화")
