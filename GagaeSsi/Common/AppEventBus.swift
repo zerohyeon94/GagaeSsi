@@ -2,21 +2,36 @@
 //  AppEventBus.swift
 //  GagaeSsi
 //
-//  Created by 조영현 on 6/9/25.
+//  앱 전역 이벤트 관리 (RxSwift → @Observable)
 //
 
-import RxSwift
+import SwiftUI
+import Observation
 
+/// 앱 전역에서 사용하는 이벤트 버스
+/// RxSwift의 PublishSubject를 @Observable로 대체
+@Observable
 final class AppEventBus {
-    static let shared = AppEventBus()
-    private init() {}
-
-    // MARK: - 소비 기록
-    let spendingAdded = PublishSubject<Void>()
+    // MARK: - Event Triggers
+    /// 소비 기록이 추가되었을 때 트리거
+    var spendingAddedTrigger: UUID = UUID()
     
-    // MARK: - 월급
-    let budgetChanged = PublishSubject<Void>()
+    /// 예산 설정이 변경되었을 때 트리거
+    var budgetChangedTrigger: UUID = UUID()
     
-    // MARK: - 고정비 목록
-    let fixedExpenseChanged = PublishSubject<Void>()
+    /// 고정비가 변경되었을 때 트리거
+    var fixedExpenseChangedTrigger: UUID = UUID()
+    
+    // MARK: - Event Methods
+    func notifySpendingAdded() {
+        spendingAddedTrigger = UUID()
+    }
+    
+    func notifyBudgetChanged() {
+        budgetChangedTrigger = UUID()
+    }
+    
+    func notifyFixedExpenseChanged() {
+        fixedExpenseChangedTrigger = UUID()
+    }
 }

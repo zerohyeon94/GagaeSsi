@@ -2,15 +2,15 @@
 //  DebugLogger.swift
 //  GagaeSsi
 //
-//  Created by 조영현 on 5/27/25.
+//  디버그 로깅 유틸리티
 //
 
 import Foundation
 
 enum DebugLogger {
-    static func print(_ items: Any...) {
+    static func log(_ items: Any...) {
 #if DEBUG
-        print("🪵", items.map { "\($0)" }.joined(separator: " "))
+        Swift.print("🪵", items.map { "\($0)" }.joined(separator: " "))
 #endif
     }
 
@@ -21,20 +21,20 @@ enum DebugLogger {
         formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
 
         let dateString = formatter.string(from: date)
-        print("🕓 \(label): \(dateString)")
+        Swift.print("🕓 \(label): \(dateString)")
     }
 
     static func debugLog(_ message: String) {
 #if DEBUG
-        print("🐞 DEBUG: \(message)")
+        Swift.print("🐞 DEBUG: \(message)")
 #endif
     }
 
     static func errorLog(_ message: String) {
-        print("❌ ERROR: \(message)")
+        Swift.print("❌ ERROR: \(message)")
     }
 
     static func section(_ name: String) {
-        print("\n🚧 [\(name)] 시작 ------------------------")
+        Swift.print("\n🚧 [\(name)] 시작 ------------------------")
     }
 }

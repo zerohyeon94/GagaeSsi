@@ -2,7 +2,8 @@
 //  CoreDataManager.swift
 //  GagaeSsi
 //
-//  Created by 조영현 on 5/21/25.
+//  CoreData 관리자 (SwiftUI 버전)
+//  기존 UIKit 버전과 동일하게 동작
 //
 
 import CoreData
@@ -36,11 +37,11 @@ final class CoreDataManager {
                 try context.save()
                 return true
             } catch {
-                DebugLogger.print("❌ Save failed: \(error)")
+                DebugLogger.log("❌ Save failed: \(error)")
                 return false
             }
         }
-        return true // 변경사항이 없어도 성공으로 간주
+        return true
     }
     
     // MARK: - BudgetConfig CRUD
@@ -69,14 +70,13 @@ final class CoreDataManager {
         let request: NSFetchRequest<BudgetConfig> = BudgetConfig.fetchRequest()
 
         do {
-            if let config = try context.fetch(request).first { // .first를 사용한 이유: 사용되는 Budget가 1개뿐이라서.
-
+            if let config = try context.fetch(request).first {
                 return BudgetConfigModel(entity: config)
             } else {
-                return nil // ❗ 자동 생성 제거
+                return nil
             }
         } catch {
-            DebugLogger.print("❌ BudgetConfig fetch 실패: \(error)")
+            DebugLogger.log("❌ BudgetConfig fetch 실패: \(error)")
             return nil
         }
     }
@@ -91,8 +91,6 @@ final class CoreDataManager {
         
         return saveContext()
     }
-    
-    // TODO: DELETE가 구현되지 않음. 초기값을 초기화하여 새로 시작하는 기능.
     
     // MARK: - FixedCost CRUD
     func createFixedCost(_ model: FixedCostModel) -> Bool {
@@ -121,29 +119,29 @@ final class CoreDataManager {
             let results = try context.fetch(request)
             return results.map(FixedCostModel.init)
         } catch {
-            DebugLogger.print("❌ 고정비 fetch 실패: \(error)")
+            DebugLogger.log("❌ 고정비 fetch 실패: \(error)")
             return []
         }
     }
     
     func updateFixedCost(_ model: FixedCostModel) -> Bool {
         guard let fixedCost = fetchFixedCostEntity(id: model.id) else {
-            return false // ❗ 업데이트 대상 없음
+            return false
         }
 
         fixedCost.title = model.title
         fixedCost.amount = NSDecimalNumber(value: model.amount)
         
-        return saveContext() // ✅ 저장 및 성공 여부 반환
+        return saveContext()
     }
 
     func deleteFixedCost(id: UUID) -> Bool {
         guard let fixedCost = fetchFixedCostEntity(id: id) else {
-            return false // ❗ 삭제할 대상이 없음
+            return false
         }
         
         context.delete(fixedCost)
-        return saveContext() // ✅ 삭제 후 저장 성공 여부 반환
+        return saveContext()
     }
     
     // MARK: - DailyBudget CRUD
@@ -189,13 +187,12 @@ final class CoreDataManager {
 
         do {
             if let config = try context.fetch(request).first {
-
                 return DailyBudgetModel(entity: config)
             } else {
                 return nil
             }
         } catch {
-            DebugLogger.print("❌ BudgetConfig fetch 실패: \(error)")
+            DebugLogger.log("❌ DailyBudget fetch 실패: \(error)")
             return nil
         }
     }
@@ -210,8 +207,6 @@ final class CoreDataManager {
         
         return saveContext()
     }
-    
-    // TODO: - DELETE가 구현되지 않음. 오늘 예산을 지워야하는 경우가 있을까?
     
     // MARK: - SpendingRecord CRUD
     func createSpendingRecord(_ model: SpendingRecordModel) -> Bool {
@@ -248,14 +243,14 @@ final class CoreDataManager {
             let results = try context.fetch(request)
             return results.map(SpendingRecordModel.init)
         } catch {
-            DebugLogger.print("❌ 지출 비용 fetch 실패: \(error)")
+            DebugLogger.log("❌ 지출 비용 fetch 실패: \(error)")
             return []
         }
     }
     
     func updateSpendingRecord(_ model: SpendingRecordModel) -> Bool {
         guard let spendingRecord = fetchSpendingRecordEntity(id: model.id),
-              let dailyBudget = spendingRecord.dailyBudget else {
+              let _ = spendingRecord.dailyBudget else {
             return false
         }
 
@@ -268,7 +263,7 @@ final class CoreDataManager {
     
     func deleteSpendingRecord(id: UUID) -> Bool {
         guard let spendingRecord = fetchSpendingRecordEntity(id: id),
-              let dailyBudget = spendingRecord.dailyBudget else {
+              let _ = spendingRecord.dailyBudget else {
             return false
         }
 
@@ -309,7 +304,7 @@ final class CoreDataManager {
             let results = try context.fetch(request)
             return results.map(CarryOverSourceModel.init)
         } catch {
-            DebugLogger.print("❌ 이월 금액 fetch 실패: \(error)")
+            DebugLogger.log("❌ 이월 금액 fetch 실패: \(error)")
             return []
         }
     }
@@ -356,16 +351,14 @@ final class CoreDataManager {
                     NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [context])
                 }
             } catch {
-                DebugLogger.print("❌ Failed to reset \(entityName): \(error)")
+                DebugLogger.log("❌ Failed to reset \(entityName): \(error)")
             }
         }
 
         saveContext()
-        DebugLogger.print("✅ CoreData reset completed")
+        DebugLogger.log("✅ CoreData reset completed")
     }
-}
-
-extension CoreDataManager {
+    
     /// 오늘 날짜의 DailyBudgetModel을 "항상" 반환 (없으면 생성)
     func fetchOrCreateTodayDailyBudget() -> DailyBudgetModel? {
         let today = Calendar.current.startOfDay(for: Date())
@@ -375,7 +368,7 @@ extension CoreDataManager {
         }
         // BudgetConfig 없으면 nil
         guard let config = fetchBudgetConfig() else {
-            DebugLogger.print("❌ BudgetConfig 없음 → Budget 설정 필요")
+            DebugLogger.log("❌ BudgetConfig 없음 → Budget 설정 필요")
             return nil
         }
         let baseAmount = DailyBudgetCalculator.calculate(from: config, for: today)
