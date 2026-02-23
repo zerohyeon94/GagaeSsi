@@ -42,6 +42,39 @@ extension Color {
     static let gagaePinkGradientBottom = Color(red: 0.98, green: 0.97, blue: 1.0)
 }
 
+extension ShapeStyle where Self == Color {
+    // 주요 색상
+    static var gagaePink: Color { .gagaePink }
+    static var gagaePinkDark: Color { .gagaePinkDark }
+    static var gagaePinkLight: Color { .gagaePinkLight }
+
+    // 포인트 색상
+    static var gagaePoint: Color { .gagaePoint }
+    static var gagaePointDark: Color { .gagaePointDark }
+
+    // 상태 색상
+    static var gagaeGood: Color { .gagaeGood }
+    static var gagaeWarning: Color { .gagaeWarning }
+    static var gagaeDanger: Color { .gagaeDanger }
+
+    // 배경 색상
+    static var gagaeBackground: Color { .gagaeBackground }
+    static var gagaeCardBackground: Color { .gagaeCardBackground }
+    static var gagaeSurface: Color { .gagaeSurface }
+
+    // 텍스트 색상
+    static var gagaeText: Color { .gagaeText }
+    static var gagaeTextSecondary: Color { .gagaeTextSecondary }
+    static var gagaeTextTertiary: Color { .gagaeTextTertiary }
+
+    // 구분선
+    static var gagaeDivider: Color { .gagaeDivider }
+
+    // 배경 그라디언트용
+    static var gagaePinkGradientTop: Color { .gagaePinkGradientTop }
+    static var gagaePinkGradientBottom: Color { .gagaePinkGradientBottom }
+}
+
 // MARK: - Typography
 
 extension Font {
@@ -220,7 +253,9 @@ struct GagaeSecondaryButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            action()
+        } label: {
             Text(title)
                 .font(.gagaeCalloutMedium)
                 .foregroundStyle(.gagaePinkDark)
@@ -250,7 +285,7 @@ struct GagaeSectionHeader: View {
         HStack {
             Text(title)
                 .font(.gagaeFootnote)
-                .foregroundStyle(.gagaeTextSecondary)
+                .foregroundStyle(Color.gagaeTextSecondary)
                 .textCase(.uppercase)
             Spacer()
             if let trailing = trailing {
