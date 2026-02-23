@@ -75,6 +75,13 @@ final class SpendViewModel {
         completion(true)
     }
     
+    func deleteSpending(id: UUID, eventBus: AppEventBus) {
+        let success = CoreDataManager.shared.deleteSpendingRecord(id: id)
+        if success {
+            eventBus.notifySpendingAdded()
+        }
+    }
+
     func clearForm() {
         tempTitle = ""
         tempAmount = 0
