@@ -116,19 +116,22 @@ struct SpendingRecordModel: Identifiable {
     var title: String
     var amount: Int
     var date: Date
-    
-    init(id: UUID = UUID(), title: String, amount: Int, date: Date) {
+    var category: SpendingCategory
+
+    init(id: UUID = UUID(), title: String, amount: Int, date: Date, category: SpendingCategory = .other) {
         self.id = id
         self.title = title
         self.amount = amount
         self.date = date
+        self.category = category
     }
-    
+
     /// CoreData Entity -> Model 변환 생성자
     init(entity: SpendingRecord) {
         self.id = entity.id ?? UUID()
         self.title = entity.title ?? ""
         self.amount = Int(truncating: entity.amount ?? 0)
         self.date = entity.date ?? Date()
+        self.category = SpendingCategory.from(rawValue: entity.category)
     }
 }
