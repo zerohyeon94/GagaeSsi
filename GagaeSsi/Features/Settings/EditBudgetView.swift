@@ -18,6 +18,7 @@ struct EditBudgetView: View {
 
     @FocusState private var isSalaryFocused: Bool
 
+    @State private var showPaydayPicker = false
     @State private var showSuccessAlert = false
     @State private var showErrorAlert = false
     @State private var errorMessage = ""
@@ -55,6 +56,9 @@ struct EditBudgetView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(Color.gagaeBackground, for: .navigationBar)
+        .sheet(isPresented: $showPaydayPicker) {
+            paydayPickerSheet
+        }
         .onAppear {
             loadCurrentBudget()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -140,28 +144,67 @@ extension EditBudgetView {
                 .font(.gagaeCalloutMedium)
                 .foregroundStyle(.gagaePinkDark)
 
-            GagaeCard {
-                HStack {
-                    Text("매월")
-                        .font(.gagaeCallout)
-                        .foregroundStyle(.gagaeTextSecondary)
+            Button {
+                isSalaryFocused = false
+                showPaydayPicker = true
+            } label: {
+                GagaeCard {
+                    HStack(spacing: 4) {
+                        Text("매월")
+                            .font(.gagaeCallout)
+                            .foregroundStyle(.gagaeTextSecondary)
 
-                    Spacer()
+                        Spacer()
 
-                    Picker("급여일", selection: $payday) {
-                        ForEach(1...31, id: \.self) { day in
-                            Text("\(day)일").tag(day)
+                        HStack(spacing: 3) {
+                            Text("\(payday)일")
+                                .font(.gagaeCalloutMedium)
+                                .foregroundStyle(.gagaePinkDark)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.gagaePinkDark)
                         }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(.gagaePinkDark)
 
-                    Text("에 월급을 받아요")
-                        .font(.gagaeCallout)
-                        .foregroundStyle(.gagaeTextSecondary)
+                        Text("에 월급을 받아요")
+                            .font(.gagaeCallout)
+                            .foregroundStyle(.gagaeTextSecondary)
+                    }
                 }
             }
+            .buttonStyle(.plain)
         }
+    }
+
+    private var paydayPickerSheet: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("취소") { showPaydayPicker = false }
+                    .font(.gagaeCallout)
+                    .foregroundStyle(.gagaeTextSecondary)
+                Spacer()
+                Text("급여일 선택")
+                    .font(.gagaeCalloutMedium)
+                    .foregroundStyle(.gagaeText)
+                Spacer()
+                Button("완료") { showPaydayPicker = false }
+                    .font(.gagaeCalloutMedium)
+                    .foregroundStyle(.gagaePinkDark)
+            }
+            .padding(.horizontal, GagaeSpacing.md)
+            .padding(.vertical, GagaeSpacing.md)
+
+            Divider()
+
+            Picker("급여일", selection: $payday) {
+                ForEach(1...31, id: \.self) { day in
+                    Text("\(day)일").tag(day)
+                }
+            }
+            .pickerStyle(.wheel)
+            .labelsHidden()
+        }
+        .presentationDetents([.height(320)])
+        .presentationDragIndicator(.visible)
     }
 }
 

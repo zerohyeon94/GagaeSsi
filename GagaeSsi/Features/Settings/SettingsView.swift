@@ -2,7 +2,7 @@
 //  SettingsView.swift
 //  GagaeSsi
 //
-//  설정 화면
+//  설정 화면 (Claude Design 적용)
 //
 
 import SwiftUI
@@ -11,289 +11,346 @@ struct SettingsView: View {
     // MARK: - Properties
     @Environment(AppState.self) private var appState
     @Environment(AppEventBus.self) private var eventBus
-    @State private var showResetAlert = false
+    @State private var showConfirm = false
+    @State private var showToast = false
     @State private var currentConfig: BudgetConfigModel?
     @State private var fixedCostsCount: Int = 0
+    @State private var pigBreathing = false
 
     // MARK: - Body
     var body: some View {
         ZStack {
-            Color.gagaeBackground.ignoresSafeArea()
+            GagaeBackground()
 
             ScrollView {
-                VStack(spacing: GagaeSpacing.lg) {
-                    // 프로필 카드
+                VStack(spacing: 0) {
+                    largeTitle
                     profileCard
-                        .padding(.top, GagaeSpacing.md)
-
-                    // 예산 설정 섹션
+                        .padding(.bottom, 4)
                     budgetSection
-
-                    // 데이터 섹션
                     dataSection
-
-                    // 앱 정보 섹션
                     appInfoSection
-
-                    Spacer(minLength: GagaeSpacing.xl)
                 }
-                .padding(.horizontal, GagaeSpacing.md)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 28)
+            }
+
+            // 초기화 확인 시트
+            if showConfirm {
+                confirmSheet
+            }
+
+            // 토스트
+            if showToast {
+                resetToast
             }
         }
-        .navigationTitle("설정")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarHidden(true)
         .onAppear {
             loadConfig()
-        }
-        .onChange(of: eventBus.budgetChangedTrigger) {
-            loadConfig()
-        }
-        .onChange(of: eventBus.fixedExpenseChangedTrigger) {
-            loadConfig()
-        }
-        .alert("데이터 초기화", isPresented: $showResetAlert) {
-            Button("취소", role: .cancel) { }
-            Button("초기화", role: .destructive) {
-                CoreDataManager.shared.resetAllData()
-                appState.resetSetup()
+            withAnimation(.easeInOut(duration: 3.5).repeatForever(autoreverses: true)) {
+                pigBreathing = true
             }
-        } message: {
-            Text("모든 데이터가 삭제되고 초기 설정 화면으로 이동합니다.\n계속하시겠습니까?")
         }
+        .onChange(of: eventBus.budgetChangedTrigger) { loadConfig() }
+        .onChange(of: eventBus.fixedExpenseChangedTrigger) { loadConfig() }
     }
 
     private func loadConfig() {
         currentConfig = CoreDataManager.shared.fetchBudgetConfig()
         fixedCostsCount = CoreDataManager.shared.fetchFixedCosts().count
     }
+
+    private func handleReset() {
+        CoreDataManager.shared.resetAllData()
+        withAnimation { showConfirm = false }
+        withAnimation { showToast = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation { showToast = false }
+            appState.resetSetup()
+        }
+    }
 }
 
-// MARK: - Subviews
+// MARK: - Header & Profile
 extension SettingsView {
+    private var largeTitle: some View {
+        HStack {
+            Text("설정")
+                .font(.system(size: 34, weight: .heavy, design: .rounded))
+                .foregroundStyle(.gagaeText)
+            Spacer()
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 16)
+    }
 
-    /// 프로필 카드 (현재 예산 요약)
     private var profileCard: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: GagaeRadius.xxl)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.gagaePinkDark, Color.gagaePink],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .gagaeCardShadow()
+            RoundedRectangle(cornerRadius: 28)
+                .fill(LinearGradient(colors: [.gagaePinkDark, .gagaePink],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .gagaeShadow(color: .gagaePinkDark.opacity(0.32), radius: 18, y: 14)
 
-            HStack(spacing: GagaeSpacing.md) {
-                // 돼지 아이콘
+            // 장식 블롭
+            GeometryReader { geo in
+                Circle().fill(.white.opacity(0.09)).frame(width: 110, height: 110)
+                    .offset(x: geo.size.width - 90, y: -36)
+                Circle().fill(.white.opacity(0.06)).frame(width: 80, height: 80)
+                    .offset(x: 80, y: geo.size.height - 52)
+                Circle().fill(.white.opacity(0.11)).frame(width: 28, height: 28)
+                    .offset(x: geo.size.width - 88, y: 10)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 28))
+
+            HStack(spacing: 18) {
                 ZStack {
-                    Circle()
-                        .fill(.white.opacity(0.2))
-                        .frame(width: 70, height: 70)
-
-                    if UIImage(named: "characterPig") != nil {
-                        Image("characterPig")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 54, height: 54)
-                    } else {
-                        Text("🐷")
-                            .font(.system(size: 38))
-                    }
+                    Circle().fill(.white.opacity(0.20)).frame(width: 70, height: 70)
+                    pigContent.font(.system(size: 36))
                 }
+                .scaleEffect(pigBreathing ? 1.06 : 1.0)
 
-                VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text("가계씨")
-                        .font(.gagaeTitle3)
+                        .font(.system(size: 20, weight: .heavy, design: .rounded))
                         .foregroundStyle(.white)
-
                     if let config = currentConfig {
-                        Text("월 \(FormatterUtils.currencyString(from: config.salary))")
-                            .font(.gagaeCalloutMedium)
-                            .foregroundStyle(.white.opacity(0.9))
-
+                        Text("월 " + FormatterUtils.currencyString(from: config.salary))
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.92))
                         Text("매월 \(config.payday)일 급여 · 고정비 \(fixedCostsCount)개")
-                            .font(.gagaeCaption)
-                            .foregroundStyle(.white.opacity(0.75))
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.74))
                     } else {
                         Text("설정이 필요합니다")
-                            .font(.gagaeCallout)
-                            .foregroundStyle(.white.opacity(0.75))
+                            .font(.system(size: 14, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.74))
                     }
                 }
-
                 Spacer()
             }
-            .padding(GagaeSpacing.lg)
+            .padding(.horizontal, 22)
         }
         .frame(height: 110)
     }
 
-    /// 예산 설정 섹션
-    private var budgetSection: some View {
-        VStack(spacing: GagaeSpacing.sm) {
-            GagaeSectionHeader(title: "예산 설정")
-
-            GagaeCard(padding: 0) {
-                VStack(spacing: 0) {
-                    NavigationLink {
-                        EditBudgetView()
-                    } label: {
-                        settingRow(
-                            icon: "wonsign.circle.fill",
-                            iconColor: .gagaePinkDark,
-                            title: "월급 & 급여일",
-                            value: currentConfig.map { FormatterUtils.currencyString(from: $0.salary) }
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    GagaeDivider()
-                        .padding(.leading, 56)
-
-                    NavigationLink {
-                        FixedExpenseListView()
-                    } label: {
-                        settingRow(
-                            icon: "repeat.circle.fill",
-                            iconColor: Color(red: 0.35, green: 0.60, blue: 0.98),
-                            title: "고정비 관리",
-                            value: fixedCostsCount > 0 ? "\(fixedCostsCount)개 항목" : "없음"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
+    @ViewBuilder
+    private var pigContent: some View {
+        if UIImage(named: "characterPig") != nil {
+            Image("characterPig").resizable().scaledToFit().frame(width: 46, height: 46)
+        } else {
+            Text("🐷")
         }
-    }
-
-    /// 데이터 섹션
-    private var dataSection: some View {
-        VStack(spacing: GagaeSpacing.sm) {
-            GagaeSectionHeader(title: "데이터")
-
-            GagaeCard(padding: 0) {
-                VStack(spacing: 0) {
-                    Button {
-                        // TODO: 백업 기능
-                    } label: {
-                        settingRow(
-                            icon: "icloud.and.arrow.up.fill",
-                            iconColor: Color(red: 0.20, green: 0.65, blue: 0.90),
-                            title: "데이터 백업",
-                            value: "준비 중",
-                            isDisabled: true
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(true)
-
-                    GagaeDivider()
-                        .padding(.leading, 56)
-
-                    Button {
-                        showResetAlert = true
-                    } label: {
-                        settingRow(
-                            icon: "trash.circle.fill",
-                            iconColor: .gagaeDanger,
-                            title: "데이터 초기화",
-                            titleColor: .gagaeDanger
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    /// 앱 정보 섹션
-    private var appInfoSection: some View {
-        VStack(spacing: GagaeSpacing.sm) {
-            GagaeSectionHeader(title: "앱 정보")
-
-            GagaeCard(padding: 0) {
-                VStack(spacing: 0) {
-                    Button {
-                        // TODO: 피드백
-                    } label: {
-                        settingRow(
-                            icon: "envelope.circle.fill",
-                            iconColor: Color(red: 0.48, green: 0.36, blue: 0.90),
-                            title: "피드백 보내기",
-                            value: "준비 중",
-                            isDisabled: true
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(true)
-
-                    GagaeDivider()
-                        .padding(.leading, 56)
-
-                    settingRow(
-                        icon: "info.circle.fill",
-                        iconColor: .gagaeTextSecondary,
-                        title: "버전",
-                        value: appVersion,
-                        showChevron: false
-                    )
-                }
-            }
-
-            // 앱 서명
-            Text("🐷 가계씨가 여러분의 지갑을 지켜요")
-                .font(.gagaeCaption)
-                .foregroundStyle(.gagaeTextTertiary)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, GagaeSpacing.sm)
-        }
-    }
-
-    /// 공통 설정 행
-    private func settingRow(
-        icon: String,
-        iconColor: Color,
-        title: String,
-        titleColor: Color = .gagaeText,
-        value: String? = nil,
-        showChevron: Bool = true,
-        isDisabled: Bool = false
-    ) -> some View {
-        HStack(spacing: GagaeSpacing.sm) {
-            // 아이콘
-            Image(systemName: icon)
-                .font(.system(size: 24))
-                .foregroundStyle(isDisabled ? iconColor.opacity(0.4) : iconColor)
-                .frame(width: 32, height: 32)
-
-            // 타이틀
-            Text(title)
-                .font(.gagaeCalloutMedium)
-                .foregroundStyle(isDisabled ? titleColor.opacity(0.4) : titleColor)
-
-            Spacer()
-
-            // 값 / 화살표
-            if let value = value {
-                Text(value)
-                    .font(.gagaeCaption)
-                    .foregroundStyle(.gagaeTextSecondary)
-            }
-
-            if showChevron {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.gagaeTextTertiary)
-            }
-        }
-        .padding(.horizontal, GagaeSpacing.md)
-        .padding(.vertical, GagaeSpacing.md)
     }
 }
 
-// MARK: - Helpers
+// MARK: - Sections
 extension SettingsView {
+    private func sectionHeader(_ title: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                .foregroundStyle(.gagaeTextSecondary)
+                .textCase(.uppercase)
+                .kerning(0.7)
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 22)
+        .padding(.bottom, 8)
+    }
+
+    private var budgetSection: some View {
+        VStack(spacing: 0) {
+            sectionHeader("예산 설정")
+            VStack(spacing: 0) {
+                NavigationLink {
+                    EditBudgetView()
+                } label: {
+                    settingRow(iconBg: .gagaePinkDark, iconContent: AnyView(
+                        Text("₩").font(.system(size: 13, weight: .black)).foregroundStyle(.white)
+                    ), label: "월급 & 급여일",
+                    rightText: currentConfig.map { FormatterUtils.currencyString(from: $0.salary) })
+                }
+                .buttonStyle(.plain)
+
+                rowDivider
+                NavigationLink {
+                    FixedExpenseListView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#5999FA"), iconContent: AnyView(Text("🔄").font(.system(size: 16))),
+                               label: "고정비 관리",
+                               rightText: fixedCostsCount > 0 ? "\(fixedCostsCount)개 항목" : "없음")
+                }
+                .buttonStyle(.plain)
+            }
+            .background(Color.gagaeCardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .gagaeCardShadow()
+        }
+    }
+
+    private var dataSection: some View {
+        VStack(spacing: 0) {
+            sectionHeader("데이터")
+            VStack(spacing: 0) {
+                settingRow(iconBg: Color(hex: "#5BC8FA"), iconContent: AnyView(Text("☁️").font(.system(size: 16))),
+                           label: "데이터 백업", rightText: "준비 중", disabled: true)
+                rowDivider
+                Button {
+                    withAnimation { showConfirm = true }
+                } label: {
+                    settingRow(iconBg: Color.gagaeDanger.opacity(0.13),
+                               iconContent: AnyView(Text("🗑️").font(.system(size: 16))),
+                               label: "데이터 초기화", danger: true)
+                }
+                .buttonStyle(.plain)
+            }
+            .background(Color.gagaeCardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .gagaeCardShadow()
+        }
+    }
+
+    private var appInfoSection: some View {
+        VStack(spacing: 0) {
+            sectionHeader("앱 정보")
+            VStack(spacing: 0) {
+                settingRow(iconBg: Color(hex: "#8C73E5"), iconContent: AnyView(Text("✉️").font(.system(size: 16))),
+                           label: "피드백 보내기", rightText: "준비 중", disabled: true)
+                rowDivider
+                settingRow(iconBg: Color.gagaeTextTertiary, iconContent: AnyView(Text("ℹ️").font(.system(size: 15))),
+                           label: "버전", rightText: appVersion, showChevron: false)
+            }
+            .background(Color.gagaeCardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .gagaeCardShadow()
+
+            Text("🐷 가계씨가 여러분의 지갑을 지켜요")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.gagaeTextTertiary)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 32)
+                .padding(.bottom, 8)
+        }
+    }
+
+    private var rowDivider: some View {
+        Rectangle().fill(Color.gagaeDivider).frame(height: 0.5).padding(.leading, 60)
+    }
+
+    private func settingRow(iconBg: Color, iconContent: AnyView, label: String,
+                            rightText: String? = nil, showChevron: Bool = true,
+                            disabled: Bool = false, danger: Bool = false) -> some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(iconBg)
+                .frame(width: 32, height: 32)
+                .overlay(iconContent)
+            Text(label)
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundStyle(danger ? .gagaeDanger : .gagaeText)
+            Spacer()
+            if let rightText {
+                Text(rightText)
+                    .font(.system(size: 13, design: .rounded))
+                    .foregroundStyle(.gagaeTextSecondary)
+            }
+            if showChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(danger ? Color.gagaeDanger : Color.gagaeTextTertiary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .opacity(disabled ? 0.4 : 1)
+    }
+}
+
+// MARK: - Reset Sheet & Toast
+extension SettingsView {
+    private var confirmSheet: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.35).ignoresSafeArea()
+                .onTapGesture { withAnimation { showConfirm = false } }
+
+            VStack(spacing: 0) {
+                Capsule().fill(Color.gagaeDivider).frame(width: 36, height: 4)
+                    .padding(.top, 8).padding(.bottom, 20)
+
+                Text("🗑️").font(.system(size: 36)).padding(.bottom, 10)
+                Text("데이터를 초기화할까요?")
+                    .font(.system(size: 18, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                    .padding(.bottom, 6)
+                Text("모든 소비 기록과 예산 설정이\n영구적으로 삭제됩니다.")
+                    .font(.system(size: 14, design: .rounded))
+                    .foregroundStyle(.gagaeTextSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.bottom, 22)
+
+                Button {
+                    handleReset()
+                } label: {
+                    Text("초기화하기")
+                        .font(.system(size: 16, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color.gagaeDanger)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .gagaeShadow(color: .gagaeDanger.opacity(0.30), radius: 10, y: 8)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 10)
+
+                Button {
+                    withAnimation { showConfirm = false }
+                } label: {
+                    Text("취소")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color(hex: "#F5F5F5"))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 28)
+            .frame(maxWidth: .infinity)
+            .background(Color.gagaeCardBackground)
+            .clipShape(.rect(topLeadingRadius: 24, topTrailingRadius: 24))
+            .transition(.move(edge: .bottom))
+        }
+        .ignoresSafeArea()
+    }
+
+    private var resetToast: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(Color.gagaeGood).frame(width: 28, height: 28)
+                    Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                }
+                Text("데이터가 초기화되었어요")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            .background(Color.black.opacity(0.88))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .padding(.horizontal, 20)
+            .padding(.bottom, 40)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
     private var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
