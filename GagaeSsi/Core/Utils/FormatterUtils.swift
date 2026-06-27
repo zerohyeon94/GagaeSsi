@@ -38,6 +38,20 @@ enum FormatterUtils {
         return value == 0 ? "" : "\(currencyFormatter.string(from: NSNumber(value: value)) ?? "")"
     }
     
+    /// 차트 Y축용 축약 금액 표시 (1000 → 1k, 10000 → 1만)
+    static func shortCurrencyString(from amount: Int) -> String {
+        if amount == 0 { return "0" }
+        if amount >= 10_000 {
+            let man = amount / 10_000
+            return "\(man)만"
+        }
+        if amount >= 1_000 {
+            let k = amount / 1_000
+            return "\(k)천"
+        }
+        return "\(amount)"
+    }
+
     // MARK: - Date Formatter
     /// "yyyy-MM-dd" 형식으로 날짜를 문자열로 변환
     static func formattedDate(_ date: Date = Date()) -> String {

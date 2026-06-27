@@ -7,39 +7,59 @@
 
 import SwiftUI
 
+// MARK: - Hex Initializer
+
+extension Color {
+    /// "#RRGGBB" 또는 "RRGGBB" hex 문자열로 Color 생성
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r = Double((int >> 16) & 0xFF) / 255.0
+        let g = Double((int >> 8) & 0xFF) / 255.0
+        let b = Double(int & 0xFF) / 255.0
+        self.init(red: r, green: g, blue: b)
+    }
+}
+
 // MARK: - Color Palette
+// Claude Design 토큰 기준 (라이트 테마 고정)
 
 extension Color {
     // 주요 색상 (분홍 계열 - 돼지 테마)
-    static let gagaePink = Color(red: 1.0, green: 0.686, blue: 0.686)
-    static let gagaePinkDark = Color(red: 0.96, green: 0.44, blue: 0.55)
-    static let gagaePinkLight = Color(red: 1.0, green: 0.88, blue: 0.90)
+    static let gagaePink = Color(hex: "#FFB0B0")        // primaryLight
+    static let gagaePinkDark = Color(hex: "#F5706B")    // primary
+    static let gagaePinkLight = Color(hex: "#FFE1E6")   // primaryPale
 
     // 포인트 색상
-    static let gagaePoint = Color(red: 1.0, green: 0.843, blue: 0.4)
-    static let gagaePointDark = Color(red: 0.96, green: 0.75, blue: 0.15)
+    static let gagaePoint = Color(hex: "#FFD766")
+    static let gagaePointDark = Color(hex: "#F5BF26")
 
     // 상태 색상
-    static let gagaeGood = Color(red: 0.35, green: 0.78, blue: 0.55)      // 초록 - 여유
-    static let gagaeWarning = Color(red: 1.0, green: 0.65, blue: 0.20)    // 주황 - 주의
-    static let gagaeDanger = Color(red: 0.95, green: 0.35, blue: 0.35)    // 빨강 - 위험
+    static let gagaeGood = Color(hex: "#59C78D")        // 초록 - 여유
+    static let gagaeWarning = Color(hex: "#FFA633")     // 주황 - 주의
+    static let gagaeDanger = Color(hex: "#F25959")      // 빨강 - 위험
 
     // 배경 색상
-    static let gagaeBackground = Color(UIColor.systemBackground)
-    static let gagaeCardBackground = Color(UIColor.secondarySystemBackground)
-    static let gagaeSurface = Color(UIColor.tertiarySystemBackground)
+    static let gagaeBackground = Color(hex: "#FFF5F7")
+    static let gagaeCardBackground = Color(hex: "#FFFFFF")
+    static let gagaeSurface = Color(hex: "#FAFAFA")
 
     // 텍스트 색상
-    static let gagaeText = Color(UIColor.label)
-    static let gagaeTextSecondary = Color(UIColor.secondaryLabel)
-    static let gagaeTextTertiary = Color(UIColor.tertiaryLabel)
+    static let gagaeText = Color(hex: "#1A1A1A")
+    static let gagaeTextSecondary = Color(hex: "#888888")
+    static let gagaeTextTertiary = Color(hex: "#BBBBBB")
 
     // 구분선
-    static let gagaeDivider = Color(UIColor.separator)
+    static let gagaeDivider = Color(hex: "#EEEEEE")
 
     // 배경 그라디언트용
-    static let gagaePinkGradientTop = Color(red: 1.0, green: 0.92, blue: 0.94)
-    static let gagaePinkGradientBottom = Color(red: 0.98, green: 0.97, blue: 1.0)
+    static let gagaePinkGradientTop = Color(hex: "#FFF0F3")
+    static let gagaePinkGradientBottom = Color(hex: "#F9F7FF")
+
+    // 메인 예산 카드 그라디언트
+    static let gagaeBudgetCardTop = Color(hex: "#F5706B")
+    static let gagaeBudgetCardBottom = Color(hex: "#E84060")
 }
 
 extension ShapeStyle where Self == Color {
@@ -73,6 +93,10 @@ extension ShapeStyle where Self == Color {
     // 배경 그라디언트용
     static var gagaePinkGradientTop: Color { .gagaePinkGradientTop }
     static var gagaePinkGradientBottom: Color { .gagaePinkGradientBottom }
+
+    // 메인 예산 카드 그라디언트
+    static var gagaeBudgetCardTop: Color { .gagaeBudgetCardTop }
+    static var gagaeBudgetCardBottom: Color { .gagaeBudgetCardBottom }
 }
 
 // MARK: - Typography
@@ -145,7 +169,7 @@ extension View {
     }
 
     func gagaeCardShadow() -> some View {
-        modifier(GagaeShadow(color: Color.gagaePink.opacity(0.2), radius: 16, x: 0, y: 6))
+        modifier(GagaeShadow(color: Color.gagaePinkDark.opacity(0.15), radius: 8, x: 0, y: 6))
     }
 }
 
@@ -218,7 +242,7 @@ struct GagaeCard<Content: View>: View {
             .padding(padding)
             .background(backgroundColor)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .gagaeShadow()
+            .gagaeCardShadow()
     }
 }
 
@@ -375,6 +399,47 @@ struct GagaeEmptyStateView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(GagaeSpacing.xl)
+    }
+}
+
+// MARK: - Spending Category
+
+enum SpendingCategory: String, CaseIterable, Codable {
+    case food = "식비"
+    case transport = "교통"
+    case cafe = "카페"
+    case shopping = "쇼핑"
+    case medical = "의료"
+    case leisure = "여가"
+    case other = "기타"
+
+    var emoji: String {
+        switch self {
+        case .food: return "🍱"
+        case .transport: return "🚌"
+        case .cafe: return "☕️"
+        case .shopping: return "🛍️"
+        case .medical: return "💊"
+        case .leisure: return "🎬"
+        case .other: return "💸"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .food: return Color(red: 1.0, green: 0.55, blue: 0.35)
+        case .transport: return Color(red: 0.35, green: 0.60, blue: 0.98)
+        case .cafe: return Color(red: 0.75, green: 0.53, blue: 0.35)
+        case .shopping: return Color(red: 0.88, green: 0.40, blue: 0.82)
+        case .medical: return Color(red: 0.28, green: 0.78, blue: 0.55)
+        case .leisure: return Color(red: 0.55, green: 0.45, blue: 0.90)
+        case .other: return Color(red: 0.60, green: 0.60, blue: 0.65)
+        }
+    }
+
+    static func from(rawValue: String?) -> SpendingCategory {
+        guard let raw = rawValue else { return .other }
+        return SpendingCategory(rawValue: raw) ?? .other
     }
 }
 
