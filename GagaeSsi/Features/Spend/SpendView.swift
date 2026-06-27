@@ -2,7 +2,7 @@
 //  SpendView.swift
 //  GagaeSsi
 //
-//  소비 기록 화면
+//  소비 기록 화면 (Claude Design 적용)
 //
 
 import SwiftUI
@@ -13,277 +13,422 @@ struct SpendView: View {
     @Environment(AppEventBus.self) private var eventBus
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
+    @State private var justSaved = false
 
-    enum Field {
-        case title, amount
-    }
+    enum Field { case title, amount }
 
     // MARK: - Body
     var body: some View {
         ZStack {
-            Color.gagaeBackground.ignoresSafeArea()
+            GagaeBackground()
 
             ScrollView {
-                VStack(spacing: GagaeSpacing.lg) {
-                    // 입력 카드
+                VStack(spacing: 14) {
                     inputCard
-                        .padding(.top, GagaeSpacing.sm)
+                        .padding(.top, 8)
 
-                    // 저장 버튼
-                    GagaePrimaryButton(
-                        title: "저장하기",
-                        isEnabled: viewModel.isValid
-                    ) {
-                        focusedField = nil
-                        viewModel.saveSpending(eventBus: eventBus) { success in
-                            if success {
-                                let today = Calendar.current.startOfDay(for: Date())
-                                viewModel.fetchSpending(on: today)
-                            }
-                        }
-                    }
+                    saveButton
 
-                    // 오늘 지출 목록
                     spendingListSection
-                        .padding(.bottom, GagaeSpacing.xl)
+                        .padding(.bottom, 28)
                 }
-                .padding(.horizontal, GagaeSpacing.md)
+                .padding(.horizontal, 16)
             }
         }
         .navigationTitle("소비 기록")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarBackground(Color.gagaeBackground, for: .navigationBar)
+        .toolbarBackground(Color.gagaePinkGradientTop, for: .navigationBar)
         .onAppear {
             let today = Calendar.current.startOfDay(for: Date())
             viewModel.fetchSpending(on: today)
-        }
-        .alert("저장 완료", isPresented: $viewModel.showSuccessAlert) {
-            Button("확인") {
-                viewModel.clearForm()
-            }
-        } message: {
-            Text("지출 내역이 저장되었습니다 🐷")
         }
         .alert("오류", isPresented: $viewModel.showErrorAlert) {
             Button("확인", role: .cancel) { }
         } message: {
             Text(viewModel.errorMessage)
         }
-        .onTapGesture {
-            focusedField = nil
+        .onTapGesture { focusedField = nil }
+    }
+}
+
+// MARK: - Input Card
+extension SpendView {
+
+    private var inputCard: some View {
+        VStack(spacing: 0) {
+            // 헤더
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.gagaePinkLight)
+                    .frame(width: 30, height: 30)
+                    .overlay(
+                        Image(systemName: viewModel.isEditing ? "pencil.line" : "pencil")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.gagaePinkDark)
+                    )
+                Text(viewModel.isEditing ? "지출 수정 중" : "오늘 쓴 거 기록해요")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Spacer()
+                if viewModel.isEditing {
+                    Button {
+                        focusedField = nil
+                        withAnimation { viewModel.cancelEdit() }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("취소")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundStyle(.gagaeTextSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color(hex: "#F5F5F5"))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
+
+            Rectangle().fill(Color.gagaeDivider).frame(height: 0.5)
+                .padding(.horizontal, 16)
+
+            VStack(spacing: 18) {
+                categoryField
+                contentField
+                amountField
+                dateField
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 16)
+        }
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
+    }
+
+    private func fieldLabel(_ icon: String, _ text: String) -> some View {
+        HStack(spacing: 5) {
+            Text(icon).font(.system(size: 13))
+            Text(text)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.gagaeTextSecondary)
+        }
+    }
+
+    /// ① 카테고리
+    private var categoryField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel("🏷", "카테고리")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(SpendingCategory.allCases, id: \.self) { category in
+                        categoryChip(category)
+                    }
+                }
+                .padding(.horizontal, 1)
+                .padding(.bottom, 2)
+            }
+        }
+    }
+
+    private func categoryChip(_ category: SpendingCategory) -> some View {
+        let isSelected = viewModel.tempCategory == category
+        return Button {
+            viewModel.tempCategory = category
+        } label: {
+            HStack(spacing: 5) {
+                Text(category.emoji).font(.system(size: 14))
+                Text(category.rawValue)
+                    .font(.system(size: 13, weight: isSelected ? .bold : .medium, design: .rounded))
+                    .foregroundStyle(isSelected ? .white : .gagaeTextSecondary)
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 7)
+            .background(isSelected ? category.color : Color(hex: "#F5F5F5"))
+            .clipShape(Capsule())
+            .overlay(
+                Capsule().stroke(isSelected ? .clear : Color.gagaeDivider, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.12), value: viewModel.tempCategory)
+    }
+
+    /// ② 내용
+    private var contentField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel("📝", "내용")
+            TextField("예: 점심 식사, 카페라떼", text: $viewModel.tempTitle)
+                .font(.system(size: 15, design: .rounded))
+                .foregroundStyle(.gagaeText)
+                .focused($focusedField, equals: .title)
+                .frame(height: 46)
+                .padding(.horizontal, 14)
+                .background(Color.gagaeSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(focusedField == .title ? Color.gagaePinkDark : Color.gagaeDivider,
+                                lineWidth: focusedField == .title ? 1.8 : 1.5)
+                )
+        }
+    }
+
+    /// ③ 금액
+    private var amountField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel("₩", "금액")
+            HStack(spacing: 0) {
+                Text("₩")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundStyle(.gagaePinkDark)
+                    .frame(width: 46, height: 46)
+                    .overlay(alignment: .trailing) {
+                        Rectangle()
+                            .fill(focusedField == .amount ? Color.gagaePinkLight : Color.gagaeDivider)
+                            .frame(width: 1.5)
+                    }
+
+                TextField("0", text: $viewModel.tempAmountText)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                    .keyboardType(.numberPad)
+                    .focused($focusedField, equals: .amount)
+                    .padding(.horizontal, 14)
+                    .onChange(of: viewModel.tempAmountText) { _, newValue in
+                        viewModel.updateAmountFromText(newValue)
+                    }
+
+                if viewModel.tempAmount > 0 {
+                    Text("원")
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundStyle(.gagaeTextSecondary)
+                        .padding(.trailing, 14)
+                }
+            }
+            .frame(height: 46)
+            .background(Color.gagaeSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(focusedField == .amount ? Color.gagaePinkDark : Color.gagaeDivider,
+                            lineWidth: focusedField == .amount ? 1.8 : 1.5)
+            )
+        }
+    }
+
+    /// ④ 날짜
+    private var dateField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel("📅", "날짜")
+            HStack {
+                DatePicker("", selection: $viewModel.tempDate, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .labelsHidden()
+                    .tint(.gagaePinkDark)
+                Spacer()
+                if Calendar.current.isDateInToday(viewModel.tempDate) {
+                    Text("오늘")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.gagaePinkLight)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+            }
+            .frame(height: 46)
+            .padding(.horizontal, 14)
+            .background(Color.gagaeSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.gagaeDivider, lineWidth: 1.5)
+            )
         }
     }
 }
 
-// MARK: - Subviews
+// MARK: - Save Button
 extension SpendView {
-
-    /// 입력 카드
-    private var inputCard: some View {
-        GagaeCard {
-            VStack(spacing: GagaeSpacing.md) {
-                // 카드 헤더
-                HStack {
-                    Image(systemName: "pencil.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.gagaePinkDark)
-                    Text("오늘 쓴 거 기록해요")
-                        .font(.gagaeHeadline)
-                        .foregroundStyle(.gagaeText)
-                    Spacer()
-                }
-
-                GagaeDivider()
-
-                // 내용 입력
-                VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
-                    Label("내용", systemImage: "tag.fill")
-                        .font(.gagaeFootnote)
-                        .foregroundStyle(.gagaeTextSecondary)
-
-                    TextField("예: 점심 식사, 카페라떼", text: $viewModel.tempTitle)
-                        .font(.gagaeBody)
-                        .focused($focusedField, equals: .title)
-                        .padding(.horizontal, GagaeSpacing.md)
-                        .padding(.vertical, GagaeSpacing.md)
-                        .background(Color.gagaeSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: GagaeRadius.md)
-                                .stroke(
-                                    focusedField == .title ? Color.gagaePinkDark : Color.gagaeDivider,
-                                    lineWidth: focusedField == .title ? 2 : 0.5
-                                )
-                        )
-                }
-
-                // 금액 입력
-                VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
-                    Label("금액", systemImage: "wonsign.circle.fill")
-                        .font(.gagaeFootnote)
-                        .foregroundStyle(.gagaeTextSecondary)
-
-                    HStack(spacing: GagaeSpacing.sm) {
-                        Text("₩")
-                            .font(.gagaeTitle3)
-                            .foregroundStyle(.gagaePinkDark)
-
-                        TextField("0", text: $viewModel.tempAmountText)
-                            .font(.gagaeTitle3)
-                            .keyboardType(.numberPad)
-                            .focused($focusedField, equals: .amount)
-                            .onChange(of: viewModel.tempAmountText) { _, newValue in
-                                viewModel.updateAmountFromText(newValue)
-                            }
+    private var saveButton: some View {
+        Button {
+            focusedField = nil
+            viewModel.saveSpending(eventBus: eventBus) { success in
+                if success {
+                    let today = Calendar.current.startOfDay(for: Date())
+                    viewModel.fetchSpending(on: today)
+                    viewModel.clearForm()
+                    withAnimation { justSaved = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                        withAnimation { justSaved = false }
                     }
-                    .padding(.horizontal, GagaeSpacing.md)
-                    .padding(.vertical, GagaeSpacing.md)
-                    .background(Color.gagaeSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: GagaeRadius.md)
-                            .stroke(
-                                focusedField == .amount ? Color.gagaePinkDark : Color.gagaeDivider,
-                                lineWidth: focusedField == .amount ? 2 : 0.5
-                            )
-                    )
-                }
-
-                // 날짜 선택
-                VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
-                    Label("날짜", systemImage: "calendar.circle.fill")
-                        .font(.gagaeFootnote)
-                        .foregroundStyle(.gagaeTextSecondary)
-
-                    HStack {
-                        DatePicker(
-                            "",
-                            selection: $viewModel.tempDate,
-                            displayedComponents: .date
-                        )
-                        .datePickerStyle(.compact)
-                        .labelsHidden()
-                        .accentColor(.gagaePinkDark)
-
-                        Spacer()
-                    }
-                    .padding(.horizontal, GagaeSpacing.md)
-                    .padding(.vertical, GagaeSpacing.sm)
-                    .background(Color.gagaeSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: GagaeRadius.md)
-                            .stroke(Color.gagaeDivider, lineWidth: 0.5)
-                    )
                 }
             }
+        } label: {
+            HStack(spacing: 8) {
+                if justSaved {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                    Text("저장 완료!")
+                        .font(.system(size: 17, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white)
+                } else {
+                    ZStack {
+                        Circle().stroke(.white.opacity(0.6), lineWidth: 2).frame(width: 26, height: 26)
+                        Image(systemName: viewModel.isEditing ? "checkmark" : "plus")
+                            .font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                    }
+                    Text(viewModel.isEditing ? "수정 완료" : "저장하기")
+                        .font(.system(size: 17, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(
+                justSaved
+                    ? LinearGradient(colors: [.gagaeGood, .gagaeGood], startPoint: .leading, endPoint: .trailing)
+                    : LinearGradient(colors: [.gagaePinkDark, .gagaePink], startPoint: .topLeading, endPoint: .bottomTrailing)
+            )
+            .clipShape(Capsule())
+            .gagaeShadow(color: (justSaved ? Color.gagaeGood : Color.gagaePinkDark).opacity(0.32), radius: 14, y: 10)
         }
+        .buttonStyle(.plain)
+        .disabled(!viewModel.isValid && !justSaved)
+        .opacity((viewModel.isValid || justSaved) ? 1 : 0.55)
+        .animation(.easeInOut(duration: 0.25), value: justSaved)
     }
+}
 
-    /// 오늘 지출 목록 섹션
+// MARK: - Today's List
+extension SpendView {
     private var spendingListSection: some View {
-        VStack(spacing: GagaeSpacing.sm) {
-            // 섹션 헤더
+        VStack(spacing: 12) {
             HStack {
                 Text("오늘 지출 목록")
-                    .font(.gagaeHeadline)
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundStyle(.gagaeText)
-
                 Spacer()
-
                 if !viewModel.spendingRecords.isEmpty {
-                    Text("총 \(FormatterUtils.currencyString(from: viewModel.totalSpentToday))")
-                        .font(.gagaeCalloutMedium)
+                    Text("총 -" + FormatterUtils.currencyString(from: viewModel.totalSpentToday))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(.gagaeDanger)
                 }
             }
+            .padding(.horizontal, 2)
 
             if viewModel.spendingRecords.isEmpty {
-                // 빈 상태
-                GagaeCard {
-                    GagaeEmptyStateView(
-                        icon: "🐷",
-                        title: "아직 기록이 없어요",
-                        subtitle: "위에서 오늘 쓴 금액을 기록해보세요!"
-                    )
+                VStack(spacing: 8) {
+                    Text("🐷").font(.system(size: 32))
+                    Text("아직 기록된 지출이 없어요")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+                .background(Color.gagaeCardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .gagaeCardShadow()
             } else {
-                // 지출 목록
-                GagaeCard(padding: 0) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(viewModel.spendingRecords.enumerated()), id: \.element.id) { index, record in
-                            spendingRow(record: record, isFirst: index == 0, isLast: index == viewModel.spendingRecords.count - 1)
-
-                            if index < viewModel.spendingRecords.count - 1 {
-                                GagaeDivider()
-                                    .padding(.horizontal, GagaeSpacing.md)
-                            }
+                VStack(spacing: 0) {
+                    ForEach(Array(viewModel.spendingRecords.enumerated()), id: \.element.id) { index, record in
+                        spendingRow(record: record)
+                        if index < viewModel.spendingRecords.count - 1 {
+                            Rectangle().fill(Color.gagaeDivider).frame(height: 0.5)
+                                .padding(.leading, 68)
                         }
                     }
                 }
+                .background(Color.gagaeCardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .gagaeCardShadow()
+
+                // 합계 요약
+                HStack {
+                    Text("\(viewModel.spendingRecords.count)건의 지출")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeTextSecondary)
+                    Spacer()
+                    Text("총 지출")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeTextSecondary)
+                    Text("-" + FormatterUtils.currencyString(from: viewModel.totalSpentToday))
+                        .font(.system(size: 16, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.gagaeDanger)
+                }
+                .padding(.horizontal, 4)
             }
         }
     }
 
-    /// 지출 행
-    private func spendingRow(record: SpendingRecordModel, isFirst: Bool, isLast: Bool) -> some View {
-        HStack(spacing: GagaeSpacing.md) {
-            // 아이콘
+    private func spendingRow(record: SpendingRecordModel) -> some View {
+        HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(Color.gagaePinkLight)
-                    .frame(width: 38, height: 38)
-
-                Text(spendingIcon(for: record.title))
-                    .font(.system(size: 18))
+                    .fill(record.category.color.opacity(0.13))
+                    .frame(width: 40, height: 40)
+                Text(record.category.emoji).font(.system(size: 19))
             }
 
-            // 내용
             VStack(alignment: .leading, spacing: 2) {
-                Text(record.title)
-                    .font(.gagaeCalloutMedium)
+                Text(record.title.isEmpty ? record.category.rawValue : record.title)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(.gagaeText)
-
+                    .lineLimit(1)
                 Text(FormatterUtils.relativeDate(record.date))
-                    .font(.gagaeCaption)
-                    .foregroundStyle(.gagaeTextSecondary)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
             }
 
             Spacer()
 
-            // 금액
-            Text("- \(FormatterUtils.currencyString(from: record.amount))")
-                .font(.gagaeCalloutMedium)
+            Text("-" + FormatterUtils.currencyString(from: record.amount))
+                .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundStyle(.gagaeDanger)
 
-            // 삭제 버튼
+            Button {
+                focusedField = nil
+                withAnimation { viewModel.beginEdit(record) }
+            } label: {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.gagaePinkLight)
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        Image(systemName: "pencil")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.gagaePinkDark)
+                    )
+            }
+            .buttonStyle(.plain)
+
             Button {
                 viewModel.deleteSpending(id: record.id, eventBus: eventBus)
                 let today = Calendar.current.startOfDay(for: Date())
                 viewModel.fetchSpending(on: today)
             } label: {
-                Image(systemName: "trash.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(.gagaeTextTertiary)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(hex: "#FFF0F0"))
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        Image(systemName: "trash")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.gagaeDanger)
+                    )
             }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, GagaeSpacing.md)
-        .padding(.vertical, GagaeSpacing.sm)
-    }
-
-    /// 지출 항목에 따른 이모지 아이콘
-    private func spendingIcon(for title: String) -> String {
-        let lower = title.lowercased()
-        if lower.contains("카페") || lower.contains("커피") || lower.contains("cafe") { return "☕️" }
-        if lower.contains("식사") || lower.contains("밥") || lower.contains("점심") || lower.contains("저녁") || lower.contains("아침") { return "🍱" }
-        if lower.contains("편의점") || lower.contains("마트") { return "🏪" }
-        if lower.contains("술") || lower.contains("맥주") { return "🍺" }
-        if lower.contains("교통") || lower.contains("버스") || lower.contains("지하철") || lower.contains("택시") { return "🚌" }
-        if lower.contains("영화") || lower.contains("공연") { return "🎬" }
-        if lower.contains("쇼핑") || lower.contains("옷") { return "🛍️" }
-        if lower.contains("병원") || lower.contains("약") { return "💊" }
-        return "💸"
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .background(viewModel.editingRecordId == record.id ? Color.gagaePinkLight.opacity(0.4) : Color.clear)
     }
 }
 
