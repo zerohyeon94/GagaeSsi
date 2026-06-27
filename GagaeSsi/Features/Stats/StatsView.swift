@@ -2,174 +2,381 @@
 //  StatsView.swift
 //  GagaeSsi
 //
-//  통계 화면
+//  통계 화면 (Claude Design 적용)
 //
 
 import SwiftUI
+import Charts
 
 struct StatsView: View {
-    // MARK: - Body
+    @State private var viewModel = StatsViewModel()
+
     var body: some View {
         ZStack {
-            Color.gagaeBackground.ignoresSafeArea()
+            GagaeBackground()
 
             ScrollView {
-                VStack(spacing: GagaeSpacing.lg) {
-                    // 준비 중 카드
-                    comingSoonCard
-                        .padding(.top, GagaeSpacing.md)
+                VStack(spacing: 14) {
+                    largeTitle
+                    monthNavigator
 
-                    // 미리보기 카드들
-                    previewCards
-
-                    Spacer(minLength: GagaeSpacing.xl)
+                    if viewModel.monthlyTotal == 0 && viewModel.categoryTotals.isEmpty {
+                        emptyStateCard
+                    } else {
+                        monthlySummaryCard
+                        categoryCard
+                        dailyChartCard
+                    }
                 }
-                .padding(.horizontal, GagaeSpacing.md)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 28)
             }
         }
-        .navigationTitle("통계")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarHidden(true)
+        .onAppear { viewModel.load() }
     }
 }
 
-// MARK: - Subviews
+// MARK: - Header
 extension StatsView {
-
-    /// 준비 중 메인 카드
-    private var comingSoonCard: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: GagaeRadius.xxl)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.6, green: 0.47, blue: 0.98), Color(red: 0.48, green: 0.36, blue: 0.90)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .gagaeCardShadow()
-
-            // 장식 원
-            GeometryReader { geo in
-                Circle()
-                    .fill(.white.opacity(0.08))
-                    .frame(width: 120, height: 120)
-                    .offset(x: geo.size.width - 50, y: -30)
-            }
-
-            VStack(spacing: GagaeSpacing.md) {
-                Text("📊")
-                    .font(.system(size: 56))
-
-                VStack(spacing: GagaeSpacing.sm) {
-                    Text("통계 기능 준비 중")
-                        .font(.gagaeTitle2)
-                        .foregroundStyle(.white)
-
-                    Text("곧 가계씨가 여러분의\n소비 패턴을 분석해드릴게요!")
-                        .font(.gagaeSubheadline)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .multilineTextAlignment(.center)
-                }
-
-                HStack(spacing: GagaeSpacing.xs) {
-                    Circle()
-                        .fill(.white.opacity(0.5))
-                        .frame(width: 6, height: 6)
-                    Circle()
-                        .fill(.white.opacity(0.5))
-                        .frame(width: 6, height: 6)
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 6, height: 6)
-                }
-            }
-            .padding(GagaeSpacing.xl)
-        }
-        .frame(height: 240)
-    }
-
-    /// 미리보기 기능 카드들
-    private var previewCards: some View {
-        VStack(spacing: GagaeSpacing.md) {
-            Text("앞으로 이런 기능이 추가돼요")
-                .font(.gagaeHeadline)
+    private var largeTitle: some View {
+        HStack {
+            Text("통계")
+                .font(.system(size: 34, weight: .heavy, design: .rounded))
                 .foregroundStyle(.gagaeText)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: GagaeSpacing.sm) {
-                ForEach(upcomingFeatures, id: \.title) { feature in
-                    featurePreviewCard(feature: feature)
-                }
-            }
+            Spacer()
         }
+        .padding(.top, 8)
+        .padding(.bottom, 4)
     }
 
-    private func featurePreviewCard(feature: UpcomingFeature) -> some View {
-        GagaeCard(backgroundColor: feature.backgroundColor) {
-            VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
-                Text(feature.icon)
-                    .font(.system(size: 32))
-
-                Text(feature.title)
-                    .font(.gagaeCalloutMedium)
-                    .foregroundStyle(.gagaeText)
-
-                Text(feature.description)
-                    .font(.gagaeCaption)
-                    .foregroundStyle(.gagaeTextSecondary)
-                    .lineLimit(2)
-
-                HStack {
-                    Spacer()
-                    Text("준비 중")
-                        .font(.gagaeCaption)
-                        .foregroundStyle(.gagaeTextTertiary)
-                        .padding(.horizontal, GagaeSpacing.xs)
-                        .padding(.vertical, 2)
-                        .background(Color.gagaeDivider)
-                        .clipShape(Capsule())
-                }
+    private var monthNavigator: some View {
+        HStack {
+            navButton(systemName: "chevron.left", enabled: !viewModel.isFirstMonth) {
+                viewModel.goToPrevMonth()
+            }
+            Spacer()
+            Text(viewModel.currentMonthLabel)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(.gagaeText)
+            Spacer()
+            navButton(systemName: "chevron.right", enabled: viewModel.canGoToNextMonth) {
+                viewModel.goToNextMonth()
             }
         }
+        .padding(.horizontal, 2)
+        .padding(.bottom, 2)
+    }
+
+    private func navButton(systemName: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Circle()
+                .fill(enabled ? Color.gagaePinkLight : Color(hex: "#F5F5F5"))
+                .frame(width: 36, height: 36)
+                .overlay(
+                    Image(systemName: systemName)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(enabled ? Color.gagaePinkDark : Color.gagaeTextTertiary)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 }
 
-// MARK: - Data
+// MARK: - Cards
 extension StatsView {
-    struct UpcomingFeature {
-        let icon: String
-        let title: String
-        let description: String
-        let backgroundColor: Color
+
+    private var emptyStateCard: some View {
+        VStack(spacing: 8) {
+            Text("🐷").font(.system(size: 40))
+            Text("이번 달 기록이 없어요")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(.gagaeText)
+            Text("소비를 기록하면 통계가 나타나요!")
+                .font(.system(size: 14, design: .rounded))
+                .foregroundStyle(.gagaeTextSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
     }
 
-    private var upcomingFeatures: [UpcomingFeature] {
-        [
-            UpcomingFeature(
-                icon: "📅",
-                title: "월별 소비",
-                description: "한 달 동안 얼마나 썼는지 한눈에",
-                backgroundColor: Color(red: 0.95, green: 0.93, blue: 1.0)
-            ),
-            UpcomingFeature(
-                icon: "🏷️",
-                title: "카테고리별",
-                description: "어디에 가장 많이 쓰는지 분석",
-                backgroundColor: Color(red: 0.93, green: 0.97, blue: 1.0)
-            ),
-            UpcomingFeature(
-                icon: "📈",
-                title: "절약 트렌드",
-                description: "지난달 대비 얼마나 아꼈나요?",
-                backgroundColor: Color(red: 0.93, green: 1.0, blue: 0.95)
-            ),
-            UpcomingFeature(
-                icon: "🤖",
-                title: "AI 피드백",
-                description: "가계씨가 소비 패턴 조언을 드려요",
-                backgroundColor: Color(red: 1.0, green: 0.95, blue: 0.88)
-            )
-        ]
+    /// 월별 요약 카드
+    private var monthlySummaryCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("이번 달 요약")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(.gagaeText)
+                .padding(.bottom, 16)
+
+            HStack(spacing: 0) {
+                summaryItem(label: "총 지출",
+                            value: FormatterUtils.currencyString(from: viewModel.monthlyTotal),
+                            color: .gagaeDanger, showDivider: true)
+                summaryItem(label: "일 평균",
+                            value: FormatterUtils.currencyString(from: viewModel.dailyAverage),
+                            color: .gagaePinkDark, showDivider: true)
+                summaryItem(label: "전월 대비",
+                            value: diffText, color: diffColor, showDivider: false)
+            }
+            .padding(.bottom, 18)
+
+            Rectangle().fill(Color.gagaeDivider).frame(height: 0.5)
+                .padding(.bottom, 16)
+
+            progressBar
+        }
+        .padding(16)
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
+    }
+
+    private func summaryItem(label: String, value: String, color: Color, showDivider: Bool) -> some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 5) {
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.gagaeTextSecondary)
+                Text(value)
+                    .font(.system(size: 16, weight: .heavy, design: .rounded))
+                    .foregroundStyle(color)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+
+            if showDivider {
+                Rectangle().fill(Color.gagaeDivider).frame(width: 1, height: 28)
+            }
+        }
+    }
+
+    private var diffText: String {
+        let d = viewModel.diffAmount
+        if viewModel.prevMonthTotal == 0 { return "-" }
+        let sign = d > 0 ? "+" : (d < 0 ? "-" : "")
+        return sign + FormatterUtils.currencyString(from: abs(d))
+    }
+
+    private var diffColor: Color {
+        let d = viewModel.diffAmount
+        if d > 0 { return .gagaeDanger }
+        if d < 0 { return .gagaeGood }
+        return .gagaeText
+    }
+
+    /// 예산 사용률 바
+    private var progressBar: some View {
+        let pct = viewModel.budgetUsagePct
+        let color: Color = pct >= 90 ? .gagaeDanger : (pct >= 70 ? .gagaeWarning : .gagaeGood)
+        return VStack(spacing: 8) {
+            HStack {
+                Text("예산 사용률")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.gagaeTextSecondary)
+                Spacer()
+                Text("\(pct)%")
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(color)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.gagaeDivider).frame(height: 8)
+                    Capsule()
+                        .fill(LinearGradient(
+                            colors: pct >= 90 ? [.gagaeWarning, .gagaeDanger]
+                                  : pct >= 70 ? [Color(hex: "#FFD166"), .gagaeWarning]
+                                  : [.gagaePink, .gagaeGood],
+                            startPoint: .leading, endPoint: .trailing))
+                        .frame(width: geo.size.width * min(1, Double(pct) / 100), height: 8)
+                        .animation(.spring(duration: 0.7), value: pct)
+                }
+            }
+            .frame(height: 8)
+        }
+    }
+
+    /// 카테고리별 지출 카드
+    private var categoryCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("카테고리별 지출")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(.gagaeText)
+
+            if viewModel.categoryTotals.isEmpty {
+                Text("기록이 없어요")
+                    .font(.system(size: 14, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            } else {
+                HStack(spacing: 16) {
+                    donutChart
+                    legend
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
+    }
+
+    private var donutChart: some View {
+        ZStack {
+            Chart(viewModel.categoryTotals) { item in
+                SectorMark(
+                    angle: .value("금액", item.amount),
+                    innerRadius: .ratio(0.6),
+                    angularInset: 2
+                )
+                .cornerRadius(4)
+                .foregroundStyle(item.category.color)
+            }
+            .frame(width: 130, height: 130)
+
+            VStack(spacing: 1) {
+                Text("₩\(String(format: "%.1f", Double(viewModel.monthlyTotal) / 10000))")
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Text("만원")
+                    .font(.system(size: 9.5, design: .rounded))
+                    .foregroundStyle(.gagaeTextSecondary)
+            }
+        }
+    }
+
+    private var legend: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            ForEach(viewModel.categoryTotals) { item in
+                HStack(spacing: 7) {
+                    Circle().fill(item.category.color).frame(width: 9, height: 9)
+                    Text(item.category.rawValue)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                    Spacer()
+                    Text("\(Int((item.percentage * 100).rounded()))%")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                }
+            }
+        }
+    }
+
+    /// 일별 소비 카드
+    private var dailyChartCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("일별 소비")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Spacer()
+                if viewModel.baseDailyBudget > 0 {
+                    HStack(spacing: 5) {
+                        DashLine().stroke(Color.gagaeTextTertiary,
+                                          style: StrokeStyle(lineWidth: 1.5, dash: [3, 2.5]))
+                            .frame(width: 18, height: 1)
+                        Text("일일 예산")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.gagaeTextTertiary)
+                    }
+                }
+            }
+
+            if viewModel.dailyTotals.allSatisfy({ $0.amount == 0 }) {
+                Text("기록이 없어요")
+                    .font(.system(size: 14, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            } else {
+                dailyChart
+
+                // 예산 초과 pill
+                if viewModel.baseDailyBudget > 0 {
+                    if viewModel.overBudgetDays > 0 {
+                        HStack(spacing: 6) {
+                            Text("예산 초과 \(viewModel.overBudgetDays)일")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(.gagaeDanger)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Color.gagaeDanger.opacity(0.10))
+                                .clipShape(Capsule())
+                            Text("이 있어요")
+                                .font(.system(size: 11, weight: .medium, design: .rounded))
+                                .foregroundStyle(.gagaeTextTertiary)
+                        }
+                    } else {
+                        Text("모두 예산 안에서 🎉")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(.gagaeGood)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.gagaeGood.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
+    }
+
+    private var dailyChart: some View {
+        Chart {
+            ForEach(viewModel.dailyTotals) { item in
+                BarMark(
+                    x: .value("날짜", item.date, unit: .day),
+                    y: .value("금액", item.amount)
+                )
+                .foregroundStyle(
+                    item.amount > viewModel.baseDailyBudget && viewModel.baseDailyBudget > 0
+                        ? Color.gagaeDanger : Color.gagaePinkDark
+                )
+                .cornerRadius(2)
+            }
+            if viewModel.baseDailyBudget > 0 {
+                RuleMark(y: .value("예산", viewModel.baseDailyBudget))
+                    .lineStyle(StrokeStyle(lineWidth: 1.2, dash: [3, 2.5]))
+                    .foregroundStyle(Color.gagaeTextTertiary)
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .day, count: 5)) { _ in
+                AxisGridLine()
+                AxisValueLabel(format: .dateTime.day())
+                    .font(.system(size: 8, design: .rounded))
+            }
+        }
+        .chartYAxis {
+            AxisMarks { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let intVal = value.as(Int.self) {
+                        Text(FormatterUtils.shortCurrencyString(from: intVal))
+                            .font(.system(size: 8, design: .rounded))
+                    }
+                }
+            }
+        }
+        .frame(height: 100)
+    }
+}
+
+// MARK: - Dashed Line Shape
+private struct DashLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.width, y: rect.midY))
+        return p
     }
 }
 
