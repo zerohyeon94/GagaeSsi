@@ -24,7 +24,10 @@ final class HomeViewModel {
     func fetchTodayBudget() {
         isLoading = true
         errorMessage = nil
-        
+
+        // 마지막 기록일 ~ 오늘까지 누락된 날의 이월금 자동 처리
+        CoreDataManager.shared.processDailyBudgets(upTo: Date())
+
         if let model = CoreDataManager.shared.fetchOrCreateTodayDailyBudget() {
             applyDailyBudgetModel(model)
         } else {

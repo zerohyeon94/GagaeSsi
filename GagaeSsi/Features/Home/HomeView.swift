@@ -2,7 +2,7 @@
 //  HomeView.swift
 //  GagaeSsi
 //
-//  홈 화면 - 오늘의 예산 현황
+//  홈 화면 - 오늘의 예산 현황 (Claude Design 적용)
 //
 
 import SwiftUI
@@ -11,8 +11,10 @@ struct HomeView: View {
     // MARK: - Properties
     @State private var viewModel = HomeViewModel()
     @Environment(AppEventBus.self) private var eventBus
-    @State private var showRecordSpend = false
-    @State private var pigAnimating = false
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var pigBreathing = false
+    @State private var dotPulsing = false
+    @State private var weeklyTotals: [(date: Date, total: Int)] = []
 
     // MARK: - Computed
     private var budgetStatus: BudgetStatus {
@@ -22,39 +24,42 @@ struct HomeView: View {
     // MARK: - Body
     var body: some View {
         ZStack {
-            // 배경
             GagaeBackground()
 
             ScrollView {
-                VStack(spacing: GagaeSpacing.lg) {
-                    // 헤더 (날짜 + 인사)
+                VStack(spacing: 0) {
                     headerSection
-                        .padding(.top, GagaeSpacing.md)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
+                        .padding(.bottom, 14)
 
-                    // 돼지 캐릭터 + 메인 금액 카드
-                    mainBudgetCard
+                    budgetCard
+                        .padding(.horizontal, 20)
 
-                    // 예산 상세 분석 카드
-                    budgetBreakdownCard
+                    statusCard
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
 
-                    // 최근 7일 요약 카드
-                    recentSummaryCard
+                    chartCard
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
 
-                    // 소비 기록 버튼
-                    recordSpendButton
-                        .padding(.bottom, GagaeSpacing.xl)
+                    recordButton
+                        .padding(.horizontal, 20)
+                        .padding(.top, 20)
+                        .padding(.bottom, 28)
                 }
-                .padding(.horizontal, GagaeSpacing.md)
             }
         }
-        .navigationTitle("")
         .navigationBarHidden(true)
         .onAppear {
             viewModel.fetchTodayBudget()
-            startPigAnimation()
+            loadWeeklyData()
+            startAnimations()
         }
         .onChange(of: eventBus.spendingAddedTrigger) {
             viewModel.fetchTodayBudget()
+            loadWeeklyData()
         }
         .onChange(of: eventBus.budgetChangedTrigger) {
             viewModel.recalculateTodayBudget()
@@ -62,54 +67,67 @@ struct HomeView: View {
         .onChange(of: eventBus.fixedExpenseChangedTrigger) {
             viewModel.recalculateTodayBudget()
         }
+        .onChange(of: scenePhase) {
+            // 백그라운드에서 자정을 넘긴 경우 등 다시 활성화될 때 이월 재처리
+            if scenePhase == .active {
+                viewModel.fetchTodayBudget()
+                loadWeeklyData()
+            }
+        }
     }
 
-    private func startPigAnimation() {
-        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-            pigAnimating = true
+    private func startAnimations() {
+        withAnimation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true)) {
+            pigBreathing = true
         }
+        withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+            dotPulsing = true
+        }
+    }
+
+    private func loadWeeklyData() {
+        weeklyTotals = CoreDataManager.shared.fetchDailyTotals(days: 7)
     }
 }
 
 // MARK: - Subviews
 extension HomeView {
 
-    /// 상단 헤더: 날짜 + 가게씨 로고
+    /// 상단 헤더: 날짜 + 가계씨 + 상태 배지
     private var headerSection: some View {
-        HStack {
+        HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(todayDateString)
-                    .font(.gagaeCaption)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.gagaeTextSecondary)
-
                 Text("가계씨")
-                    .font(.gagaeTitle2)
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
                     .foregroundStyle(.gagaePinkDark)
             }
 
             Spacer()
 
             // 상태 배지
-            HStack(spacing: GagaeSpacing.xs) {
+            HStack(spacing: 6) {
                 Circle()
                     .fill(budgetStatus.color)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 7, height: 7)
+                    .scaleEffect(dotPulsing ? 1.0 : 0.85)
                 Text(statusBadgeText)
-                    .font(.gagaeCaptionMedium)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(budgetStatus.color)
             }
-            .padding(.horizontal, GagaeSpacing.sm)
-            .padding(.vertical, GagaeSpacing.xs)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 7)
             .background(budgetStatus.color.opacity(0.12))
             .clipShape(Capsule())
         }
     }
 
-    /// 메인 예산 카드: 돼지 + 금액
-    private var mainBudgetCard: some View {
+    /// 메인 예산 카드
+    private var budgetCard: some View {
         ZStack {
-            // 카드 배경
-            RoundedRectangle(cornerRadius: GagaeRadius.xxl)
+            RoundedRectangle(cornerRadius: 28)
                 .fill(
                     LinearGradient(
                         colors: cardGradientColors,
@@ -117,266 +135,205 @@ extension HomeView {
                         endPoint: .bottomTrailing
                     )
                 )
-                .gagaeCardShadow()
+                .gagaeShadow(color: .gagaeBudgetCardBottom.opacity(0.34), radius: 20, y: 16)
 
-            // 장식 원들
+            // 장식 버블
             GeometryReader { geo in
-                Circle()
-                    .fill(.white.opacity(0.08))
+                Circle().fill(.white.opacity(0.08))
                     .frame(width: 140, height: 140)
-                    .offset(x: geo.size.width - 60, y: -40)
-
-                Circle()
-                    .fill(.white.opacity(0.05))
-                    .frame(width: 80, height: 80)
-                    .offset(x: -20, y: geo.size.height - 30)
+                    .offset(x: geo.size.width - 112, y: -44)
+                Circle().fill(.white.opacity(0.06))
+                    .frame(width: 120, height: 120)
+                    .offset(x: -24, y: geo.size.height - 80)
+                Circle().fill(.white.opacity(0.07))
+                    .frame(width: 48, height: 48)
+                    .offset(x: 22, y: 28)
             }
+            .clipShape(RoundedRectangle(cornerRadius: 28))
 
-            VStack(spacing: GagaeSpacing.md) {
-                // 돼지 캐릭터 이미지 또는 이모지
-                pigCharacterView
-
-                // 금액
-                VStack(spacing: GagaeSpacing.xs) {
-                    Text("오늘 쓸 수 있는 금액")
-                        .font(.gagaeSubheadline)
-                        .foregroundStyle(.white.opacity(0.85))
-
-                    Text(FormatterUtils.currencyString(from: viewModel.todayAvailableAmount))
-                        .font(.gagaeAmountLarge)
-                        .foregroundStyle(.white)
-                        .contentTransition(.numericText())
-
-                    Text(budgetStatus.message)
-                        .font(.gagaeCaption)
-                        .foregroundStyle(.white.opacity(0.75))
-                        .padding(.horizontal, GagaeSpacing.md)
-                        .padding(.vertical, GagaeSpacing.xs)
-                        .background(.white.opacity(0.15))
-                        .clipShape(Capsule())
+            VStack(spacing: 5) {
+                // 돼지 아바타
+                ZStack {
+                    Circle()
+                        .fill(.white.opacity(0.18))
+                        .frame(width: 68, height: 68)
+                    pigContent
+                        .font(.system(size: 38))
                 }
+                .scaleEffect(pigBreathing ? 1.05 : 1.0)
+                .padding(.bottom, 4)
+
+                Text("오늘 쓸 수 있는 금액")
+                    .font(.system(size: 15, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.82))
+
+                Text(FormatterUtils.currencyString(from: viewModel.todayAvailableAmount))
+                    .font(.system(size: 42, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText())
+
+                Text(budgetStatus.message)
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 7)
+                    .background(.white.opacity(0.16))
+                    .clipShape(Capsule())
+                    .padding(.top, 4)
             }
-            .padding(GagaeSpacing.xl)
+            .padding(24)
         }
         .frame(height: 260)
     }
 
-    /// 돼지 캐릭터 뷰
-    private var pigCharacterView: some View {
-        ZStack {
-            // 광채 효과
-            Circle()
-                .fill(.white.opacity(0.15))
-                .frame(width: 90, height: 90)
-                .scaleEffect(pigAnimating ? 1.1 : 1.0)
-
-            // 돼지 이미지 (있으면 사용, 없으면 이모지)
-            if UIImage(named: "characterPig") != nil {
-                Image("characterPig")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 80, height: 80)
-                    .scaleEffect(pigAnimating ? 1.05 : 1.0)
-            } else {
-                Text(budgetStatus.pigMood)
-                    .font(.system(size: 56))
-                    .scaleEffect(pigAnimating ? 1.08 : 1.0)
-            }
-        }
-        .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: pigAnimating)
-    }
-
-    /// 예산 분석 카드
-    private var budgetBreakdownCard: some View {
-        GagaeCard {
-            VStack(spacing: GagaeSpacing.sm) {
-                // 헤더
-                HStack {
-                    Text("오늘의 예산 현황")
-                        .font(.gagaeHeadline)
-                        .foregroundStyle(.gagaeText)
-                    Spacer()
-                }
-                .padding(.bottom, GagaeSpacing.xs)
-
-                GagaeDivider()
-
-                // 이월 금액
-                budgetRow(
-                    icon: "arrow.uturn.right.circle.fill",
-                    iconColor: .blue,
-                    label: "이월 금액",
-                    amount: viewModel.carryOverAmount,
-                    amountColor: .gagaeText
-                )
-
-                GagaeDivider()
-
-                // 오늘 예산
-                budgetRow(
-                    icon: "calendar.circle.fill",
-                    iconColor: .gagaePinkDark,
-                    label: "오늘 기본 예산",
-                    amount: viewModel.baseBudget,
-                    amountColor: .gagaeText
-                )
-
-                GagaeDivider()
-
-                // 오늘 소비
-                budgetRow(
-                    icon: "cart.circle.fill",
-                    iconColor: .gagaeDanger,
-                    label: "오늘 소비",
-                    amount: viewModel.spentAmount,
-                    amountColor: .gagaeDanger
-                )
-
-                GagaeDivider()
-
-                // 잔여
-                HStack {
-                    HStack(spacing: GagaeSpacing.sm) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(budgetStatus.color)
-
-                        Text("잔여 예산")
-                            .font(.gagaeBodyMedium)
-                            .foregroundStyle(.gagaeText)
-                    }
-
-                    Spacer()
-
-                    Text(FormatterUtils.currencyString(from: viewModel.todayAvailableAmount))
-                        .font(.gagaeAmountSmall)
-                        .foregroundStyle(budgetStatus.color)
-                }
-            }
+    @ViewBuilder
+    private var pigContent: some View {
+        if UIImage(named: "characterPig") != nil {
+            Image("characterPig")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 44, height: 44)
+        } else {
+            Text(budgetStatus.pigMood)
         }
     }
 
-    private func budgetRow(icon: String, iconColor: Color, label: String, amount: Int, amountColor: Color) -> some View {
-        HStack {
-            HStack(spacing: GagaeSpacing.sm) {
-                Image(systemName: icon)
-                    .font(.system(size: 20))
-                    .foregroundStyle(iconColor)
-
-                Text(label)
-                    .font(.gagaeCallout)
-                    .foregroundStyle(.gagaeTextSecondary)
+    /// 예산 현황 카드
+    private var statusCard: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("오늘의 예산 현황")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Spacer()
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 4)
 
+            statusRow(emoji: "🔵", label: "이월 금액",
+                      value: FormatterUtils.currencyString(from: viewModel.carryOverAmount),
+                      valueColor: .gagaeText, bold: false)
+            divider
+            statusRow(emoji: "🔴", label: "오늘 기본 예산",
+                      value: FormatterUtils.currencyString(from: viewModel.baseBudget),
+                      valueColor: .gagaeText, bold: false)
+            divider
+            statusRow(emoji: "🛒", label: "오늘 소비",
+                      value: "-" + FormatterUtils.currencyString(from: viewModel.spentAmount),
+                      valueColor: .gagaeDanger, bold: false)
+            divider
+            statusRow(emoji: "✅", label: "잔여 예산",
+                      value: FormatterUtils.currencyString(from: viewModel.todayAvailableAmount),
+                      valueColor: budgetStatus.color, bold: true)
+
+            Color.clear.frame(height: 4)
+        }
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
+    }
+
+    private func statusRow(emoji: String, label: String, value: String, valueColor: Color, bold: Bool) -> some View {
+        HStack(spacing: 10) {
+            Text(emoji)
+                .font(.system(size: 17))
+                .frame(width: 24, alignment: .center)
+            Text(label)
+                .font(.system(size: 15, design: .rounded))
+                .foregroundStyle(.gagaeText)
             Spacer()
-
-            Text(FormatterUtils.currencyString(from: amount))
-                .font(.gagaeCalloutMedium)
-                .foregroundStyle(amountColor)
+            Text(value)
+                .font(.system(size: 15, weight: bold ? .bold : .regular, design: .rounded))
+                .foregroundStyle(valueColor)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
-    /// 예산 프로그레스 바
-    private var budgetProgressBar: some View {
-        let progress = viewModel.baseBudget > 0
-            ? max(0, min(1, Double(viewModel.todayAvailableAmount) / Double(viewModel.baseBudget)))
-            : 0
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.gagaeDivider)
+            .frame(height: 0.5)
+            .padding(.leading, 50)
+    }
 
-        return VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: GagaeRadius.full)
-                        .fill(Color.gagaeDivider)
-                        .frame(height: 8)
-
-                    RoundedRectangle(cornerRadius: GagaeRadius.full)
-                        .fill(
-                            LinearGradient(
-                                colors: [budgetStatus.color, budgetStatus.color.opacity(0.6)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: geo.size.width * progress, height: 8)
-                        .animation(.spring(duration: 0.8), value: progress)
+    /// 최근 7일 차트 카드
+    private var chartCard: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("최근 7일 소비 흐름")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Spacer()
+                let weekTotal = weeklyTotals.reduce(0) { $0 + $1.total }
+                if weekTotal > 0 {
+                    Text("합계 " + FormatterUtils.currencyString(from: weekTotal))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
                 }
             }
-            .frame(height: 8)
+            .padding(.bottom, 18)
+
+            weeklyBarChart
         }
+        .padding(16)
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
     }
 
-    /// 최근 7일 요약 카드 (placeholder)
-    private var recentSummaryCard: some View {
-        GagaeCard {
-            VStack(spacing: GagaeSpacing.md) {
-                HStack {
-                    Text("📊 최근 7일 소비 흐름")
-                        .font(.gagaeHeadline)
-                        .foregroundStyle(.gagaeText)
-                    Spacer()
-                    Text("곧 공개")
-                        .font(.gagaeCaptionMedium)
-                        .foregroundStyle(.gagaePinkDark)
-                        .padding(.horizontal, GagaeSpacing.sm)
-                        .padding(.vertical, GagaeSpacing.xs)
-                        .background(.gagaePinkLight)
-                        .clipShape(Capsule())
-                }
-
-                // 미니 차트 플레이스홀더
-                HStack(alignment: .bottom, spacing: GagaeSpacing.sm) {
-                    ForEach(mockChartData, id: \.0) { item in
-                        VStack(spacing: GagaeSpacing.xs) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(item.1 ? Color.gagaePinkDark : Color.gagaePink.opacity(0.4))
-                                .frame(width: 28, height: item.2)
-
-                            Text(item.0)
-                                .font(.gagaeCaption)
-                                .foregroundStyle(.gagaeTextTertiary)
-                        }
-                    }
+    private var weeklyBarChart: some View {
+        let maxV = max(weeklyTotals.map { $0.total }.max() ?? 0, 1)
+        return HStack(alignment: .bottom, spacing: 7) {
+            ForEach(weeklyTotals, id: \.date) { item in
+                let isToday = Calendar.current.isDateInToday(item.date)
+                let barH = max(8, CGFloat(item.total) / CGFloat(maxV) * 62)
+                VStack(spacing: 7) {
+                    Spacer(minLength: 0)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isToday ? Color.gagaePinkDark : Color.gagaePink)
+                        .frame(height: barH)
+                        .gagaeShadow(color: isToday ? .gagaePinkDark.opacity(0.35) : .clear, radius: 5, y: 3)
+                    Text(weekdayLabel(item.date))
+                        .font(.system(size: 11, weight: isToday ? .heavy : .medium, design: .rounded))
+                        .foregroundStyle(isToday ? Color.gagaePinkDark : Color.gagaeTextTertiary)
                 }
                 .frame(maxWidth: .infinity)
             }
         }
+        .frame(height: 82)
     }
 
-    // 임시 차트 데이터: (요일, isToday, 높이)
-    private var mockChartData: [(String, Bool, CGFloat)] {
-        let days = ["월", "화", "수", "목", "금", "토", "일"]
-        let heights: [CGFloat] = [40, 65, 30, 55, 48, 70, 45]
-        let today = Calendar.current.component(.weekday, from: Date())
-        let todayIndex = (today - 2 + 7) % 7
-
-        return days.enumerated().map { index, day in
-            (day, index == todayIndex, heights[index])
-        }
-    }
-
-    /// 소비 기록 FAB 버튼
-    private var recordSpendButton: some View {
+    /// 소비 기록 버튼
+    private var recordButton: some View {
         NavigationLink {
             SpendView()
         } label: {
-            HStack(spacing: GagaeSpacing.sm) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 20))
+            HStack(spacing: 9) {
+                ZStack {
+                    Circle()
+                        .stroke(.white.opacity(0.65), lineWidth: 2.2)
+                        .frame(width: 26, height: 26)
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                }
                 Text("소비 기록하기")
-                    .font(.gagaeHeadline)
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
             }
-            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 54)
             .background(
                 LinearGradient(
                     colors: [.gagaePinkDark, .gagaePink],
-                    startPoint: .leading,
-                    endPoint: .trailing
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
             )
-            .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.full))
-            .gagaeShadow(color: .gagaePink.opacity(0.4), radius: 12, y: 6)
+            .clipShape(Capsule())
+            .gagaeShadow(color: .gagaePinkDark.opacity(0.38), radius: 14, y: 10)
         }
     }
 }
@@ -386,13 +343,11 @@ extension HomeView {
     private var cardGradientColors: [Color] {
         switch budgetStatus {
         case .good:
-            return [Color(red: 0.98, green: 0.50, blue: 0.65), Color(red: 0.95, green: 0.40, blue: 0.60)]
+            return [.gagaeBudgetCardTop, .gagaeBudgetCardBottom]
         case .warning:
-            return [Color(red: 1.0, green: 0.68, blue: 0.30), Color(red: 0.98, green: 0.55, blue: 0.20)]
-        case .critical:
-            return [Color(red: 0.95, green: 0.40, blue: 0.40), Color(red: 0.88, green: 0.25, blue: 0.30)]
-        case .empty:
-            return [Color(red: 0.6, green: 0.6, blue: 0.65), Color(red: 0.5, green: 0.5, blue: 0.55)]
+            return [Color(hex: "#FFA94D"), Color(hex: "#FB8B1A")]
+        case .critical, .empty:
+            return [Color(hex: "#F26666"), Color(hex: "#E13F47")]
         }
     }
 
@@ -410,6 +365,13 @@ extension HomeView {
         case .critical: return "위험"
         case .empty: return "소진"
         }
+    }
+
+    private func weekdayLabel(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "EEEEE"  // 월 화 수...
+        return f.string(from: date)
     }
 }
 
