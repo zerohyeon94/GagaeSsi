@@ -8,16 +8,17 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var selectedTab = 0
+    @Environment(AppState.self) private var appState
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        @Bindable var appState = appState
+        TabView(selection: $appState.selectedTab) {
             // 홈 탭
             NavigationStack {
                 HomeView()
             }
             .tabItem {
-                Label("홈", systemImage: selectedTab == 0 ? "house.fill" : "house")
+                Label("홈", systemImage: appState.selectedTab == 0 ? "house.fill" : "house")
             }
             .tag(0)
 
@@ -26,7 +27,7 @@ struct ContentView: View {
                 SpendView()
             }
             .tabItem {
-                Label("기록", systemImage: selectedTab == 1 ? "pencil.circle.fill" : "pencil.circle")
+                Label("기록", systemImage: appState.selectedTab == 1 ? "pencil.circle.fill" : "pencil.circle")
             }
             .tag(1)
 
@@ -35,7 +36,7 @@ struct ContentView: View {
                 StatsView()
             }
             .tabItem {
-                Label("통계", systemImage: selectedTab == 2 ? "chart.bar.fill" : "chart.bar")
+                Label("통계", systemImage: appState.selectedTab == 2 ? "chart.bar.fill" : "chart.bar")
             }
             .tag(2)
 
@@ -44,7 +45,7 @@ struct ContentView: View {
                 SettingsView()
             }
             .tabItem {
-                Label("설정", systemImage: selectedTab == 3 ? "gearshape.fill" : "gearshape")
+                Label("설정", systemImage: appState.selectedTab == 3 ? "gearshape.fill" : "gearshape")
             }
             .tag(3)
         }

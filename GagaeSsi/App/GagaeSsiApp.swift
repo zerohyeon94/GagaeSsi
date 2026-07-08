@@ -29,6 +29,8 @@ struct GagaeSsiApp: App {
 @Observable
 final class AppState {
     var isSetupCompleted: Bool = false
+    /// 메인 탭 선택 (0: 홈, 1: 기록, 2: 통계, 3: 설정)
+    var selectedTab: Int = 0
     
     init() {
         checkSetupStatus()
@@ -66,6 +68,9 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: appState.isSetupCompleted)
+        // 디자인 시스템이 라이트 테마 고정이므로 다크모드에서도 라이트로 렌더링
+        // (다크모드에서 TextField 글자가 흰색이 되어 보이지 않는 문제 방지)
+        .preferredColorScheme(.light)
     }
 }
 

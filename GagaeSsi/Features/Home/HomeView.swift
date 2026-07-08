@@ -11,6 +11,7 @@ struct HomeView: View {
     // MARK: - Properties
     @State private var viewModel = HomeViewModel()
     @Environment(AppEventBus.self) private var eventBus
+    @Environment(AppState.self) private var appState
     @Environment(\.scenePhase) private var scenePhase
     @State private var pigBreathing = false
     @State private var dotPulsing = false
@@ -305,10 +306,10 @@ extension HomeView {
         .frame(height: 82)
     }
 
-    /// 소비 기록 버튼
+    /// 소비 기록 버튼 (기록 탭으로 전환)
     private var recordButton: some View {
-        NavigationLink {
-            SpendView()
+        Button {
+            appState.selectedTab = 1
         } label: {
             HStack(spacing: 9) {
                 ZStack {
@@ -381,4 +382,5 @@ extension HomeView {
         HomeView()
     }
     .environment(AppEventBus())
+    .environment(AppState())
 }
