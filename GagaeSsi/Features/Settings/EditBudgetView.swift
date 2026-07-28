@@ -172,6 +172,12 @@ extension EditBudgetView {
                 }
             }
             .buttonStyle(.plain)
+
+            // 주말 급여일 보정 안내
+            Text("급여일이 주말이면 직전 평일에 입금돼요")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.gagaeTextTertiary)
+                .padding(.leading, 4)
         }
     }
 
