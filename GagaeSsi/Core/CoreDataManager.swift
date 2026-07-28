@@ -260,6 +260,7 @@ final class CoreDataManager {
             return false
         }
 
+        // 일 예산 귀속은 자정 기준(day)으로, 기록 자체는 전체 시각을 보존한다 (시간대 리포트용)
         let newDate = Calendar.current.startOfDay(for: model.date)
 
         // 날짜가 바뀌면 해당 날짜의 DailyBudget에 재연결 (없으면 생성)
@@ -283,7 +284,7 @@ final class CoreDataManager {
 
         spendingRecord.title = model.title
         spendingRecord.amount = NSDecimalNumber(value: model.amount)
-        spendingRecord.date = newDate
+        spendingRecord.date = model.date   // 전체 타임스탬프 보존 (시간대 리포트용)
         spendingRecord.category = model.category.rawValue
 
         return saveContext()

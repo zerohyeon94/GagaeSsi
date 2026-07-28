@@ -17,6 +17,16 @@ final class StatsViewModel {
     var dailyAverage: Int = 0
     var baseDailyBudget: Int = 0
 
+    /// 시간대별 소비 (오전/점심/저녁/심야)
+    var timeSlotTotals: [TimeSlotTotal] = []
+    /// 시간 정보가 있어 시간대 집계에 포함된 기록 수
+    var timedRecordCount: Int = 0
+    /// 가장 많이 쓴 시간대 (금액 0이면 nil)
+    var peakTimeSlot: TimeSlot? {
+        guard let top = timeSlotTotals.max(by: { $0.amount < $1.amount }), top.amount > 0 else { return nil }
+        return top.slot
+    }
+
     struct CategoryTotal: Identifiable {
         let id = UUID()
         let category: SpendingCategory
@@ -74,6 +84,7 @@ final class StatsViewModel {
         loadCategoryStats()
         loadDailyStats()
         loadMonthlyComparison()
+        loadTimeSlotStats()
     }
 
     func goToPrevMonth() {
@@ -155,6 +166,15 @@ final class StatsViewModel {
                 .reduce(0) { $0 + $1.amount }
             return DailyTotal(date: startOfDay, amount: total)
         }
+    }
+
+    private func loadTimeSlotStats() {
+        let comps = Calendar.current.dateComponents([.year, .month], from: selectedMonth)
+        guard let year = comps.year, let month = comps.month else { return }
+        let records = CoreDataManager.shared.fetchSpendingRecords(year: year, month: month)
+        let result = TimeSlot.totals(from: records)
+        timeSlotTotals = result.totals
+        timedRecordCount = result.timedCount
     }
 
     private func loadMonthlyComparison() {

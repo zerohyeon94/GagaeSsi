@@ -69,7 +69,9 @@ final class SpendViewModel {
         // 모델 업데이트 (내용 비우면 카테고리명 사용)
         model.title = tempTitle.isEmpty ? tempCategory.rawValue : tempTitle
         model.amount = tempAmount
-        model.date = Calendar.current.startOfDay(for: tempDate)
+        // 시간대 리포트를 위해 실제 시각을 보존한다. DatePicker가 date-only라
+        // tempDate는 시각 성분(생성=현재 시각, 편집=원래 시각)을 유지한다.
+        model.date = tempDate
         model.category = tempCategory
 
         let success: Bool

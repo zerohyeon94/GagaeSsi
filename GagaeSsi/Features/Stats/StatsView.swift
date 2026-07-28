@@ -26,6 +26,7 @@ struct StatsView: View {
                         monthlySummaryCard
                         categoryCard
                         dailyChartCard
+                        timeSlotCard
                     }
                 }
                 .padding(.horizontal, 16)
@@ -327,6 +328,74 @@ extension StatsView {
         .background(Color.gagaeCardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .gagaeCardShadow()
+    }
+
+    // MARK: - 시간대별 소비
+    private var timeSlotCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("시간대별 소비")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Spacer()
+                if let peak = viewModel.peakTimeSlot {
+                    Text("주로 \(peak.label) \(peak.emoji)")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.gagaePinkLight)
+                        .clipShape(Capsule())
+                }
+            }
+
+            if viewModel.timedRecordCount == 0 {
+                Text("아직 시간대 데이터가 쌓이지 않았어요")
+                    .font(.system(size: 14, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(viewModel.timeSlotTotals) { item in
+                        timeSlotRow(item, isPeak: item.slot == viewModel.peakTimeSlot)
+                    }
+                }
+                Text("시간 정보가 있는 \(viewModel.timedRecordCount)건 기준")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+            }
+        }
+        .padding(16)
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
+    }
+
+    private func timeSlotRow(_ item: TimeSlotTotal, isPeak: Bool) -> some View {
+        HStack(spacing: 10) {
+            Text("\(item.slot.emoji) \(item.slot.label)")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.gagaeText)
+                .frame(width: 62, alignment: .leading)
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.gagaeDivider.opacity(0.5))
+                        .frame(height: 8)
+                    Capsule()
+                        .fill(isPeak ? Color.gagaePinkDark : Color.gagaePink.opacity(0.55))
+                        .frame(width: max(0, geo.size.width * item.percentage), height: 8)
+                }
+                .frame(maxHeight: .infinity, alignment: .center)
+            }
+            .frame(height: 8)
+
+            Text(FormatterUtils.currencyString(from: item.amount))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.gagaeTextSecondary)
+                .frame(width: 82, alignment: .trailing)
+        }
     }
 
     private var dailyChart: some View {
