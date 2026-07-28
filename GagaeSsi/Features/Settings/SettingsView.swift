@@ -264,6 +264,9 @@ extension SettingsView {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
+        // 행 전체(텍스트~chevron 사이 빈 영역 포함)를 탭 영역으로 만든다.
+        // Spacer 빈 공간이 히트 테스트에서 빠져 "텍스트만 눌려야 동작"하던 버그 수정.
+        .contentShape(Rectangle())
         .opacity(disabled ? 0.4 : 1)
     }
 }

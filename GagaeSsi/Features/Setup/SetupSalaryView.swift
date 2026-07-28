@@ -120,13 +120,23 @@ extension SetupSalaryView {
                     Text("매월")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundStyle(.gagaeTextSecondary)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 5) {
-                            ForEach(1...31, id: \.self) { day in
-                                paydayChip(day)
+                    // 기본 급여일(25일)처럼 뒤쪽 값이 선택돼 있으면 칩이 화면 밖에 있어
+                    // 보이지 않던 문제를 해결한다. 진입 시/선택 변경 시 해당 칩을 중앙으로 스크롤.
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 5) {
+                                ForEach(1...31, id: \.self) { day in
+                                    paydayChip(day)
+                                }
                             }
+                            .padding(.vertical, 3)
                         }
-                        .padding(.vertical, 3)
+                        .onAppear {
+                            proxy.scrollTo(viewModel.tempPayday, anchor: .center)
+                        }
+                        .onChange(of: viewModel.tempPayday) { _, newDay in
+                            withAnimation { proxy.scrollTo(newDay, anchor: .center) }
+                        }
                     }
                     Text("일")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -144,6 +154,12 @@ extension SetupSalaryView {
                     Spacer()
                 }
                 .padding(.top, 4)
+
+                // 주말 급여일 보정 안내
+                Text("급여일이 주말이면 직전 평일에 입금돼요")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+                    .padding(.top, 6)
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)
