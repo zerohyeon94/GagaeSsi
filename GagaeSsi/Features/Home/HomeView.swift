@@ -16,6 +16,7 @@ struct HomeView: View {
     @State private var pigBreathing = false
     @State private var dotPulsing = false
     @State private var weeklyTotals: [(date: Date, total: Int)] = []
+    @State private var showWishlist = false
 
     // MARK: - Computed
     private var budgetStatus: BudgetStatus {
@@ -40,6 +41,12 @@ struct HomeView: View {
                     statusCard
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
+
+                    if let wish = viewModel.activeWish {
+                        wishSavingCard(wish)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+                    }
 
                     chartCard
                         .padding(.horizontal, 20)
@@ -67,6 +74,14 @@ struct HomeView: View {
         }
         .onChange(of: eventBus.fixedExpenseChangedTrigger) {
             viewModel.recalculateTodayBudget()
+        }
+        .onChange(of: eventBus.wishChangedTrigger) {
+            viewModel.fetchTodayBudget()
+        }
+        .sheet(isPresented: $showWishlist) {
+            NavigationStack {
+                WishListView(onClose: { showWishlist = false })
+            }
         }
         .onChange(of: scenePhase) {
             // 백그라운드에서 자정을 넘긴 경우 등 다시 활성화될 때 이월 재처리
@@ -257,6 +272,52 @@ extension HomeView {
             .fill(Color.gagaeDivider)
             .frame(height: 0.5)
             .padding(.leading, 50)
+    }
+
+    /// 위시리스트 저금 카드 (활성 저금이 있을 때)
+    private func wishSavingCard(_ wish: WishItemModel) -> some View {
+        Button {
+            showWishlist = true
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("\(wish.kind.emoji) \(wish.title)")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                    Spacer()
+                    if let d = wish.daysLeft {
+                        Text(d == 0 ? "구매 가능" : "D-\(d)")
+                            .font(.system(size: 12, weight: .heavy, design: .rounded))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9).padding(.vertical, 3)
+                            .background(Color.gagaePinkDark).clipShape(Capsule())
+                    }
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.gagaeDivider.opacity(0.5)).frame(height: 9)
+                        Capsule().fill(LinearGradient(colors: [.gagaePinkDark, .gagaePink],
+                                                      startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(0, geo.size.width * wish.progress), height: 9)
+                    }
+                }
+                .frame(height: 9)
+                HStack {
+                    Text("\(FormatterUtils.currencyString(from: wish.savedAmount)) / \(FormatterUtils.currencyString(from: wish.targetAmount))")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(.gagaeTextSecondary)
+                    Spacer()
+                    Text("오늘 −\(FormatterUtils.currencyString(from: wish.dailySaving)) 저금 중")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                }
+            }
+            .padding(16)
+            .background(Color.gagaeCardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .gagaeCardShadow()
+        }
+        .buttonStyle(.plain)
     }
 
     /// 최근 7일 차트 카드

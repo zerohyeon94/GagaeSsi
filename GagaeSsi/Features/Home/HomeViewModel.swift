@@ -15,6 +15,10 @@ final class HomeViewModel {
     var baseBudget: Int = 0
     var carryOverAmount: Int = 0
     var spentAmount: Int = 0
+    /// 오늘 저금 차감액 (활성 위시)
+    var wishSavingAmount: Int = 0
+    /// 현재 활성 위시 아이템 (없으면 nil)
+    var activeWish: WishItemModel?
     
     // MARK: - Loading State
     var isLoading: Bool = false
@@ -74,5 +78,7 @@ final class HomeViewModel {
         carryOverAmount = carry
         spentAmount = spent
         todayAvailableAmount = total
+        wishSavingAmount = model.wishSavingAmount
+        activeWish = CoreDataManager.shared.fetchActiveWishItem()
     }
 }

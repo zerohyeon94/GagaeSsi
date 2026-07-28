@@ -1,7 +1,7 @@
-# 위시리스트 저금 기능 설계 (v1.2 후보)
+# 위시리스트 저금 기능 설계 (v1.2)
 
-- **작성일**: 2026-07-15
-- **상태**: 설계 확정 (구현 전)
+- **작성일**: 2026-07-15 (구현 반영: 2026-07-29)
+- **상태**: **구현 완료** (희망/필수 구분 포함)
 - **관련 노션**: [가계씨 (GagaeSsi) — 하루 예산 관리 앱](https://app.notion.com/p/359e5d4a0bac80e6b9bec68a15a22d72)
 - **관련 문서**: [하루 사용 가능 금액 계산 규칙](../../2026-07-08-daily-budget-calculation-rules.md)
 - **관련 코드**: `Core/Utils/BudgetCalculationUtils.swift`, `Core/CoreDataManager.swift`, `Models/BudgetModels.swift`
@@ -95,3 +95,20 @@
 - 여러 아이템 동시 저금
 - 활성 아이템 교체 시 누적액 이전
 - 남은 잔액 수동 추가 저금 (이월 잔액 → 위시 아이템 밀어넣기)
+
+## 8. 희망/필수 구분 (#3, 2026-07-29 추가)
+
+사용자 아이디어 — "희망하는 것과 사야 되는 것을 구분". 위시 아이템에 종류 축을 추가한다.
+
+- `WishItem.kind`: `희망(want)` / `필수(need)`. 기본 `희망`.
+- `WishKind` enum(이모지 💖/🎯, 라벨). 목록/카드에 뱃지로 표시.
+- 저금 메커니즘·D-day·게이지는 종류와 무관하게 동일. 종류는 분류/표시 축이며, 향후 정렬·우선순위 차등에 활용 가능(현재는 표시).
+
+## 9. 구현 결과 (2026-07-29)
+
+- **데이터**: `WishItem`(id/title/targetAmount/dailySaving/status/kind/createdAt/activatedAt/completedAt) + `WishSavingEntry`(date/amount, WishItem·DailyBudget 관계). `DailyBudget.wishSavingEntries` 관계로 `DailyBudgetModel.todayAvailable`에서 그날 저금 차감.
+- **저금 메커니즘**: `applyWishSaving(on:)`을 `processDailyBudgets`·`fetchOrCreateTodayDailyBudget` 생성 지점에 훅. 멱등(일자당 1회), 목표 도달 시 남은 금액만 저금 후 `구매가능` 전환, 활성화일 이전 소급 방지.
+- **환급**: 해지/삭제 시 "오늘 이전 저금 합계"를 오늘 이월(+)로 환급, 오늘 엔트리는 삭제로 자연 환급(이중 환급 방지).
+- **UI**: 홈 활성 저금 카드(진행률·D-day·오늘 저금액), 위시리스트 화면(저금중/구매가능/대기[희망·필수]/완료 섹션, 추가·수정·저금시작·해지·구매완료·삭제), 설정 진입점.
+- **테스트**: `WishListTests` 9개 — 생성/종류, 활성화·일일 저금·가용액 차감, 멱등, 단일 활성 강제, 목표 캡·구매가능 전환, 해지 환급, 완료(소비기록 없음), 삭제 환급.
+- **관련 코드**: `Models/WishModels.swift`, `Core/CoreDataManager.swift`, `Features/Wishlist/`, `Features/Home/`.

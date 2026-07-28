@@ -471,7 +471,7 @@ final class CoreDataManager {
 
     // MARK: - Utilities
     func resetAllData() {
-        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "DailyBudget", "SpendingRecord", "CarryOverSource"]
+        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "DailyBudget", "SpendingRecord", "CarryOverSource", "WishItem", "WishSavingEntry"]
 
         for entityName in entityNames {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
@@ -512,8 +512,10 @@ final class CoreDataManager {
             carryOverSources: [],
             spendingRecords: []
         )
-        let success = createDailyBudget(newModel)
-        return success ? newModel : nil
+        guard createDailyBudget(newModel) else { return nil }
+        // 활성 위시가 있으면 오늘 저금 반영 후 최신 모델 반환
+        applyWishSaving(on: today)
+        return fetchDailyBudgetModel(date: today) ?? newModel
     }
 
     // MARK: - Carry-over 자동 처리
@@ -564,8 +566,183 @@ final class CoreDataManager {
                     spendingRecords: []
                 )
                 _ = createDailyBudget(newModel)
+                // 활성 위시가 있으면 이 날짜의 저금을 반영 (다음날 이월 계산이 이를 포함)
+                applyWishSaving(on: cursor)
             }
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }
+    }
+
+    // MARK: - 위시리스트 저금
+
+    /// 현재 활성(저금중) 위시 아이템 엔티티
+    func fetchActiveWishItemEntity() -> WishItem? {
+        let request: NSFetchRequest<WishItem> = WishItem.fetchRequest()
+        request.predicate = NSPredicate(format: "status == %@", WishStatus.saving.rawValue)
+        request.fetchLimit = 1
+        return try? context.fetch(request).first
+    }
+
+    /// 위시 아이템의 누적 저금액 (저금 엔트리 합계)
+    func savedAmount(for wishItemId: UUID) -> Int {
+        let request: NSFetchRequest<WishSavingEntry> = WishSavingEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "wishItem.id == %@", wishItemId as CVarArg)
+        let entries = (try? context.fetch(request)) ?? []
+        return entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+    }
+
+    /// 활성 위시가 있으면 해당 날짜에 저금 엔트리를 생성한다.
+    /// - 멱등: 이미 이 아이템의 이 날짜 저금이 있으면 skip
+    /// - 목표 도달 시 남은 금액만 저금하고 상태를 구매가능으로 전환
+    private func applyWishSaving(on date: Date) {
+        guard let active = fetchActiveWishItemEntity(), let activeId = active.id else { return }
+        let day = Calendar.current.startOfDay(for: date)
+        // 활성화일 이전으로 저금이 소급되지 않도록
+        if let activatedAt = active.activatedAt,
+           day < Calendar.current.startOfDay(for: activatedAt) { return }
+        guard let budget = fetchDailyBudgetEntity(date: day) else { return }
+
+        let existing = (budget.wishSavingEntries?.allObjects as? [WishSavingEntry] ?? [])
+            .contains { $0.wishItem?.id == activeId }
+        if existing { return }
+
+        let target = Int(truncating: active.targetAmount ?? 0)
+        let saved = savedAmount(for: activeId)
+        let remaining = target - saved
+        if remaining <= 0 {
+            active.status = WishStatus.purchasable.rawValue
+            _ = saveContext()
+            return
+        }
+
+        let daily = Int(truncating: active.dailySaving ?? 0)
+        let amount = min(daily, remaining)
+
+        let entry = WishSavingEntry(context: context)
+        entry.id = UUID()
+        entry.date = day
+        entry.amount = NSDecimalNumber(value: amount)
+        entry.wishItem = active
+        entry.dailyBudget = budget
+        active.addToSavingEntries(entry)
+        budget.addToWishSavingEntries(entry)
+
+        if saved + amount >= target {
+            active.status = WishStatus.purchasable.rawValue
+        }
+        _ = saveContext()
+    }
+
+    // MARK: 위시 CRUD
+
+    func createWishItem(_ model: WishItemModel) -> Bool {
+        let new = WishItem(context: context)
+        new.id = model.id
+        new.title = model.title
+        new.targetAmount = NSDecimalNumber(value: model.targetAmount)
+        new.dailySaving = NSDecimalNumber(value: model.dailySaving)
+        new.status = model.status.rawValue
+        new.kind = model.kind.rawValue
+        new.createdAt = model.createdAt
+        return saveContext()
+    }
+
+    func fetchWishItems() -> [WishItemModel] {
+        let request: NSFetchRequest<WishItem> = WishItem.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        let entities = (try? context.fetch(request)) ?? []
+        return entities.map { WishItemModel(entity: $0, savedAmount: savedAmount(for: $0.id ?? UUID())) }
+    }
+
+    func fetchActiveWishItem() -> WishItemModel? {
+        guard let entity = fetchActiveWishItemEntity(), let id = entity.id else { return nil }
+        return WishItemModel(entity: entity, savedAmount: savedAmount(for: id))
+    }
+
+    private func fetchWishItemEntity(id: UUID) -> WishItem? {
+        let request: NSFetchRequest<WishItem> = WishItem.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+
+    /// 제목·목표금액·종류(희망/필수) 수정 (저금 상태는 건드리지 않음)
+    func updateWishItem(id: UUID, title: String, targetAmount: Int, kind: WishKind) -> Bool {
+        guard let entity = fetchWishItemEntity(id: id) else { return false }
+        entity.title = title
+        entity.targetAmount = NSDecimalNumber(value: targetAmount)
+        entity.kind = kind.rawValue
+        return saveContext()
+    }
+
+    /// 위시 저금 활성화. 다른 활성 아이템이 있으면 실패(1개만 저금 가능).
+    func activateWish(id: UUID, dailySaving: Int) -> Bool {
+        guard dailySaving > 0 else { return false }
+        if let other = fetchActiveWishItemEntity(), other.id != id { return false }
+        guard let entity = fetchWishItemEntity(id: id) else { return false }
+
+        // 재활성화 대비: 기존 엔트리 제거 후 새 저금 시작
+        for e in (entity.savingEntries?.allObjects as? [WishSavingEntry] ?? []) {
+            context.delete(e)
+        }
+        entity.status = WishStatus.saving.rawValue
+        entity.dailySaving = NSDecimalNumber(value: dailySaving)
+        entity.activatedAt = Date()
+        _ = saveContext()
+
+        // 오늘 저금 즉시 반영
+        applyWishSaving(on: Date())
+        return true
+    }
+
+    /// 위시 저금 해지 — 누적액을 오늘 잔액으로 환급하고 대기 상태로.
+    @discardableResult
+    func deactivateWish(id: UUID) -> Bool {
+        guard let entity = fetchWishItemEntity(id: id) else { return false }
+        refundWishSaving(entity)
+        entity.status = WishStatus.waiting.rawValue
+        entity.dailySaving = 0
+        entity.activatedAt = nil
+        return saveContext()
+    }
+
+    /// 위시 구매 완료 — 소비 기록 생성 없이 완료 처리 (이미 매일 차감으로 모은 돈).
+    func completeWish(id: UUID) -> Bool {
+        guard let entity = fetchWishItemEntity(id: id) else { return false }
+        entity.status = WishStatus.completed.rawValue
+        entity.completedAt = Date()
+        return saveContext()
+    }
+
+    func deleteWishItem(id: UUID) -> Bool {
+        guard let entity = fetchWishItemEntity(id: id) else { return false }
+        // 저금 중이었다면 누적액 환급 후 삭제
+        if WishStatus.from(entity.status) == .saving {
+            refundWishSaving(entity)
+        }
+        context.delete(entity)   // savingEntries는 Cascade 삭제
+        return saveContext()
+    }
+
+    /// 과거 일자에 이미 이월로 반영된 저금분을 오늘 잔액으로 환급한다.
+    /// 오늘 저금분은 엔트리 삭제(라이브 차감 제거)로 자연 환급되므로, 환급 이월액은
+    /// "오늘 이전 엔트리 합계"만 더한다. (이중 환급 방지)
+    private func refundWishSaving(_ entity: WishItem) {
+        let today = Calendar.current.startOfDay(for: Date())
+        let entries = entity.savingEntries?.allObjects as? [WishSavingEntry] ?? []
+        let pastTotal = entries
+            .filter { Calendar.current.startOfDay(for: $0.date ?? today) < today }
+            .reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+
+        if pastTotal != 0, let budget = fetchOrCreateDailyBudgetEntity(date: today) {
+            let refund = CarryOverSource(context: context)
+            refund.id = UUID()
+            refund.amount = NSDecimalNumber(value: pastTotal)
+            refund.date = today
+            refund.toDate = today
+            refund.dailyBudget = budget
+            budget.addToCarryOverSources(refund)
+        }
+        // 엔트리 제거 (오늘 엔트리 라이브 차감도 함께 해제됨)
+        for e in entries { context.delete(e) }
     }
 }

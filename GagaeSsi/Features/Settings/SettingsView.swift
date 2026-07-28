@@ -183,6 +183,15 @@ extension SettingsView {
                                rightText: fixedCostsCount > 0 ? "\(fixedCostsCount)개 항목" : "없음")
                 }
                 .buttonStyle(.plain)
+
+                rowDivider
+                NavigationLink {
+                    WishListView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#F49AC1"), iconContent: AnyView(Text("🎁").font(.system(size: 16))),
+                               label: "위시리스트")
+                }
+                .buttonStyle(.plain)
             }
             .background(Color.gagaeCardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))

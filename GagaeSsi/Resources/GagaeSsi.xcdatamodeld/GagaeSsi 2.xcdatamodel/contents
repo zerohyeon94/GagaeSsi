@@ -17,6 +17,26 @@
         <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="carryOverSources" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="CarryOverSource" inverseName="dailyBudget" inverseEntity="CarryOverSource"/>
         <relationship name="spendingRecords" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SpendingRecord" inverseName="dailyBudget" inverseEntity="SpendingRecord"/>
+        <relationship name="wishSavingEntries" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="WishSavingEntry" inverseName="dailyBudget" inverseEntity="WishSavingEntry"/>
+    </entity>
+    <entity name="WishItem" representedClassName="WishItem" syncable="YES" codeGenerationType="class">
+        <attribute name="activatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="completedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="dailySaving" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="kind" optional="YES" attributeType="String" defaultValueString="희망"/>
+        <attribute name="status" optional="YES" attributeType="String" defaultValueString="대기"/>
+        <attribute name="targetAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <relationship name="savingEntries" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="WishSavingEntry" inverseName="wishItem" inverseEntity="WishSavingEntry"/>
+    </entity>
+    <entity name="WishSavingEntry" representedClassName="WishSavingEntry" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <relationship name="dailyBudget" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="DailyBudget" inverseName="wishSavingEntries" inverseEntity="DailyBudget"/>
+        <relationship name="wishItem" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="WishItem" inverseName="savingEntries" inverseEntity="WishItem"/>
     </entity>
     <entity name="FixedCost" representedClassName="FixedCost" syncable="YES" codeGenerationType="class">
         <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>

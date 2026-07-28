@@ -95,32 +95,39 @@ struct DailyBudgetModel: Identifiable {
     var date: Date
     var carryOverSources: [CarryOverSourceModel]
     var spendingRecords: [SpendingRecordModel]
-    
+    /// 그날 위시리스트에 저금한 금액 합계 (오늘 가용 금액에서 차감)
+    var wishSavingAmount: Int
+
     // 실제 오늘 쓸 수 있는 총 금액
     var todayAvailable: Int {
         let carry = carryOverSources.map { $0.amount }.reduce(0, +)
         let spent = spendingRecords.map { $0.amount }.reduce(0, +)
-        return availableAmount + carry - spent
+        return availableAmount + carry - spent - wishSavingAmount
     }
-    
+
     // MARK: - Initializer
-    init(availableAmount: Int, date: Date, carryOverSources: [CarryOverSourceModel], spendingRecords: [SpendingRecordModel]) {
+    init(availableAmount: Int, date: Date, carryOverSources: [CarryOverSourceModel],
+         spendingRecords: [SpendingRecordModel], wishSavingAmount: Int = 0) {
         self.availableAmount = availableAmount
         self.date = date
         self.carryOverSources = carryOverSources
         self.spendingRecords = spendingRecords
+        self.wishSavingAmount = wishSavingAmount
     }
-    
+
     /// CoreData Entity -> Model 변환 생성자
     init(entity: DailyBudget) {
         self.availableAmount = Int(truncating: entity.availableAmount ?? 0)
         self.date = entity.date ?? Date()
-        
+
         let sources = entity.carryOverSources?.allObjects as? [CarryOverSource] ?? []
         self.carryOverSources = sources.map(CarryOverSourceModel.init)
-        
+
         let records = entity.spendingRecords?.allObjects as? [SpendingRecord] ?? []
         self.spendingRecords = records.map(SpendingRecordModel.init)
+
+        let savings = entity.wishSavingEntries?.allObjects as? [WishSavingEntry] ?? []
+        self.wishSavingAmount = savings.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
     }
 }
 

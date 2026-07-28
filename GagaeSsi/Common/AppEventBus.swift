@@ -21,7 +21,10 @@ final class AppEventBus {
     
     /// 고정비가 변경되었을 때 트리거
     var fixedExpenseChangedTrigger: UUID = UUID()
-    
+
+    /// 위시리스트(저금)가 변경되었을 때 트리거
+    var wishChangedTrigger: UUID = UUID()
+
     // MARK: - Event Methods
     func notifySpendingAdded() {
         spendingAddedTrigger = UUID()
@@ -33,5 +36,9 @@ final class AppEventBus {
     
     func notifyFixedExpenseChanged() {
         fixedExpenseChangedTrigger = UUID()
+    }
+
+    func notifyWishChanged() {
+        wishChangedTrigger = UUID()
     }
 }
