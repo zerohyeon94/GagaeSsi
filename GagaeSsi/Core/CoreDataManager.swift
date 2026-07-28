@@ -154,6 +154,40 @@ final class CoreDataManager {
         return saveContext()
     }
 
+    // MARK: - 변동 고정비 조회/알림
+
+    /// 변동 고정비 목록
+    func fetchVariableCosts() -> [FixedCostModel] {
+        fetchFixedCosts().filter { $0.isVariable && $0.dueDay >= 1 }
+    }
+
+    /// 이번 달 기준 지출일이 지났는데 아직 확정 안 한 변동 고정비 (홈 프롬프트용)
+    func unconfirmedVariableCosts(asOf date: Date = Date()) -> [FixedCostModel] {
+        let calendar = Calendar.current
+        let comps = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = comps.year, let month = comps.month, let today = comps.day else { return [] }
+        let daysInMonth = calendar.range(of: .day, in: .month,
+                                         for: calendar.date(from: DateComponents(year: year, month: month, day: 1))!)?.count ?? 30
+        return fetchVariableCosts().filter { cost in
+            let due = min(cost.dueDay, daysInMonth)
+            return due <= today && fetchMonthlyEntry(fixedCostId: cost.id, year: year, month: month) == nil
+        }
+    }
+
+    /// 변동 고정비 지출일 알림을 현재 상태로 재설정한다.
+    func refreshVariableCostReminders(now: Date = Date()) {
+        let calendar = Calendar.current
+        let comps = calendar.dateComponents([.year, .month], from: now)
+        let year = comps.year ?? 0, month = comps.month ?? 0
+        let costs = fetchVariableCosts()
+        NotificationService.shared.refreshVariableCostReminders(
+            costs: costs,
+            isConfirmed: { [weak self] id in
+                self?.fetchMonthlyEntry(fixedCostId: id, year: year, month: month) != nil
+            },
+            now: now)
+    }
+
     // MARK: - 변동 고정비 월별 확정 금액
 
     /// 특정 (변동 고정비, 연, 월)의 확정 엔트리를 조회한다 (없으면 nil = 미확정).

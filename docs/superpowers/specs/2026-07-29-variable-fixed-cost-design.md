@@ -1,7 +1,7 @@
 # 변동 고정비 설계 (Phase A — v1.2 후보)
 
 - **작성일**: 2026-07-29
-- **상태**: Phase A 구현 완료 / Phase B(알림) 설계 예정
+- **상태**: **Phase A · Phase B 구현 완료**
 - **관련 노션**: [가계씨 (GagaeSsi) — 하루 예산 관리 앱](https://app.notion.com/p/359e5d4a0bac80e6b9bec68a15a22d72)
 - **관련 코드**: `Core/CoreDataManager.swift`, `Models/BudgetModels.swift`, `Features/Settings/FixedExpense*`
 
@@ -52,8 +52,21 @@
 
 `VariableFixedCostTests` 6개: 플래그 저장, 확정 upsert+amount 갱신, 재확정 덮어쓰기, 다른 달 미확정, `calculate` 확정액 반영, Cascade 삭제.
 
-## 8. Phase B (범위 제외 — 다음)
+## 8. Phase B — 지출일 알림 (구현 완료, 2026-07-29)
 
-- 지출일 로컬 알림: 오전 알림 + 오후 재알림(미결제 대비), 권한 처리
-- 홈 "이번 달 미확정 N건" 프롬프트
-- 지출일 말일 clamp 표시 보정 (`effectivePayday` clamp 재사용)
+**결정**: 오전 + 오후 재알림 · 홈 배너 포함.
+
+- **`NotificationService`** (`Core/NotificationService.swift`): 로컬 알림(UNUserNotificationCenter).
+  - `VariableCostReminder.nextDueDate(dueDay:from:isCurrentMonthConfirmed:)` — 순수 로직.
+    이번 달 지출일이 오늘 이후이고 미확정이면 이번 달, 아니면 다음 달. 말일 clamp.
+  - `refreshVariableCostReminders`: 기존 `vcost-` 알림 제거 후, 각 변동 고정비의 다음 미확정
+    지출일에 **오전 9시 + 오후 8시** 알림 2건 스케줄(비반복). 지난 시각은 스킵.
+  - 식별자 `vcost-<id>-am/-pm` → 재설정 시 자연 대체.
+- **재설정 시점**: 앱 활성화(`RootView` scenePhase/task), 확정·추가·수정·삭제(`FixedExpenseListView.afterChange`).
+  확정하면 그달 알림이 다음 달로 밀려 그날 오후 재알림이 자동 취소된다.
+- **권한**: 변동 고정비 최초 생성 시 맥락 요청(`requestAuthorizationIfNeeded`).
+- **홈 배너**: 지출일이 지났는데 이번 달 미확정인 변동 고정비가 있으면 "이번 달 미확정 N건"
+  배너 표시 → 탭 시 고정비 관리 시트로. `CoreDataManager.unconfirmedVariableCosts(asOf:)`.
+- **초기화**: `resetAllData` 시 `cancelAllVariableCostReminders`.
+- **테스트**: `NotificationSchedulingTests` 7(다음 알림일·clamp·확정 분기), 미확정 조회 1.
+- **부수 수정**: `recalculateTodayBudget`가 위시 저금액을 누락하던 문제 수정(재계산 시 오늘 가용액 정확).

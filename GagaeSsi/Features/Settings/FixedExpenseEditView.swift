@@ -252,6 +252,10 @@ extension FixedExpenseEditView {
         }
 
         if success {
+            // 변동 고정비면 지출일 알림을 위해 권한 요청 (맥락에 맞게)
+            if isVariable {
+                NotificationService.shared.requestAuthorizationIfNeeded()
+            }
             onSave()
             dismiss()
         } else {

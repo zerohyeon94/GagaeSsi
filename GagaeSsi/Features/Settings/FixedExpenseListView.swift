@@ -58,23 +58,14 @@ struct FixedExpenseListView: View {
         }
         .onAppear { loadFixedCosts() }
         .sheet(isPresented: $showAddSheet) {
-            FixedExpenseEditView(mode: .add) {
-                loadFixedCosts()
-                eventBus.notifyFixedExpenseChanged()
-            }
+            FixedExpenseEditView(mode: .add) { afterChange() }
         }
         .sheet(item: $editingItem) { item in
-            FixedExpenseEditView(mode: .edit(item)) {
-                loadFixedCosts()
-                eventBus.notifyFixedExpenseChanged()
-            }
+            FixedExpenseEditView(mode: .edit(item)) { afterChange() }
         }
         .sheet(item: $confirmingItem) { item in
             MonthlyAmountConfirmView(item: item,
-                                     currentAmount: confirmedThisMonth[item.id]) {
-                loadFixedCosts()
-                eventBus.notifyFixedExpenseChanged()
-            }
+                                     currentAmount: confirmedThisMonth[item.id]) { afterChange() }
         }
     }
 }
@@ -230,8 +221,7 @@ extension FixedExpenseListView {
 
             Button {
                 _ = CoreDataManager.shared.deleteFixedCost(id: item.id)
-                loadFixedCosts()
-                eventBus.notifyFixedExpenseChanged()
+                afterChange()
             } label: {
                 Image(systemName: "trash.circle.fill")
                     .font(.system(size: 22))
@@ -276,6 +266,13 @@ extension FixedExpenseListView {
 
 // MARK: - Methods
 extension FixedExpenseListView {
+    /// 추가/수정/확정/삭제 후 공통 처리: 목록 갱신 + 예산 재계산 트리거 + 지출일 알림 갱신
+    private func afterChange() {
+        loadFixedCosts()
+        eventBus.notifyFixedExpenseChanged()
+        CoreDataManager.shared.refreshVariableCostReminders()
+    }
+
     private func loadFixedCosts() {
         fixedCosts = CoreDataManager.shared.fetchFixedCosts()
 

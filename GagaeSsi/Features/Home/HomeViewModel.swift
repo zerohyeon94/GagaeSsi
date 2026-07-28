@@ -19,6 +19,8 @@ final class HomeViewModel {
     var wishSavingAmount: Int = 0
     /// 현재 활성 위시 아이템 (없으면 nil)
     var activeWish: WishItemModel?
+    /// 지출일이 지났는데 이번 달 아직 확정 안 한 변동 고정비 (홈 프롬프트)
+    var unconfirmedVariableCosts: [FixedCostModel] = []
     
     // MARK: - Loading State
     var isLoading: Bool = false
@@ -37,7 +39,8 @@ final class HomeViewModel {
         } else {
             errorMessage = "예산 설정이 필요합니다"
         }
-        
+
+        unconfirmedVariableCosts = CoreDataManager.shared.unconfirmedVariableCosts()
         isLoading = false
     }
     
@@ -56,7 +59,8 @@ final class HomeViewModel {
                 availableAmount: baseAmount,
                 date: model.date,
                 carryOverSources: model.carryOverSources,
-                spendingRecords: model.spendingRecords
+                spendingRecords: model.spendingRecords,
+                wishSavingAmount: model.wishSavingAmount   // 위시 저금 차감 유지
             )
             let success = CoreDataManager.shared.updateDailyBudget(updatedModel)
             if success {
@@ -65,6 +69,7 @@ final class HomeViewModel {
                 DebugLogger.log("❌ DailyBudget 업데이트 실패")
             }
         }
+        unconfirmedVariableCosts = CoreDataManager.shared.unconfirmedVariableCosts()
     }
     
     // MARK: - Private Methods

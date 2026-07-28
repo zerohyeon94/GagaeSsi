@@ -54,7 +54,8 @@ final class AppState {
 /// 앱 상태에 따라 Setup 또는 Main 화면 표시
 struct RootView: View {
     @Environment(AppState.self) private var appState
-    
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         Group {
             if appState.isSetupCompleted {
@@ -65,6 +66,15 @@ struct RootView: View {
                 NavigationStack {
                     SetupSalaryView()
                 }
+            }
+        }
+        .task {
+            // 앱 실행 시 변동 고정비 지출일 알림을 현재 상태로 재설정
+            CoreDataManager.shared.refreshVariableCostReminders()
+        }
+        .onChange(of: scenePhase) {
+            if scenePhase == .active {
+                CoreDataManager.shared.refreshVariableCostReminders()
             }
         }
         .animation(.easeInOut(duration: 0.3), value: appState.isSetupCompleted)

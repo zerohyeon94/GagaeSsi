@@ -63,6 +63,7 @@ struct SettingsView: View {
 
     private func handleReset() {
         CoreDataManager.shared.resetAllData()
+        NotificationService.shared.cancelAllVariableCostReminders()
         withAnimation { showConfirm = false }
         withAnimation { showToast = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {

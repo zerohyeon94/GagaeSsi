@@ -81,6 +81,25 @@ final class VariableFixedCostTests: XCTestCase {
         XCTAssertLessThan(after, before)
     }
 
+    // MARK: - 홈 미확정 프롬프트
+    func testUnconfirmedVariableCosts_reflectsDueDayAndConfirmation() {
+        let cost = makeVariableCost(dueDay: 10)
+
+        // 지출일 전(5일) → 미확정 목록 비어 있음
+        XCTAssertTrue(sut.unconfirmedVariableCosts(asOf: dayOf(2026, 5, 5)).isEmpty)
+
+        // 지출일 지남(15일) + 미확정 → 목록에 등장
+        XCTAssertEqual(sut.unconfirmedVariableCosts(asOf: dayOf(2026, 5, 15)).first?.id, cost.id)
+
+        // 확정하면 목록에서 사라짐
+        _ = sut.confirmMonthlyAmount(fixedCostId: cost.id, year: 2026, month: 5, amount: 120_000)
+        XCTAssertTrue(sut.unconfirmedVariableCosts(asOf: dayOf(2026, 5, 15)).isEmpty)
+    }
+
+    private func dayOf(_ y: Int, _ m: Int, _ d: Int) -> Date {
+        Calendar.current.date(from: DateComponents(year: y, month: m, day: d))!
+    }
+
     // MARK: - cascade 삭제
     func testDeleteVariableCost_cascadesMonthlyEntries() {
         let cost = makeVariableCost()

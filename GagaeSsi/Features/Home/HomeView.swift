@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var dotPulsing = false
     @State private var weeklyTotals: [(date: Date, total: Int)] = []
     @State private var showWishlist = false
+    @State private var showFixedExpenses = false
 
     // MARK: - Computed
     private var budgetStatus: BudgetStatus {
@@ -34,6 +35,12 @@ struct HomeView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 10)
                         .padding(.bottom, 14)
+
+                    if !viewModel.unconfirmedVariableCosts.isEmpty {
+                        unconfirmedBanner
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 12)
+                    }
 
                     budgetCard
                         .padding(.horizontal, 20)
@@ -81,6 +88,16 @@ struct HomeView: View {
         .sheet(isPresented: $showWishlist) {
             NavigationStack {
                 WishListView(onClose: { showWishlist = false })
+            }
+        }
+        .sheet(isPresented: $showFixedExpenses) {
+            NavigationStack {
+                FixedExpenseListView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("닫기") { showFixedExpenses = false }.foregroundStyle(.gagaePinkDark)
+                        }
+                    }
             }
         }
         .onChange(of: scenePhase) {
@@ -272,6 +289,36 @@ extension HomeView {
             .fill(Color.gagaeDivider)
             .frame(height: 0.5)
             .padding(.leading, 50)
+    }
+
+    /// 변동 고정비 미확정 프롬프트 배너
+    private var unconfirmedBanner: some View {
+        Button {
+            showFixedExpenses = true
+        } label: {
+            HStack(spacing: 10) {
+                Text("💳").font(.system(size: 20))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("이번 달 미확정 변동 고정비 \(viewModel.unconfirmedVariableCosts.count)건")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                    Text(viewModel.unconfirmedVariableCosts.map { $0.title }.joined(separator: ", "))
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeTextSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text("입력")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color.gagaePinkDark).clipShape(Capsule())
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .background(Color.gagaePinkLight)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
     }
 
     /// 위시리스트 저금 카드 (활성 저금이 있을 때)
