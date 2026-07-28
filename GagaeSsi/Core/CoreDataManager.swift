@@ -106,6 +106,8 @@ final class CoreDataManager {
         new.id = UUID()
         new.title = model.title
         new.amount = NSDecimalNumber(value: model.amount)
+        new.isVariable = model.isVariable
+        new.dueDay = Int16(model.dueDay)
         new.budgetConfig = budgetConfig
         budgetConfig.addToFixedCosts(new)
 
@@ -137,7 +139,9 @@ final class CoreDataManager {
 
         fixedCost.title = model.title
         fixedCost.amount = NSDecimalNumber(value: model.amount)
-        
+        fixedCost.isVariable = model.isVariable
+        fixedCost.dueDay = Int16(model.dueDay)
+
         return saveContext()
     }
 
@@ -145,8 +149,51 @@ final class CoreDataManager {
         guard let fixedCost = fetchFixedCostEntity(id: id) else {
             return false
         }
-        
-        context.delete(fixedCost)
+
+        context.delete(fixedCost)   // monthlyEntries는 Cascade 규칙으로 함께 삭제
+        return saveContext()
+    }
+
+    // MARK: - 변동 고정비 월별 확정 금액
+
+    /// 특정 (변동 고정비, 연, 월)의 확정 엔트리를 조회한다 (없으면 nil = 미확정).
+    func fetchMonthlyEntry(fixedCostId: UUID, year: Int, month: Int) -> MonthlyFixedCostEntryModel? {
+        let request: NSFetchRequest<MonthlyFixedCostEntry> = MonthlyFixedCostEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "fixedCost.id == %@ AND year == %d AND month == %d",
+                                        fixedCostId as CVarArg, Int16(year), Int16(month))
+        request.fetchLimit = 1
+        return (try? context.fetch(request).first).map(MonthlyFixedCostEntryModel.init)
+    }
+
+    /// 변동 고정비의 이번 달 확정 금액을 입력/수정한다.
+    /// - 월별 엔트리를 upsert(이력 기록)하고,
+    /// - FixedCost.amount(현재 예상액=확정액)를 갱신해 이후 일일 예산 배분에 반영한다.
+    ///   과거 일자 예산은 불변, 오늘부터 `recalculateTodayBudget` 경로로 재계산된다.
+    @discardableResult
+    func confirmMonthlyAmount(fixedCostId: UUID, year: Int, month: Int, amount: Int) -> Bool {
+        guard let fixedCost = fetchFixedCostEntity(id: fixedCostId) else { return false }
+
+        // upsert
+        let request: NSFetchRequest<MonthlyFixedCostEntry> = MonthlyFixedCostEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "fixedCost.id == %@ AND year == %d AND month == %d",
+                                        fixedCostId as CVarArg, Int16(year), Int16(month))
+        request.fetchLimit = 1
+        let entry = (try? context.fetch(request).first) ?? {
+            let e = MonthlyFixedCostEntry(context: context)
+            e.id = UUID()
+            e.year = Int16(year)
+            e.month = Int16(month)
+            e.fixedCost = fixedCost
+            fixedCost.addToMonthlyEntries(e)
+            return e
+        }()
+
+        entry.amount = NSDecimalNumber(value: amount)
+        entry.confirmedAt = Date()
+
+        // 배분에 반영: 현재 예상액을 확정액으로 갱신
+        fixedCost.amount = NSDecimalNumber(value: amount)
+
         return saveContext()
     }
     
@@ -424,7 +471,7 @@ final class CoreDataManager {
 
     // MARK: - Utilities
     func resetAllData() {
-        let entityNames = ["BudgetConfig", "FixedCost", "DailyBudget", "SpendingRecord", "CarryOverSource"]
+        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "DailyBudget", "SpendingRecord", "CarryOverSource"]
 
         for entityName in entityNames {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)

@@ -13,6 +13,9 @@ struct FixedExpenseListView: View {
     @State private var fixedCosts: [FixedCostModel] = []
     @State private var showAddSheet = false
     @State private var editingItem: FixedCostModel?
+    @State private var confirmingItem: FixedCostModel?
+    /// 변동 고정비의 이번 달 확정 금액 (costId -> 확정액). 없으면 미확정.
+    @State private var confirmedThisMonth: [UUID: Int] = [:]
 
     // MARK: - Computed
     private var totalAmount: Int {
@@ -62,6 +65,13 @@ struct FixedExpenseListView: View {
         }
         .sheet(item: $editingItem) { item in
             FixedExpenseEditView(mode: .edit(item)) {
+                loadFixedCosts()
+                eventBus.notifyFixedExpenseChanged()
+            }
+        }
+        .sheet(item: $confirmingItem) { item in
+            MonthlyAmountConfirmView(item: item,
+                                     currentAmount: confirmedThisMonth[item.id]) {
                 loadFixedCosts()
                 eventBus.notifyFixedExpenseChanged()
             }
@@ -173,20 +183,50 @@ extension FixedExpenseListView {
                     .font(.system(size: 18))
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
-                    .font(.gagaeCalloutMedium)
-                    .foregroundStyle(.gagaeText)
-                Text("매달 고정")
-                    .font(.gagaeCaption)
-                    .foregroundStyle(.gagaeTextTertiary)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Text(item.title)
+                        .font(.gagaeCalloutMedium)
+                        .foregroundStyle(.gagaeText)
+                    if item.isVariable {
+                        Text("변동")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(.gagaePinkDark)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.gagaePinkLight)
+                            .clipShape(Capsule())
+                    }
+                }
+                if item.isVariable {
+                    variableSubtitle(item)
+                } else {
+                    Text("매달 고정")
+                        .font(.gagaeCaption)
+                        .foregroundStyle(.gagaeTextTertiary)
+                }
             }
 
             Spacer()
 
-            Text(FormatterUtils.currencyString(from: item.amount))
-                .font(.gagaeCalloutMedium)
-                .foregroundStyle(.gagaeDanger)
+            if item.isVariable {
+                Button {
+                    confirmingItem = item
+                } label: {
+                    Text(confirmedThisMonth[item.id] == nil ? "확정 입력" : "수정")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(confirmedThisMonth[item.id] == nil ? .white : .gagaePinkDark)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(confirmedThisMonth[item.id] == nil ? AnyShapeStyle(Color.gagaePinkDark) : AnyShapeStyle(Color.gagaePinkLight))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text(FormatterUtils.currencyString(from: item.amount))
+                    .font(.gagaeCalloutMedium)
+                    .foregroundStyle(.gagaeDanger)
+            }
 
             Button {
                 _ = CoreDataManager.shared.deleteFixedCost(id: item.id)
@@ -203,6 +243,20 @@ extension FixedExpenseListView {
         .contentShape(Rectangle())
         .onTapGesture {
             editingItem = item
+        }
+    }
+
+    /// 변동 고정비 부제: 지출일 + 이번 달 확정 상태
+    @ViewBuilder
+    private func variableSubtitle(_ item: FixedCostModel) -> some View {
+        if let confirmed = confirmedThisMonth[item.id] {
+            Text("매월 \(item.dueDay)일 · 이번 달 확정 \(FormatterUtils.currencyString(from: confirmed))")
+                .font(.gagaeCaption)
+                .foregroundStyle(.gagaeGood)
+        } else {
+            Text("매월 \(item.dueDay)일 · 이번 달 미확정 (예상 \(FormatterUtils.currencyString(from: item.amount)))")
+                .font(.gagaeCaption)
+                .foregroundStyle(.gagaeTextTertiary)
         }
     }
 
@@ -224,6 +278,119 @@ extension FixedExpenseListView {
 extension FixedExpenseListView {
     private func loadFixedCosts() {
         fixedCosts = CoreDataManager.shared.fetchFixedCosts()
+
+        // 변동 고정비의 이번 달 확정 상태 로드
+        let comps = Calendar.current.dateComponents([.year, .month], from: Date())
+        guard let year = comps.year, let month = comps.month else { return }
+        var status: [UUID: Int] = [:]
+        for cost in fixedCosts where cost.isVariable {
+            if let entry = CoreDataManager.shared.fetchMonthlyEntry(fixedCostId: cost.id, year: year, month: month) {
+                status[cost.id] = entry.amount
+            }
+        }
+        confirmedThisMonth = status
+    }
+}
+
+// MARK: - 이번 달 확정 금액 입력 시트
+private struct MonthlyAmountConfirmView: View {
+    let item: FixedCostModel
+    let currentAmount: Int?
+    let onConfirm: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var amountText: String = ""
+    @State private var amount: Int = 0
+    @FocusState private var focused: Bool
+
+    private var monthLabel: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "M월"
+        return f.string(from: Date())
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.gagaeBackground.ignoresSafeArea()
+                ScrollView {
+                    GagaeCard {
+                        VStack(alignment: .leading, spacing: GagaeSpacing.md) {
+                            HStack {
+                                Text("💳 \(item.title)")
+                                    .font(.gagaeHeadline)
+                                    .foregroundStyle(.gagaeText)
+                                Spacer()
+                            }
+                            Text("\(monthLabel) 실제 결제 금액을 입력하면\n오늘부터 하루 예산에 반영돼요.")
+                                .font(.gagaeFootnote)
+                                .foregroundStyle(.gagaeTextSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            GagaeDivider()
+
+                            Label("\(monthLabel) 확정 금액", systemImage: "wonsign.circle.fill")
+                                .font(.gagaeFootnote)
+                                .foregroundStyle(.gagaeTextSecondary)
+
+                            HStack(spacing: GagaeSpacing.sm) {
+                                Text("₩").font(.gagaeTitle3).foregroundStyle(.gagaePinkDark)
+                                TextField("0", text: $amountText)
+                                    .font(.gagaeTitle3)
+                                    .keyboardType(.numberPad)
+                                    .focused($focused)
+                                    .onChange(of: amountText) { _, v in
+                                        if let r = FormatterUtils.formatCurrencyInput(v) {
+                                            amount = r.plainNumber
+                                            amountText = r.formatted
+                                        }
+                                    }
+                            }
+                            .padding(GagaeSpacing.md)
+                            .background(Color.gagaeSurface)
+                            .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
+                            .overlay(RoundedRectangle(cornerRadius: GagaeRadius.md)
+                                .stroke(focused ? Color.gagaePinkDark : Color.gagaeDivider, lineWidth: focused ? 2 : 0.5))
+
+                            Text("예상 금액: \(FormatterUtils.currencyString(from: item.amount))")
+                                .font(.gagaeCaption)
+                                .foregroundStyle(.gagaeTextTertiary)
+                        }
+                    }
+                    .padding(.horizontal, GagaeSpacing.md)
+                    .padding(.top, GagaeSpacing.md)
+
+                    GagaePrimaryButton(title: "확정하기", isEnabled: amount > 0) {
+                        _ = CoreDataManager.shared.confirmMonthlyAmount(
+                            fixedCostId: item.id,
+                            year: Calendar.current.component(.year, from: Date()),
+                            month: Calendar.current.component(.month, from: Date()),
+                            amount: amount)
+                        onConfirm()
+                        dismiss()
+                    }
+                    .padding(.horizontal, GagaeSpacing.md)
+                    .padding(.top, GagaeSpacing.md)
+                }
+            }
+            .navigationTitle("이번 달 확정")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("취소") { dismiss() }.foregroundStyle(.gagaePinkDark)
+                }
+            }
+            .onAppear {
+                if let c = currentAmount {
+                    amount = c
+                    amountText = FormatterUtils.inputAmountString(from: c)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { focused = true }
+            }
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 }
 

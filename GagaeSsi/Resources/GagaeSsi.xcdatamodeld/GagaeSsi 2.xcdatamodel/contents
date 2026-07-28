@@ -20,9 +20,20 @@
     </entity>
     <entity name="FixedCost" representedClassName="FixedCost" syncable="YES" codeGenerationType="class">
         <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="dueDay" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isVariable" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
         <attribute name="title" optional="YES" attributeType="String"/>
         <relationship name="budgetConfig" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="BudgetConfig" inverseName="fixedCosts" inverseEntity="BudgetConfig"/>
+        <relationship name="monthlyEntries" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="MonthlyFixedCostEntry" inverseName="fixedCost" inverseEntity="MonthlyFixedCostEntry"/>
+    </entity>
+    <entity name="MonthlyFixedCostEntry" representedClassName="MonthlyFixedCostEntry" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="confirmedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="month" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="year" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <relationship name="fixedCost" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="FixedCost" inverseName="monthlyEntries" inverseEntity="FixedCost"/>
     </entity>
     <entity name="SpendingRecord" representedClassName="SpendingRecord" syncable="YES" codeGenerationType="class">
         <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>

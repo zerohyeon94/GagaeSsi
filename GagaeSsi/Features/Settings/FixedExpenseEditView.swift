@@ -37,6 +37,8 @@ struct FixedExpenseEditView: View {
     @State private var title: String = ""
     @State private var amountText: String = ""
     @State private var amount: Int = 0
+    @State private var isVariable: Bool = false
+    @State private var dueDay: Int = 25
 
     @FocusState private var focusedField: Field?
 
@@ -94,7 +96,7 @@ struct FixedExpenseEditView: View {
                 Text(errorMessage)
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
 }
@@ -139,9 +141,46 @@ extension FixedExpenseEditView {
                         )
                 }
 
+                // 변동형 토글
+                Toggle(isOn: $isVariable.animation()) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("변동형 (매달 금액이 달라요)")
+                            .font(.gagaeCalloutMedium)
+                            .foregroundStyle(.gagaeText)
+                        Text("관리비·이자·환율처럼 지출일에 확정")
+                            .font(.gagaeCaption)
+                            .foregroundStyle(.gagaeTextTertiary)
+                    }
+                }
+                .tint(.gagaePinkDark)
+
+                // 지출일 (변동형만)
+                if isVariable {
+                    VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
+                        Label("지출일", systemImage: "calendar.circle.fill")
+                            .font(.gagaeFootnote)
+                            .foregroundStyle(.gagaeTextSecondary)
+
+                        HStack {
+                            Text("매월")
+                                .font(.gagaeCallout)
+                                .foregroundStyle(.gagaeTextSecondary)
+                            Picker("지출일", selection: $dueDay) {
+                                ForEach(1...31, id: \.self) { d in Text("\(d)일").tag(d) }
+                            }
+                            .tint(.gagaePinkDark)
+                            Spacer()
+                        }
+                        .padding(.horizontal, GagaeSpacing.md)
+                        .padding(.vertical, GagaeSpacing.xs)
+                        .background(Color.gagaeSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
+                    }
+                }
+
                 // 금액 입력
                 VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
-                    Label("월 금액", systemImage: "wonsign.circle.fill")
+                    Label(isVariable ? "예상 월 금액" : "월 금액", systemImage: "wonsign.circle.fill")
                         .font(.gagaeFootnote)
                         .foregroundStyle(.gagaeTextSecondary)
 
@@ -184,6 +223,8 @@ extension FixedExpenseEditView {
             title = model.title
             amount = model.amount
             amountText = FormatterUtils.inputAmountString(from: model.amount)
+            isVariable = model.isVariable
+            if model.dueDay >= 1 && model.dueDay <= 31 { dueDay = model.dueDay }
         }
     }
 
@@ -196,13 +237,17 @@ extension FixedExpenseEditView {
 
         let success: Bool
 
+        let variableDueDay = isVariable ? dueDay : 0
+
         switch mode {
         case .add:
-            let newModel = FixedCostModel(id: UUID(), title: title, amount: amount)
+            let newModel = FixedCostModel(id: UUID(), title: title, amount: amount,
+                                          isVariable: isVariable, dueDay: variableDueDay)
             success = CoreDataManager.shared.createFixedCost(newModel)
 
         case .edit(let existing):
-            let updatedModel = FixedCostModel(id: existing.id, title: title, amount: amount)
+            let updatedModel = FixedCostModel(id: existing.id, title: title, amount: amount,
+                                              isVariable: isVariable, dueDay: variableDueDay)
             success = CoreDataManager.shared.updateFixedCost(updatedModel)
         }
 

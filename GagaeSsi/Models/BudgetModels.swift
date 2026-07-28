@@ -35,13 +35,21 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
 struct FixedCostModel: Equatable, Codable, Identifiable {
     var id: UUID
     var title: String
+    /// 변동형은 "현재 예상액(= 마지막 확정액)". 고정형은 고정 월액.
     var amount: Int
+    /// 변동 고정비 여부 (관리비/금리/환율 등 매달 금액이 달라지는 항목)
+    var isVariable: Bool
+    /// 지출일 (1~31, 0=미설정). 변동형의 월별 확정·알림 기준일.
+    var dueDay: Int
 
     // MARK: - Initializer
-    init(id: UUID = UUID(), title: String, amount: Int) {
+    init(id: UUID = UUID(), title: String, amount: Int,
+         isVariable: Bool = false, dueDay: Int = 0) {
         self.id = id
         self.title = title
         self.amount = amount
+        self.isVariable = isVariable
+        self.dueDay = dueDay
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -49,6 +57,34 @@ struct FixedCostModel: Equatable, Codable, Identifiable {
         self.id = entity.id ?? UUID()
         self.title = entity.title ?? ""
         self.amount = Int(truncating: entity.amount ?? 0)
+        self.isVariable = entity.isVariable
+        self.dueDay = Int(entity.dueDay)
+    }
+}
+
+// MARK: - 변동 고정비 월별 확정 금액 모델
+struct MonthlyFixedCostEntryModel: Identifiable {
+    var id: UUID
+    var year: Int
+    var month: Int
+    var amount: Int
+    var confirmedAt: Date
+
+    init(id: UUID = UUID(), year: Int, month: Int, amount: Int, confirmedAt: Date = Date()) {
+        self.id = id
+        self.year = year
+        self.month = month
+        self.amount = amount
+        self.confirmedAt = confirmedAt
+    }
+
+    /// CoreData Entity -> Model 변환 생성자
+    init(entity: MonthlyFixedCostEntry) {
+        self.id = entity.id ?? UUID()
+        self.year = Int(entity.year)
+        self.month = Int(entity.month)
+        self.amount = Int(truncating: entity.amount ?? 0)
+        self.confirmedAt = entity.confirmedAt ?? Date()
     }
 }
 
