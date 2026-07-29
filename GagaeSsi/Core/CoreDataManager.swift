@@ -328,6 +328,13 @@ final class CoreDataManager {
         return try? context.fetch(request).first
     }
     
+    /// 기존 소비 기록에서 파생한 항목 자동완성 추천
+    func fetchSpendingSuggestions() -> [SpendingSuggestion] {
+        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        let entities = (try? context.fetch(request)) ?? []
+        return SpendingSuggestionEngine.build(from: entities.map(SpendingRecordModel.init))
+    }
+
     func fetchSpendingRecords(date: Date) -> [SpendingRecordModel] {
         let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
         let startOfDay = Calendar.current.startOfDay(for: date)

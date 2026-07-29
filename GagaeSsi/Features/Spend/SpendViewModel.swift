@@ -23,6 +23,13 @@ final class SpendViewModel {
 
     /// 편집 중인 지출 기록 id (nil이면 추가 모드)
     var editingRecordId: UUID?
+
+    /// 자동완성 추천 (기존 소비 기록 파생)
+    var allSuggestions: [SpendingSuggestion] = []
+    /// 현재 입력(tempTitle) 기준으로 필터된 추천
+    var titleSuggestions: [SpendingSuggestion] {
+        SpendingSuggestionEngine.filter(allSuggestions, query: tempTitle)
+    }
     
     // MARK: - State
     var isLoading: Bool = false
@@ -49,6 +56,17 @@ final class SpendViewModel {
     // MARK: - Public Methods
     func fetchSpending(on date: Date) {
         spendingRecords = CoreDataManager.shared.fetchSpendingRecords(date: date)
+    }
+
+    /// 자동완성 추천 로드 (화면 진입·저장 후)
+    func loadSuggestions() {
+        allSuggestions = CoreDataManager.shared.fetchSpendingSuggestions()
+    }
+
+    /// 추천 항목 적용: 항목명 + 최근 카테고리 (금액은 자동 입력하지 않음)
+    func applySuggestion(_ s: SpendingSuggestion) {
+        tempTitle = s.title
+        tempCategory = s.category
     }
     
     func updateAmountFromText(_ text: String) {

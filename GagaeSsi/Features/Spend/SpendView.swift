@@ -42,6 +42,7 @@ struct SpendView: View {
         .onAppear {
             let today = Calendar.current.startOfDay(for: Date())
             viewModel.fetchSpending(on: today)
+            viewModel.loadSuggestions()
         }
         .alert("오류", isPresented: $viewModel.showErrorAlert) {
             Button("확인", role: .cancel) { }
@@ -178,6 +179,39 @@ extension SpendView {
                         .stroke(focusedField == .title ? Color.gagaePinkDark : Color.gagaeDivider,
                                 lineWidth: focusedField == .title ? 1.8 : 1.5)
                 )
+
+            // 자동완성 추천 칩 (내용 입력 포커스 시)
+            if focusedField == .title && !viewModel.titleSuggestions.isEmpty {
+                suggestionChips
+            }
+        }
+    }
+
+    private var suggestionChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                ForEach(viewModel.titleSuggestions) { s in
+                    Button {
+                        viewModel.applySuggestion(s)
+                        focusedField = .amount
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text("\(s.category.emoji) \(s.title)")
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundStyle(.gagaeText)
+                            Text(FormatterUtils.currencyString(from: s.lastAmount))
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundStyle(.gagaeTextTertiary)
+                        }
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background(Color.gagaePinkLight)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 2)
         }
     }
 
@@ -265,6 +299,7 @@ extension SpendView {
                 if success {
                     let today = Calendar.current.startOfDay(for: Date())
                     viewModel.fetchSpending(on: today)
+                    viewModel.loadSuggestions()
                     viewModel.clearForm()
                     withAnimation { justSaved = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
