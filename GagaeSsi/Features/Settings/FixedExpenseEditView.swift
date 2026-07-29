@@ -39,6 +39,7 @@ struct FixedExpenseEditView: View {
     @State private var amount: Int = 0
     @State private var isVariable: Bool = false
     @State private var dueDay: Int = 25
+    @State private var kind: FixedCostKind = .spending
 
     @FocusState private var focusedField: Field?
 
@@ -119,6 +120,23 @@ extension FixedExpenseEditView {
                 }
 
                 GagaeDivider()
+
+                // 종류
+                VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
+                    Label("종류", systemImage: "square.grid.2x2.fill")
+                        .font(.gagaeFootnote)
+                        .foregroundStyle(.gagaeTextSecondary)
+                    Picker("종류", selection: $kind) {
+                        ForEach(FixedCostKind.allCases) { k in
+                            Text("\(k.emoji) \(k.label)").tag(k)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    if kind != .spending {
+                        Text("저축·투자는 지출과 분리해서 보여드려요 (예산 계산은 동일)")
+                            .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                    }
+                }
 
                 // 항목명 입력
                 VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
@@ -225,6 +243,7 @@ extension FixedExpenseEditView {
             amountText = FormatterUtils.inputAmountString(from: model.amount)
             isVariable = model.isVariable
             if model.dueDay >= 1 && model.dueDay <= 31 { dueDay = model.dueDay }
+            kind = model.kind
         }
     }
 
@@ -242,12 +261,12 @@ extension FixedExpenseEditView {
         switch mode {
         case .add:
             let newModel = FixedCostModel(id: UUID(), title: title, amount: amount,
-                                          isVariable: isVariable, dueDay: variableDueDay)
+                                          isVariable: isVariable, dueDay: variableDueDay, kind: kind)
             success = CoreDataManager.shared.createFixedCost(newModel)
 
         case .edit(let existing):
             let updatedModel = FixedCostModel(id: existing.id, title: title, amount: amount,
-                                              isVariable: isVariable, dueDay: variableDueDay)
+                                              isVariable: isVariable, dueDay: variableDueDay, kind: kind)
             success = CoreDataManager.shared.updateFixedCost(updatedModel)
         }
 

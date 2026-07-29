@@ -117,6 +117,7 @@ final class CoreDataManager {
         new.amount = NSDecimalNumber(value: model.amount)
         new.isVariable = model.isVariable
         new.dueDay = Int16(model.dueDay)
+        new.kind = model.kind.rawValue
         new.budgetConfig = budgetConfig
         budgetConfig.addToFixedCosts(new)
 
@@ -150,6 +151,7 @@ final class CoreDataManager {
         fixedCost.amount = NSDecimalNumber(value: model.amount)
         fixedCost.isVariable = model.isVariable
         fixedCost.dueDay = Int16(model.dueDay)
+        fixedCost.kind = model.kind.rawValue
 
         return saveContext()
     }

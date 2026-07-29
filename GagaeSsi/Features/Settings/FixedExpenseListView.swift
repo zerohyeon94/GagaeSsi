@@ -21,6 +21,9 @@ struct FixedExpenseListView: View {
     private var totalAmount: Int {
         fixedCosts.reduce(0) { $0 + $1.amount }
     }
+    private var grouped: FixedCostGrouped {
+        FixedCostGrouping.group(fixedCosts)
+    }
 
     // MARK: - Body
     var body: some View {
@@ -86,29 +89,48 @@ extension FixedExpenseListView {
                 )
                 .gagaeCardShadow()
 
-            HStack {
-                VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
-                    Text("월 고정 지출")
-                        .font(.gagaeSubheadline)
-                        .foregroundStyle(.white.opacity(0.85))
-
-                    Text(FormatterUtils.currencyString(from: totalAmount))
-                        .font(.gagaeAmountMedium)
-                        .foregroundStyle(.white)
-
-                    Text("항목 \(fixedCosts.count)개")
-                        .font(.gagaeCaption)
-                        .foregroundStyle(.white.opacity(0.7))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
+                        Text("월 고정비 합계")
+                            .font(.gagaeSubheadline)
+                            .foregroundStyle(.white.opacity(0.85))
+                        Text(FormatterUtils.currencyString(from: totalAmount))
+                            .font(.gagaeAmountMedium)
+                            .foregroundStyle(.white)
+                    }
+                    Spacer()
+                    Text("📌").font(.system(size: 40))
                 }
 
-                Spacer()
-
-                Text("📌")
-                    .font(.system(size: 44))
+                // 종류별 breakdown (0원 종류는 숨김)
+                HStack(spacing: 8) {
+                    breakdownChip("💸 지출", grouped.spendingTotal)
+                    breakdownChip("🐷 저축", grouped.savingTotal)
+                    breakdownChip("📈 투자", grouped.investmentTotal)
+                    Spacer(minLength: 0)
+                }
             }
             .padding(GagaeSpacing.lg)
         }
-        .frame(height: 110)
+        .frame(height: 128)
+    }
+
+    @ViewBuilder
+    private func breakdownChip(_ label: String, _ amount: Int) -> some View {
+        if amount > 0 {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.8))
+                Text(FormatterUtils.currencyString(from: amount))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(.white.opacity(0.16))
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+        }
     }
 
     /// 고정비 목록
@@ -147,14 +169,29 @@ extension FixedExpenseListView {
                     )
                 }
             } else {
+                groupSection("고정 지출", grouped.fixedSpending)
+                groupSection("변동 지출 · 결제일 순", grouped.variableSpending)
+                groupSection("저축 · 투자", grouped.savingInvestment)
+            }
+        }
+    }
+
+    /// 종류/변동 그룹별 섹션 (빈 그룹은 숨김)
+    @ViewBuilder
+    private func groupSection(_ title: String, _ items: [FixedCostModel]) -> some View {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
+                Text(title)
+                    .font(.gagaeFootnote)
+                    .foregroundStyle(.gagaeTextSecondary)
+                    .padding(.leading, 4)
+                    .padding(.top, GagaeSpacing.xs)
                 GagaeCard(padding: 0) {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(fixedCosts.enumerated()), id: \.element.id) { index, item in
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             fixedCostRow(item: item)
-
-                            if index < fixedCosts.count - 1 {
-                                GagaeDivider()
-                                    .padding(.leading, 56)
+                            if index < items.count - 1 {
+                                GagaeDivider().padding(.leading, 56)
                             }
                         }
                     }
@@ -192,7 +229,7 @@ extension FixedExpenseListView {
                 if item.isVariable {
                     variableSubtitle(item)
                 } else {
-                    Text("매달 고정")
+                    Text(item.kind == .spending ? "매달 고정" : "매달 \(item.kind.label)")
                         .font(.gagaeCaption)
                         .foregroundStyle(.gagaeTextTertiary)
                 }
@@ -216,7 +253,7 @@ extension FixedExpenseListView {
             } else {
                 Text(FormatterUtils.currencyString(from: item.amount))
                     .font(.gagaeCalloutMedium)
-                    .foregroundStyle(.gagaeDanger)
+                    .foregroundStyle(item.kind == .spending ? Color.gagaeDanger : Color.gagaeGood)
             }
 
             Button {

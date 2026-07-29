@@ -53,6 +53,26 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
     }
 }
 
+// MARK: - 고정비 종류
+enum FixedCostKind: String, Codable, CaseIterable, Identifiable {
+    case spending = "지출"   // 순수 지출 (월세·구독·통신 등)
+    case saving = "저축"     // 저축성
+    case investment = "투자" // 투자성
+
+    var id: String { rawValue }
+    var label: String { rawValue }
+    var emoji: String {
+        switch self {
+        case .spending: return "💸"
+        case .saving: return "🐷"
+        case .investment: return "📈"
+        }
+    }
+    static func from(_ raw: String?) -> FixedCostKind {
+        FixedCostKind(rawValue: raw ?? "") ?? .spending
+    }
+}
+
 // MARK: - 고정비 모델
 struct FixedCostModel: Equatable, Codable, Identifiable {
     var id: UUID
@@ -63,15 +83,18 @@ struct FixedCostModel: Equatable, Codable, Identifiable {
     var isVariable: Bool
     /// 지출일 (1~31, 0=미설정). 변동형의 월별 확정·알림 기준일.
     var dueDay: Int
+    /// 종류 (지출/저축/투자). 표시·분류용 — 예산 계산에는 영향 없음(모두 차감).
+    var kind: FixedCostKind
 
     // MARK: - Initializer
     init(id: UUID = UUID(), title: String, amount: Int,
-         isVariable: Bool = false, dueDay: Int = 0) {
+         isVariable: Bool = false, dueDay: Int = 0, kind: FixedCostKind = .spending) {
         self.id = id
         self.title = title
         self.amount = amount
         self.isVariable = isVariable
         self.dueDay = dueDay
+        self.kind = kind
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -81,6 +104,35 @@ struct FixedCostModel: Equatable, Codable, Identifiable {
         self.amount = Int(truncating: entity.amount ?? 0)
         self.isVariable = entity.isVariable
         self.dueDay = Int(entity.dueDay)
+        self.kind = FixedCostKind.from(entity.kind)
+    }
+}
+
+// MARK: - 고정비 그룹핑 (순수 로직)
+struct FixedCostGrouped {
+    var fixedSpending: [FixedCostModel] = []      // 지출·고정
+    var variableSpending: [FixedCostModel] = []   // 지출·변동 (결제일 순)
+    var savingInvestment: [FixedCostModel] = []   // 저축/투자
+    var spendingTotal: Int = 0
+    var savingTotal: Int = 0
+    var investmentTotal: Int = 0
+    var total: Int { spendingTotal + savingTotal + investmentTotal }
+}
+
+enum FixedCostGrouping {
+    /// 고정비 배열을 종류·고정/변동으로 분류하고 종류별 합계를 낸다.
+    /// - 종류 우선: 저축/투자는 변동이어도 저축·투자 그룹에.
+    /// - 변동 지출은 결제일(dueDay) 오름차순 정렬.
+    static func group(_ costs: [FixedCostModel]) -> FixedCostGrouped {
+        var g = FixedCostGrouped()
+        let spending = costs.filter { $0.kind == .spending }
+        g.fixedSpending = spending.filter { !$0.isVariable }
+        g.variableSpending = spending.filter { $0.isVariable }.sorted { $0.dueDay < $1.dueDay }
+        g.savingInvestment = costs.filter { $0.kind == .saving || $0.kind == .investment }
+        g.spendingTotal = spending.reduce(0) { $0 + $1.amount }
+        g.savingTotal = costs.filter { $0.kind == .saving }.reduce(0) { $0 + $1.amount }
+        g.investmentTotal = costs.filter { $0.kind == .investment }.reduce(0) { $0 + $1.amount }
+        return g
     }
 }
 
