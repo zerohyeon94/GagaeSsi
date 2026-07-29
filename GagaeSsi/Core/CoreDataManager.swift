@@ -241,7 +241,50 @@ final class CoreDataManager {
 
         return saveContext()
     }
-    
+
+    // MARK: - 할부 CRUD
+
+    func fetchInstallments() -> [InstallmentModel] {
+        let request: NSFetchRequest<Installment> = Installment.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        let entities = (try? context.fetch(request)) ?? []
+        return entities.map(InstallmentModel.init)
+    }
+
+    private func fetchInstallmentEntity(id: UUID) -> Installment? {
+        let request: NSFetchRequest<Installment> = Installment.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+
+    func createInstallment(_ model: InstallmentModel) -> Bool {
+        let new = Installment(context: context)
+        new.id = model.id
+        new.title = model.title
+        new.totalAmount = NSDecimalNumber(value: model.totalAmount)
+        new.months = Int16(model.months)
+        new.startYear = Int16(model.startYear)
+        new.startMonth = Int16(model.startMonth)
+        new.createdAt = model.createdAt
+        return saveContext()
+    }
+
+    func updateInstallment(_ model: InstallmentModel) -> Bool {
+        guard let entity = fetchInstallmentEntity(id: model.id) else { return false }
+        entity.title = model.title
+        entity.totalAmount = NSDecimalNumber(value: model.totalAmount)
+        entity.months = Int16(model.months)
+        entity.startYear = Int16(model.startYear)
+        entity.startMonth = Int16(model.startMonth)
+        return saveContext()
+    }
+
+    func deleteInstallment(id: UUID) -> Bool {
+        guard let entity = fetchInstallmentEntity(id: id) else { return false }
+        context.delete(entity)
+        return saveContext()
+    }
+
     // MARK: - DailyBudget CRUD
     func createDailyBudget(_ model: DailyBudgetModel) -> Bool {
         let dailyBudget = DailyBudget(context: context)
@@ -397,7 +440,7 @@ final class CoreDataManager {
             return existing
         }
         guard let config = fetchBudgetConfig() else { return nil }
-        let base = DailyBudgetCalculator.calculate(from: config, for: startOfDay)
+        let base = DailyBudgetCalculator.calculate(from: config, installments: fetchInstallments(), for: startOfDay)
         let dailyBudget = DailyBudget(context: context)
         dailyBudget.availableAmount = NSDecimalNumber(value: base)
         dailyBudget.date = startOfDay
@@ -523,7 +566,7 @@ final class CoreDataManager {
 
     // MARK: - Utilities
     func resetAllData() {
-        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry"]
+        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry"]
 
         for entityName in entityNames {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
@@ -557,7 +600,7 @@ final class CoreDataManager {
             DebugLogger.log("❌ BudgetConfig 없음 → Budget 설정 필요")
             return nil
         }
-        let baseAmount = DailyBudgetCalculator.calculate(from: config, for: today)
+        let baseAmount = DailyBudgetCalculator.calculate(from: config, installments: fetchInstallments(), for: today)
         let newModel = DailyBudgetModel(
             availableAmount: baseAmount,
             date: today,
@@ -583,6 +626,7 @@ final class CoreDataManager {
             DebugLogger.log("❌ BudgetConfig 없음 → 이월 처리 생략")
             return
         }
+        let installments = fetchInstallments()
 
         // 가장 최근 DailyBudget 날짜 조회
         let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
@@ -602,7 +646,7 @@ final class CoreDataManager {
         while cursor <= today {
             // 이미 존재하면 건너뜀 (멱등성)
             if fetchDailyBudgetEntity(date: cursor) == nil {
-                let base = DailyBudgetCalculator.calculate(from: config, for: cursor)
+                let base = DailyBudgetCalculator.calculate(from: config, installments: installments, for: cursor)
                 let prevDay = calendar.date(byAdding: .day, value: -1, to: cursor)!
                 let prevBalance = fetchDailyBudgetModel(date: prevDay)?.todayAvailable ?? 0
 

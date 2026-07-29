@@ -196,6 +196,15 @@ extension SettingsView {
 
                 rowDivider
                 NavigationLink {
+                    InstallmentListView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#5D65E8"), iconContent: AnyView(Text("💳").font(.system(size: 15))),
+                               label: "할부 관리")
+                }
+                .buttonStyle(.plain)
+
+                rowDivider
+                NavigationLink {
                     CarryOverModeSettingView()
                 } label: {
                     settingRow(iconBg: Color(hex: "#7BC67B"), iconContent: AnyView(Text("💰").font(.system(size: 15))),

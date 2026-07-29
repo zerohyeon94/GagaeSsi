@@ -117,7 +117,7 @@ final class StatsViewModel {
 
     private func loadBaseBudget() {
         guard let config = CoreDataManager.shared.fetchBudgetConfig() else { return }
-        baseDailyBudget = DailyBudgetCalculator.calculate(from: config, for: selectedMonth)
+        baseDailyBudget = DailyBudgetCalculator.calculate(from: config, installments: CoreDataManager.shared.fetchInstallments(), for: selectedMonth)
     }
 
     private func loadCategoryStats() {

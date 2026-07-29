@@ -54,6 +54,15 @@
         <relationship name="budgetConfig" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="BudgetConfig" inverseName="fixedCosts" inverseEntity="BudgetConfig"/>
         <relationship name="monthlyEntries" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="MonthlyFixedCostEntry" inverseName="fixedCost" inverseEntity="MonthlyFixedCostEntry"/>
     </entity>
+    <entity name="Installment" representedClassName="Installment" syncable="YES" codeGenerationType="class">
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="months" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="startMonth" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="startYear" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="totalAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+    </entity>
     <entity name="MonthlyFixedCostEntry" representedClassName="MonthlyFixedCostEntry" syncable="YES" codeGenerationType="class">
         <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
         <attribute name="confirmedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>

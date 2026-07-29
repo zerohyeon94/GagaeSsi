@@ -11,10 +11,13 @@ struct DailyBudgetCalculator {
 
     // MARK: - 일일 예산
 
-    /// 일일 예산 계산: (월급 − 고정비 합계) ÷ 급여 기간 일수 (원 단위 내림)
-    static func calculate(from config: BudgetConfigModel, for date: Date) -> Int {
+    /// 일일 예산 계산: (월급 − 고정비 합계 − 활성 할부 월납입 합) ÷ 급여 기간 일수 (원 단위 내림)
+    static func calculate(from config: BudgetConfigModel,
+                          installments: [InstallmentModel] = [],
+                          for date: Date) -> Int {
         let fixedTotal = config.fixedCosts.map { $0.amount }.reduce(0, +)
-        let usableSalary = config.salary - fixedTotal
+        let installmentTotal = InstallmentModel.activeMonthlyTotal(installments, for: date)
+        let usableSalary = config.salary - fixedTotal - installmentTotal
 
         let period = payPeriod(payday: config.payday, containing: date)
         let totalDays = Calendar.current.dateComponents([.day], from: period.start, to: period.end).day ?? 0

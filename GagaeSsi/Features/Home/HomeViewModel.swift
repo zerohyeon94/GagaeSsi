@@ -65,7 +65,7 @@ final class HomeViewModel {
             errorMessage = "예산 설정이 필요합니다"
             return
         }
-        let baseAmount = DailyBudgetCalculator.calculate(from: config, for: today)
+        let baseAmount = DailyBudgetCalculator.calculate(from: config, installments: CoreDataManager.shared.fetchInstallments(), for: today)
 
         if let model = CoreDataManager.shared.fetchOrCreateTodayDailyBudget() {
             // 기존 carryOverSources, spendingRecords 유지
