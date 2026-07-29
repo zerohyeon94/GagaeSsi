@@ -234,13 +234,24 @@ struct SpendingRecordModel: Identifiable {
     var amount: Int
     var date: Date
     var category: SpendingCategory
+    /// 나중에 돌려받을 환급/페이백 예정 금액 (0이면 없음)
+    var expectedPayback: Int
+    /// 환급을 실제로 받았는지 여부
+    var paybackReceived: Bool
 
-    init(id: UUID = UUID(), title: String, amount: Int, date: Date, category: SpendingCategory = .other) {
+    /// 순 지출 (실지출 − 환급 예정)
+    var netAmount: Int { amount - expectedPayback }
+
+    init(id: UUID = UUID(), title: String, amount: Int, date: Date,
+         category: SpendingCategory = .other,
+         expectedPayback: Int = 0, paybackReceived: Bool = false) {
         self.id = id
         self.title = title
         self.amount = amount
         self.date = date
         self.category = category
+        self.expectedPayback = expectedPayback
+        self.paybackReceived = paybackReceived
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -250,5 +261,7 @@ struct SpendingRecordModel: Identifiable {
         self.amount = Int(truncating: entity.amount ?? 0)
         self.date = entity.date ?? Date()
         self.category = SpendingCategory.from(rawValue: entity.category)
+        self.expectedPayback = Int(entity.expectedPayback)
+        self.paybackReceived = entity.paybackReceived
     }
 }

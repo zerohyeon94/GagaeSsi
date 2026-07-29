@@ -125,6 +125,20 @@ extension StatsView {
             }
             .padding(.bottom, 18)
 
+            // 환급 예정이 있으면 순 지출 보조 표시
+            if viewModel.expectedPaybackTotal > 0 {
+                HStack(spacing: 8) {
+                    Text("순 지출 \(FormatterUtils.currencyString(from: viewModel.netSpendingTotal))")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaeGood)
+                    Text("· 환급 예정 \(FormatterUtils.currencyString(from: viewModel.expectedPaybackTotal))")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                    Spacer()
+                }
+                .padding(.bottom, 14)
+            }
+
             Rectangle().fill(Color.gagaeDivider).frame(height: 0.5)
                 .padding(.bottom, 16)
 

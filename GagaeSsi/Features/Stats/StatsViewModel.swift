@@ -13,6 +13,10 @@ final class StatsViewModel {
     var categoryTotals: [CategoryTotal] = []
     var dailyTotals: [DailyTotal] = []
     var monthlyTotal: Int = 0
+    /// 환급 예정 합계 (이번 달)
+    var expectedPaybackTotal: Int = 0
+    /// 순 지출 (실지출 − 환급 예정)
+    var netSpendingTotal: Int { monthlyTotal - expectedPaybackTotal }
     var prevMonthTotal: Int = 0
     var dailyAverage: Int = 0
     var baseDailyBudget: Int = 0
@@ -126,6 +130,7 @@ final class StatsViewModel {
 
         let records = CoreDataManager.shared.fetchSpendingRecords(year: year, month: month)
         monthlyTotal = records.reduce(0) { $0 + $1.amount }
+        expectedPaybackTotal = records.reduce(0) { $0 + $1.expectedPayback }
         dailyAverage = records.isEmpty ? 0 : monthlyTotal / max(1, Calendar.current.component(.day, from: Date()))
 
         var dict: [SpendingCategory: Int] = [:]

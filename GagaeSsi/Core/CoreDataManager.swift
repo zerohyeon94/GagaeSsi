@@ -356,11 +356,13 @@ final class CoreDataManager {
         }
 
         let newSpendingRecord = SpendingRecord(context: context)
-        newSpendingRecord.id = UUID()
+        newSpendingRecord.id = model.id   // 모델 id 유지 (환급 받음 등 id 조회 일관성)
         newSpendingRecord.title = model.title
         newSpendingRecord.amount = NSDecimalNumber(value: model.amount)
         newSpendingRecord.date = model.date
         newSpendingRecord.category = model.category.rawValue
+        newSpendingRecord.expectedPayback = Int32(model.expectedPayback)
+        newSpendingRecord.paybackReceived = model.paybackReceived
         newSpendingRecord.dailyBudget = dailyBudget
         dailyBudget.addToSpendingRecords(newSpendingRecord)
 
@@ -428,6 +430,31 @@ final class CoreDataManager {
         spendingRecord.amount = NSDecimalNumber(value: model.amount)
         spendingRecord.date = model.date   // 전체 타임스탬프 보존 (시간대 리포트용)
         spendingRecord.category = model.category.rawValue
+        spendingRecord.expectedPayback = Int32(model.expectedPayback)
+        spendingRecord.paybackReceived = model.paybackReceived
+
+        return saveContext()
+    }
+
+    /// 환급/페이백을 실제로 받음 처리 — 오늘 예산에 환급액을 되돌려준다(+이월).
+    /// 재수령 방지: 이미 받았거나 환급 예정 0이면 무시.
+    @discardableResult
+    func receivePayback(recordId: UUID) -> Bool {
+        guard let record = fetchSpendingRecordEntity(id: recordId) else { return false }
+        let payback = Int(record.expectedPayback)
+        guard payback > 0, !record.paybackReceived else { return false }
+
+        record.paybackReceived = true
+
+        let today = Calendar.current.startOfDay(for: Date())
+        guard let budget = fetchOrCreateDailyBudgetEntity(date: today) else { return false }
+        let credit = CarryOverSource(context: context)
+        credit.id = UUID()
+        credit.amount = NSDecimalNumber(value: payback)
+        credit.date = today
+        credit.toDate = today
+        credit.dailyBudget = budget
+        budget.addToCarryOverSources(credit)
 
         return saveContext()
     }

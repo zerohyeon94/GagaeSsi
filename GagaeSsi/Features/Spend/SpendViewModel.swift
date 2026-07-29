@@ -20,6 +20,12 @@ final class SpendViewModel {
     var tempAmountText: String = ""
     var tempDate: Date = Date()
     var tempCategory: SpendingCategory = .other
+    /// 환급/페이백 예정 입력
+    var tempHasPayback: Bool = false
+    var tempExpectedPayback: Int = 0
+    var tempExpectedPaybackText: String = ""
+    /// 편집 시 기존 환급 수령 여부 보존용
+    private var editingPaybackReceived: Bool = false
 
     /// 편집 중인 지출 기록 id (nil이면 추가 모드)
     var editingRecordId: UUID?
@@ -91,6 +97,8 @@ final class SpendViewModel {
         // tempDate는 시각 성분(생성=현재 시각, 편집=원래 시각)을 유지한다.
         model.date = tempDate
         model.category = tempCategory
+        model.expectedPayback = tempHasPayback ? tempExpectedPayback : 0
+        model.paybackReceived = (editingRecordId != nil) ? editingPaybackReceived : false
 
         let success: Bool
         if let editingId = editingRecordId {
@@ -124,6 +132,18 @@ final class SpendViewModel {
         tempAmountText = FormatterUtils.inputAmountString(from: record.amount)
         tempDate = record.date
         tempCategory = record.category
+        tempExpectedPayback = record.expectedPayback
+        tempExpectedPaybackText = record.expectedPayback > 0 ? FormatterUtils.inputAmountString(from: record.expectedPayback) : ""
+        tempHasPayback = record.expectedPayback > 0
+        editingPaybackReceived = record.paybackReceived
+    }
+
+    /// 환급/페이백을 실제로 받음 처리
+    func receivePayback(recordId: UUID, eventBus: AppEventBus) {
+        if CoreDataManager.shared.receivePayback(recordId: recordId) {
+            fetchSpending(on: Calendar.current.startOfDay(for: Date()))
+            eventBus.notifySpendingAdded()   // 오늘 예산 크레딧 → 홈 갱신
+        }
     }
 
     /// 편집 취소
@@ -145,6 +165,10 @@ final class SpendViewModel {
         tempAmountText = ""
         tempDate = Date()
         tempCategory = .other
+        tempHasPayback = false
+        tempExpectedPayback = 0
+        tempExpectedPaybackText = ""
+        editingPaybackReceived = false
         editingRecordId = nil
         model = SpendingRecordModel(id: UUID(), title: "", amount: 0, date: Date())
     }

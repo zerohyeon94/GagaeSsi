@@ -15,7 +15,7 @@ struct SpendView: View {
     @FocusState private var focusedField: Field?
     @State private var justSaved = false
 
-    enum Field { case title, amount }
+    enum Field { case title, amount, payback }
 
     // MARK: - Body
     var body: some View {
@@ -103,6 +103,7 @@ extension SpendView {
                 categoryField
                 contentField
                 amountField
+                paybackField
                 dateField
             }
             .padding(.horizontal, 16)
@@ -255,6 +256,53 @@ extension SpendView {
                     .stroke(focusedField == .amount ? Color.gagaePinkDark : Color.gagaeDivider,
                             lineWidth: focusedField == .amount ? 1.8 : 1.5)
             )
+        }
+    }
+
+    /// ③-2 환급/페이백 예정 (선택)
+    private var paybackField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: $viewModel.tempHasPayback.animation()) {
+                HStack(spacing: 6) {
+                    Text("💳").font(.system(size: 15))
+                    Text("환급·페이백 예정")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                }
+            }
+            .tint(.gagaePinkDark)
+
+            if viewModel.tempHasPayback {
+                HStack(spacing: 0) {
+                    Text("₩")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                        .frame(width: 42, height: 44)
+                    TextField("나중에 돌려받을 금액", text: $viewModel.tempExpectedPaybackText)
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .keyboardType(.numberPad)
+                        .focused($focusedField, equals: .payback)
+                        .padding(.horizontal, 6)
+                        .onChange(of: viewModel.tempExpectedPaybackText) { _, v in
+                            if let r = FormatterUtils.formatCurrencyInput(v) {
+                                viewModel.tempExpectedPayback = r.plainNumber
+                                viewModel.tempExpectedPaybackText = r.formatted
+                            }
+                        }
+                }
+                .frame(height: 44)
+                .background(Color.gagaeSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12)
+                    .stroke(focusedField == .payback ? Color.gagaePinkDark : Color.gagaeDivider,
+                            lineWidth: focusedField == .payback ? 1.8 : 1.5))
+
+                if viewModel.tempExpectedPayback > 0 && viewModel.tempAmount > 0 {
+                    Text("순 지출 \(FormatterUtils.currencyString(from: viewModel.tempAmount - viewModel.tempExpectedPayback)) · 지출은 전액으로 잡히고 받을 때 예산에 돌아와요")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                }
+            }
         }
     }
 
@@ -419,9 +467,17 @@ extension SpendView {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(.gagaeText)
                     .lineLimit(1)
-                Text(FormatterUtils.relativeDate(record.date))
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.gagaeTextTertiary)
+                if record.expectedPayback > 0 {
+                    Text(record.paybackReceived
+                         ? "✅ 환급 완료 \(FormatterUtils.currencyString(from: record.expectedPayback))"
+                         : "💳 환급 예정 \(FormatterUtils.currencyString(from: record.expectedPayback))")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(record.paybackReceived ? .gagaeGood : .gagaePinkDark)
+                } else {
+                    Text(FormatterUtils.relativeDate(record.date))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                }
             }
 
             Spacer()
@@ -429,6 +485,19 @@ extension SpendView {
             Text("-" + FormatterUtils.currencyString(from: record.amount))
                 .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundStyle(.gagaeDanger)
+
+            if record.expectedPayback > 0 && !record.paybackReceived {
+                Button {
+                    viewModel.receivePayback(recordId: record.id, eventBus: eventBus)
+                } label: {
+                    Text("환급받음")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 6)
+                        .background(Color.gagaeGood).clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
 
             Button {
                 focusedField = nil
