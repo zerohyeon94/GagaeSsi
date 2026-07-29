@@ -193,6 +193,16 @@ extension SettingsView {
                                label: "위시리스트")
                 }
                 .buttonStyle(.plain)
+
+                rowDivider
+                NavigationLink {
+                    CarryOverModeSettingView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#7BC67B"), iconContent: AnyView(Text("💰").font(.system(size: 15))),
+                               label: "이월 방식",
+                               rightText: currentConfig?.carryOverMode.label)
+                }
+                .buttonStyle(.plain)
             }
             .background(Color.gagaeCardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))

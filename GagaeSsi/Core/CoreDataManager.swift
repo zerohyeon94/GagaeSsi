@@ -55,6 +55,7 @@ final class CoreDataManager {
         let config = BudgetConfig(context: context)
         config.salary = NSDecimalNumber(value: model.salary)
         config.payday = NSDecimalNumber(value: model.payday)
+        config.carryOverMode = model.carryOverMode.rawValue
 
         for fixed in model.fixedCosts {
             let fixedCost = FixedCost(context: context)
@@ -94,10 +95,18 @@ final class CoreDataManager {
         
         config.salary = NSDecimalNumber(value: model.salary)
         config.payday = NSDecimalNumber(value: model.payday)
-        
+        config.carryOverMode = model.carryOverMode.rawValue
+
         return saveContext()
     }
-    
+
+    /// 이월 방식만 변경 (오늘부터 적용, 과거 일자·풀 잔액 보존)
+    func updateCarryOverMode(_ mode: CarryOverMode) -> Bool {
+        guard let config = fetchBudgetConfigEntity() else { return false }
+        config.carryOverMode = mode.rawValue
+        return saveContext()
+    }
+
     // MARK: - FixedCost CRUD
     func createFixedCost(_ model: FixedCostModel) -> Bool {
         guard let budgetConfig = fetchBudgetConfigEntity() else { return false }
@@ -505,7 +514,7 @@ final class CoreDataManager {
 
     // MARK: - Utilities
     func resetAllData() {
-        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "DailyBudget", "SpendingRecord", "CarryOverSource", "WishItem", "WishSavingEntry"]
+        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry"]
 
         for entityName in entityNames {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
@@ -586,7 +595,10 @@ final class CoreDataManager {
             if fetchDailyBudgetEntity(date: cursor) == nil {
                 let base = DailyBudgetCalculator.calculate(from: config, for: cursor)
                 let prevDay = calendar.date(byAdding: .day, value: -1, to: cursor)!
-                let carry = fetchDailyBudgetModel(date: prevDay)?.todayAvailable ?? 0
+                let prevBalance = fetchDailyBudgetModel(date: prevDay)?.todayAvailable ?? 0
+
+                // 이월 방식: 전액 이월은 ±전액, 분리 모드는 음수(페널티)만 이월
+                let carry = (config.carryOverMode == .separate) ? min(0, prevBalance) : prevBalance
 
                 var sources: [CarryOverSourceModel] = []
                 if carry != 0 {
@@ -602,9 +614,57 @@ final class CoreDataManager {
                 _ = createDailyBudget(newModel)
                 // 활성 위시가 있으면 이 날짜의 저금을 반영 (다음날 이월 계산이 이를 포함)
                 applyWishSaving(on: cursor)
+
+                // 분리 모드: 전날의 남은 양수는 '모아둔 이월금' 풀로 적립
+                if config.carryOverMode == .separate {
+                    let deposit = max(0, prevBalance)
+                    if deposit > 0 { depositToPool(amount: deposit, date: cursor) }
+                }
             }
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }
+    }
+
+    // MARK: - 모아둔 이월금 (분리 모드 풀)
+
+    /// 풀 잔액 = 적립(+) − 인출(−) 합계
+    func carryOverPoolBalance() -> Int {
+        let request: NSFetchRequest<CarryOverPoolEntry> = CarryOverPoolEntry.fetchRequest()
+        let entries = (try? context.fetch(request)) ?? []
+        return entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+    }
+
+    /// 남은 양수를 풀에 적립 (분리 모드 일자 생성 시 내부 호출)
+    private func depositToPool(amount: Int, date: Date) {
+        guard amount > 0 else { return }
+        let entry = CarryOverPoolEntry(context: context)
+        entry.id = UUID()
+        entry.date = date
+        entry.amount = NSDecimalNumber(value: amount)
+        _ = saveContext()
+    }
+
+    /// 풀에서 오늘 예산으로 꺼내 쓴다. 오늘 이월(+) 추가 + 풀 인출(−). 잔액 초과 불가.
+    @discardableResult
+    func withdrawFromPool(amount: Int) -> Bool {
+        guard amount > 0, amount <= carryOverPoolBalance() else { return false }
+        let today = Calendar.current.startOfDay(for: Date())
+        guard let budget = fetchOrCreateDailyBudgetEntity(date: today) else { return false }
+
+        let cos = CarryOverSource(context: context)
+        cos.id = UUID()
+        cos.amount = NSDecimalNumber(value: amount)
+        cos.date = today
+        cos.toDate = today
+        cos.dailyBudget = budget
+        budget.addToCarryOverSources(cos)
+
+        let entry = CarryOverPoolEntry(context: context)
+        entry.id = UUID()
+        entry.date = today
+        entry.amount = NSDecimalNumber(value: -amount)
+
+        return saveContext()
     }
 
     // MARK: - 위시리스트 저금

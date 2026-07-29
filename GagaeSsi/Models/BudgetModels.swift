@@ -7,19 +7,40 @@
 
 import Foundation
 
+// MARK: - 이월 방식
+enum CarryOverMode: String, Codable {
+    /// 전날 잔액(±) 전액을 다음날 오늘 예산에 반영 (기본, 기존 동작)
+    case full
+    /// 남은 양수는 '모아둔 이월금' 풀로 적립(오늘 예산 미포함), 음수(과소비)만 다음날 이월(페널티)
+    case separate
+
+    static func from(_ raw: String?) -> CarryOverMode {
+        CarryOverMode(rawValue: raw ?? "") ?? .full
+    }
+
+    var label: String {
+        switch self {
+        case .full: return "전액 이월"
+        case .separate: return "모아둔 이월금으로 분리"
+        }
+    }
+}
+
 // MARK: - 예산 설정 모델
 struct BudgetConfigModel: Equatable, Codable, Identifiable {
     var id: UUID = UUID()
     var salary: Int
     var payday: Int
     var fixedCosts: [FixedCostModel]
+    var carryOverMode: CarryOverMode
 
     // MARK: - Initializer
     /// 일반 생성자
-    init(salary: Int, payday: Int, fixedCosts: [FixedCostModel]) {
+    init(salary: Int, payday: Int, fixedCosts: [FixedCostModel], carryOverMode: CarryOverMode = .full) {
         self.salary = salary
         self.payday = payday
         self.fixedCosts = fixedCosts
+        self.carryOverMode = carryOverMode
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -28,6 +49,7 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
         self.payday = Int(truncating: entity.payday ?? 0)
         let costs = entity.fixedCosts?.allObjects as? [FixedCost] ?? []
         self.fixedCosts = costs.map(FixedCostModel.init)
+        self.carryOverMode = CarryOverMode.from(entity.carryOverMode)
     }
 }
 

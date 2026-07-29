@@ -18,6 +18,7 @@ struct HomeView: View {
     @State private var weeklyTotals: [(date: Date, total: Int)] = []
     @State private var showWishlist = false
     @State private var showFixedExpenses = false
+    @State private var showWithdraw = false
 
     // MARK: - Computed
     private var budgetStatus: BudgetStatus {
@@ -51,6 +52,12 @@ struct HomeView: View {
 
                     if let wish = viewModel.activeWish {
                         wishSavingCard(wish)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+                    }
+
+                    if viewModel.carryOverMode == .separate {
+                        carryOverPoolCard
                             .padding(.horizontal, 20)
                             .padding(.top, 16)
                     }
@@ -98,6 +105,11 @@ struct HomeView: View {
                             Button("닫기") { showFixedExpenses = false }.foregroundStyle(.gagaePinkDark)
                         }
                     }
+            }
+        }
+        .sheet(isPresented: $showWithdraw) {
+            CarryOverWithdrawView(poolBalance: viewModel.carryOverPoolBalance) { amount in
+                viewModel.withdrawFromPool(amount: amount)
             }
         }
         .onChange(of: scenePhase) {
@@ -289,6 +301,41 @@ extension HomeView {
             .fill(Color.gagaeDivider)
             .frame(height: 0.5)
             .padding(.leading, 50)
+    }
+
+    /// 모아둔 이월금 카드 (분리 모드)
+    private var carryOverPoolCard: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color.gagaePinkLight).frame(width: 40, height: 40)
+                Text("🐷").font(.system(size: 20))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("모아둔 이월금")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.gagaeTextSecondary)
+                Text(FormatterUtils.currencyString(from: viewModel.carryOverPoolBalance))
+                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+            }
+            Spacer()
+            Button {
+                showWithdraw = true
+            } label: {
+                Text("꺼내 쓰기")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(viewModel.carryOverPoolBalance > 0 ? .white : .gagaeTextTertiary)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(viewModel.carryOverPoolBalance > 0 ? AnyShapeStyle(Color.gagaePinkDark) : AnyShapeStyle(Color.gagaeSurface))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.carryOverPoolBalance <= 0)
+        }
+        .padding(16)
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
     }
 
     /// 변동 고정비 미확정 프롬프트 배너

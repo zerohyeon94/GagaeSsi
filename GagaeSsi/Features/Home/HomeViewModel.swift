@@ -21,6 +21,10 @@ final class HomeViewModel {
     var activeWish: WishItemModel?
     /// 지출일이 지났는데 이번 달 아직 확정 안 한 변동 고정비 (홈 프롬프트)
     var unconfirmedVariableCosts: [FixedCostModel] = []
+    /// 이월 방식 (전액 이월 / 모아둔 이월금 분리)
+    var carryOverMode: CarryOverMode = .full
+    /// 모아둔 이월금 풀 잔액 (분리 모드)
+    var carryOverPoolBalance: Int = 0
     
     // MARK: - Loading State
     var isLoading: Bool = false
@@ -41,9 +45,19 @@ final class HomeViewModel {
         }
 
         unconfirmedVariableCosts = CoreDataManager.shared.unconfirmedVariableCosts()
+        carryOverMode = CoreDataManager.shared.fetchBudgetConfig()?.carryOverMode ?? .full
+        carryOverPoolBalance = CoreDataManager.shared.carryOverPoolBalance()
         isLoading = false
     }
     
+    /// 모아둔 이월금에서 오늘 예산으로 꺼내 쓴다.
+    @discardableResult
+    func withdrawFromPool(amount: Int) -> Bool {
+        let ok = CoreDataManager.shared.withdrawFromPool(amount: amount)
+        if ok { fetchTodayBudget() }
+        return ok
+    }
+
     func recalculateTodayBudget() {
         let today = Calendar.current.startOfDay(for: Date())
         guard let config = CoreDataManager.shared.fetchBudgetConfig() else {
