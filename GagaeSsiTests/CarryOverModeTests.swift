@@ -113,4 +113,31 @@ final class CarryOverModeTests: XCTestCase {
         XCTAssertGreaterThan(sut.carryOverPoolBalance(), 0)  // 어제 잔액이 풀로
         XCTAssertEqual(carrySum(day(0)), 0)
     }
+
+    // 전환 시 '오늘 이미 넘어온 양수 이월'을 즉시 풀로 옮긴다 (오늘부터 반영)
+    func testModeSwitch_sweepsExistingTodayPositiveCarry() {
+        setup(.full)
+        seedDay(day(-1), availableAmount: 20_000)
+        sut.processDailyBudgets(upTo: day(0))           // 오늘 전액 이월 +20,000
+        XCTAssertEqual(carrySum(day(0)), 20_000)
+        XCTAssertEqual(sut.carryOverPoolBalance(), 0)
+
+        XCTAssertTrue(sut.updateCarryOverMode(.separate))  // 스윕
+
+        XCTAssertEqual(sut.carryOverPoolBalance(), 20_000)  // 풀로 이동
+        XCTAssertEqual(carrySum(day(0)), 0)                 // 오늘 이월 제거
+    }
+
+    // 전환 시 오늘 음수 이월(과소비 페널티)은 풀로 옮기지 않고 유지
+    func testModeSwitch_keepsTodayNegativeCarry() {
+        setup(.full)
+        seedDay(day(-1), availableAmount: 10_000, spend: 15_000)  // 어제 -5,000
+        sut.processDailyBudgets(upTo: day(0))
+        XCTAssertEqual(carrySum(day(0)), -5_000)
+
+        XCTAssertTrue(sut.updateCarryOverMode(.separate))
+
+        XCTAssertEqual(sut.carryOverPoolBalance(), 0)   // 음수는 풀 이동 안 함
+        XCTAssertEqual(carrySum(day(0)), -5_000)        // 페널티 유지
+    }
 }

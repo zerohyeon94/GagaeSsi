@@ -103,8 +103,39 @@ final class CoreDataManager {
     /// 이월 방식만 변경 (오늘부터 적용, 과거 일자·풀 잔액 보존)
     func updateCarryOverMode(_ mode: CarryOverMode) -> Bool {
         guard let config = fetchBudgetConfigEntity() else { return false }
+        let previous = CarryOverMode.from(config.carryOverMode)
         config.carryOverMode = mode.rawValue
+
+        // 전액 → 분리 전환은 오늘부터 반영: 오늘 넘어온 '양수 일자 이월'을 즉시 풀로 옮긴다.
+        // (오늘 발생한 크레딧[이월금 인출·환급, date==today]과 음수 이월[페널티]은 제외)
+        if mode == .separate && previous != .separate {
+            sweepTodayPositiveCarryToPool()
+        }
         return saveContext()
+    }
+
+    /// 오늘 DailyBudget에서 전날 넘어온 양수 이월을 '모아둔 이월금' 풀로 이동한다.
+    private func sweepTodayPositiveCarryToPool() {
+        let today = Calendar.current.startOfDay(for: Date())
+        guard let budget = fetchDailyBudgetEntity(date: today) else { return }
+        let sources = budget.carryOverSources?.allObjects as? [CarryOverSource] ?? []
+
+        var swept = 0
+        for s in sources {
+            let srcDate = Calendar.current.startOfDay(for: s.date ?? today)
+            let amount = Int(truncating: s.amount ?? 0)
+            if srcDate < today && amount > 0 {   // 전날 이월(양수)만
+                swept += amount
+                budget.removeFromCarryOverSources(s)
+                context.delete(s)
+            }
+        }
+        if swept > 0 {
+            let entry = CarryOverPoolEntry(context: context)
+            entry.id = UUID()
+            entry.date = today
+            entry.amount = NSDecimalNumber(value: swept)
+        }
     }
 
     // MARK: - FixedCost CRUD
