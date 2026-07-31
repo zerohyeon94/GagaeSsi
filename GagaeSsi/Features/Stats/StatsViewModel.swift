@@ -70,6 +70,15 @@ final class StatsViewModel {
     /// 전월 대비 증감액
     var diffAmount: Int { monthlyTotal - prevMonthTotal }
 
+    /// 이번 달 가장 자주 나타난 캐릭터 상태 (소비가 있는 날 기준)
+    var dominantState: CharacterState? {
+        let states = dailyTotals.filter { $0.amount > 0 }
+            .map { CharacterState.from(spent: $0.amount, base: baseDailyBudget, coveredFromPool: false) }
+        guard !states.isEmpty else { return nil }
+        let counts = Dictionary(grouping: states, by: { $0 }).mapValues { $0.count }
+        return counts.max { $0.value < $1.value }?.key
+    }
+
     /// 예산 초과한 날 수
     var overBudgetDays: Int {
         guard baseDailyBudget > 0 else { return 0 }

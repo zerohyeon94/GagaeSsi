@@ -139,6 +139,17 @@ extension StatsView {
                 .padding(.bottom, 14)
             }
 
+            if let state = viewModel.dominantState {
+                HStack(spacing: 8) {
+                    Text("이번 달 가게씨")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.gagaeTextSecondary)
+                    Text("\(state.emoji) \(state.label)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(state.color)
+                    Spacer()
+                }
+                .padding(.bottom, 14)
+            }
+
             Rectangle().fill(Color.gagaeDivider).frame(height: 0.5)
                 .padding(.bottom, 16)
 

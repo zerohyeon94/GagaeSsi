@@ -21,9 +21,7 @@ struct HomeView: View {
     @State private var showWithdraw = false
 
     // MARK: - Computed
-    private var budgetStatus: BudgetStatus {
-        BudgetStatus.from(available: viewModel.todayAvailableAmount, base: viewModel.baseBudget)
-    }
+    private var characterState: CharacterState { viewModel.characterState }
 
     // MARK: - Body
     var body: some View {
@@ -155,16 +153,16 @@ extension HomeView {
             // 상태 배지
             HStack(spacing: 6) {
                 Circle()
-                    .fill(budgetStatus.color)
+                    .fill(characterState.color)
                     .frame(width: 7, height: 7)
                     .scaleEffect(dotPulsing ? 1.0 : 0.85)
-                Text(statusBadgeText)
+                Text(characterState.label)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(budgetStatus.color)
+                    .foregroundStyle(characterState.color)
             }
             .padding(.horizontal, 13)
             .padding(.vertical, 7)
-            .background(budgetStatus.color.opacity(0.12))
+            .background(characterState.color.opacity(0.12))
             .clipShape(Capsule())
         }
     }
@@ -175,7 +173,7 @@ extension HomeView {
             RoundedRectangle(cornerRadius: 28)
                 .fill(
                     LinearGradient(
-                        colors: cardGradientColors,
+                        colors: characterState.gradientColors,
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -217,7 +215,7 @@ extension HomeView {
                     .foregroundStyle(.white)
                     .contentTransition(.numericText())
 
-                Text(budgetStatus.message)
+                Text(characterState.message)
                     .font(.system(size: 12, design: .rounded))
                     .foregroundStyle(.white.opacity(0.78))
                     .padding(.horizontal, 18)
@@ -239,7 +237,7 @@ extension HomeView {
                 .scaledToFit()
                 .frame(width: 44, height: 44)
         } else {
-            Text(budgetStatus.pigMood)
+            Text(characterState.emoji)
         }
     }
 
@@ -270,7 +268,7 @@ extension HomeView {
             divider
             statusRow(emoji: "✅", label: "잔여 예산",
                       value: FormatterUtils.currencyString(from: viewModel.todayAvailableAmount),
-                      valueColor: budgetStatus.color, bold: true)
+                      valueColor: characterState.color, bold: true)
 
             Color.clear.frame(height: 4)
         }
@@ -501,31 +499,11 @@ extension HomeView {
 
 // MARK: - Helpers
 extension HomeView {
-    private var cardGradientColors: [Color] {
-        switch budgetStatus {
-        case .good:
-            return [.gagaeBudgetCardTop, .gagaeBudgetCardBottom]
-        case .warning:
-            return [Color(hex: "#FFA94D"), Color(hex: "#FB8B1A")]
-        case .critical, .empty:
-            return [Color(hex: "#F26666"), Color(hex: "#E13F47")]
-        }
-    }
-
     private var todayDateString: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "ko_KR")
         formatter.dateFormat = "M월 d일 EEEE"
         return formatter.string(from: Date())
-    }
-
-    private var statusBadgeText: String {
-        switch budgetStatus {
-        case .good: return "여유"
-        case .warning: return "주의"
-        case .critical: return "위험"
-        case .empty: return "소진"
-        }
     }
 
     private func weekdayLabel(_ date: Date) -> String {

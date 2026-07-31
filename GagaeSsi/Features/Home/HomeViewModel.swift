@@ -27,6 +27,11 @@ final class HomeViewModel {
     var carryOverPoolBalance: Int = 0
     /// 오늘 모아둔 이월금에서 가져온 금액 (인출·부족액 충당)
     var todayPoolWithdrawn: Int = 0
+
+    /// 캐릭터 소비 상태 (하루 예산 사용률 기반)
+    var characterState: CharacterState {
+        CharacterState.from(spent: spentAmount, base: baseBudget, coveredFromPool: todayPoolWithdrawn > 0)
+    }
     
     // MARK: - Loading State
     var isLoading: Bool = false
