@@ -205,6 +205,15 @@ extension SettingsView {
 
                 rowDivider
                 NavigationLink {
+                    PaybackListView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#3FB98F"), iconContent: AnyView(Text("💸").font(.system(size: 15))),
+                               label: "페이백 관리")
+                }
+                .buttonStyle(.plain)
+
+                rowDivider
+                NavigationLink {
                     CarryOverModeSettingView()
                 } label: {
                     settingRow(iconBg: Color(hex: "#7BC67B"), iconContent: AnyView(Text("💰").font(.system(size: 15))),

@@ -63,6 +63,20 @@
         <attribute name="title" optional="YES" attributeType="String"/>
         <attribute name="totalAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
     </entity>
+    <entity name="Payback" representedClassName="Payback" syncable="YES" codeGenerationType="class">
+        <attribute name="confirmedAmount" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="estimatedAmount" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="expectedDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="periodEnd" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="periodStart" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="receivedAmount" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="receivedDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="status" optional="YES" attributeType="String" defaultValueString="예상"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="type" optional="YES" attributeType="String" defaultValueString="연결형"/>
+    </entity>
     <entity name="MonthlyFixedCostEntry" representedClassName="MonthlyFixedCostEntry" syncable="YES" codeGenerationType="class">
         <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
         <attribute name="confirmedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>

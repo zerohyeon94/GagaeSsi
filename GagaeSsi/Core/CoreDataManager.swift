@@ -316,6 +316,76 @@ final class CoreDataManager {
         return saveContext()
     }
 
+    // MARK: - 페이백 CRUD (미확정·기간형)
+
+    func fetchPaybacks() -> [PaybackModel] {
+        let request: NSFetchRequest<Payback> = Payback.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+        return ((try? context.fetch(request)) ?? []).map(PaybackModel.init)
+    }
+
+    private func fetchPaybackEntity(id: UUID) -> Payback? {
+        let request: NSFetchRequest<Payback> = Payback.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+
+    func createPayback(_ model: PaybackModel) -> Bool {
+        let e = Payback(context: context)
+        applyPayback(model, to: e)
+        e.createdAt = model.createdAt
+        return saveContext()
+    }
+
+    func updatePayback(_ model: PaybackModel) -> Bool {
+        guard let e = fetchPaybackEntity(id: model.id) else { return false }
+        applyPayback(model, to: e)
+        return saveContext()
+    }
+
+    private func applyPayback(_ m: PaybackModel, to e: Payback) {
+        e.id = m.id
+        e.title = m.title
+        e.type = m.type.rawValue
+        e.status = m.status.rawValue
+        e.estimatedAmount = Int32(m.estimatedAmount)
+        e.confirmedAmount = Int32(m.confirmedAmount)
+        e.receivedAmount = Int32(m.receivedAmount)
+        e.expectedDate = m.expectedDate
+        e.receivedDate = m.receivedDate
+        e.periodStart = m.periodStart
+        e.periodEnd = m.periodEnd
+    }
+
+    func deletePayback(id: UUID) -> Bool {
+        guard let e = fetchPaybackEntity(id: id) else { return false }
+        context.delete(e)
+        return saveContext()
+    }
+
+    /// 페이백 수령 처리 — 상태를 '수령'으로, 오늘 예산에 수령액을 +크레딧한다. 재수령 방지.
+    @discardableResult
+    func markPaybackReceived(id: UUID, amount: Int) -> Bool {
+        guard amount > 0, let e = fetchPaybackEntity(id: id) else { return false }
+        guard PaybackStatus.from(e.status) != .received else { return false }
+
+        e.receivedAmount = Int32(amount)
+        e.status = PaybackStatus.received.rawValue
+        e.receivedDate = Date()
+
+        let today = Calendar.current.startOfDay(for: Date())
+        guard let budget = fetchOrCreateDailyBudgetEntity(date: today) else { return false }
+        let credit = CarryOverSource(context: context)
+        credit.id = UUID()
+        credit.amount = NSDecimalNumber(value: amount)
+        credit.date = today
+        credit.toDate = today
+        credit.dailyBudget = budget
+        budget.addToCarryOverSources(credit)
+
+        return saveContext()
+    }
+
     // MARK: - DailyBudget CRUD
     func createDailyBudget(_ model: DailyBudgetModel) -> Bool {
         let dailyBudget = DailyBudget(context: context)
@@ -624,7 +694,7 @@ final class CoreDataManager {
 
     // MARK: - Utilities
     func resetAllData() {
-        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry"]
+        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "Payback", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry"]
 
         for entityName in entityNames {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
