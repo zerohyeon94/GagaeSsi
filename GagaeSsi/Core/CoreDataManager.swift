@@ -736,6 +736,60 @@ final class CoreDataManager {
         }
     }
 
+    /// 과거 소비 수정/삭제 후, `from`(변경된 소비 날짜)부터 오늘까지 일자 이월(및 분리 모드
+    /// 풀 적립)을 다시 계산한다. 인출·환급 크레딧(date==그날)과 위시 저금은 건드리지 않는다.
+    func recalculateCarryOverChain(from: Date) {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let startDay = calendar.startOfDay(for: from)
+        guard startDay < today else { return }          // 오늘 이후 영향 없음
+        guard let config = fetchBudgetConfig() else { return }
+
+        var cursor = calendar.date(byAdding: .day, value: 1, to: startDay)!
+        while cursor <= today {
+            if let budget = fetchDailyBudgetEntity(date: cursor) {
+                let prevDay = calendar.date(byAdding: .day, value: -1, to: cursor)!
+                let prevBalance = fetchDailyBudgetModel(date: prevDay)?.todayAvailable ?? 0
+
+                // 1) 기존 '일자 이월'(date < cursor)만 제거
+                let sources = budget.carryOverSources?.allObjects as? [CarryOverSource] ?? []
+                for s in sources where calendar.startOfDay(for: s.date ?? cursor) < cursor {
+                    budget.removeFromCarryOverSources(s)
+                    context.delete(s)
+                }
+                // 2) 이 날짜의 '풀 적립'(양수, date==cursor)만 제거 (인출[음수]·다른 날 적립은 보존)
+                let poolReq: NSFetchRequest<CarryOverPoolEntry> = CarryOverPoolEntry.fetchRequest()
+                let cursorEnd = calendar.date(byAdding: .day, value: 1, to: cursor)!
+                poolReq.predicate = NSPredicate(format: "date >= %@ AND date < %@ AND amount > 0",
+                                                cursor as NSDate, cursorEnd as NSDate)
+                for e in (try? context.fetch(poolReq)) ?? [] { context.delete(e) }
+
+                // 3) 현재 이월 방식으로 재생성
+                let carry = (config.carryOverMode == .separate) ? min(0, prevBalance) : prevBalance
+                if carry != 0 {
+                    let cos = CarryOverSource(context: context)
+                    cos.id = UUID()
+                    cos.amount = NSDecimalNumber(value: carry)
+                    cos.date = prevDay
+                    cos.toDate = cursor
+                    cos.dailyBudget = budget
+                    budget.addToCarryOverSources(cos)
+                }
+                if config.carryOverMode == .separate {
+                    let deposit = max(0, prevBalance)
+                    if deposit > 0 {
+                        let entry = CarryOverPoolEntry(context: context)
+                        entry.id = UUID()
+                        entry.date = cursor
+                        entry.amount = NSDecimalNumber(value: deposit)
+                    }
+                }
+            }
+            cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
+        }
+        _ = saveContext()
+    }
+
     // MARK: - 모아둔 이월금 (분리 모드 풀)
 
     /// 풀 잔액 = 적립(+) − 인출(−) 합계

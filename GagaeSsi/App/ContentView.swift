@@ -31,6 +31,15 @@ struct ContentView: View {
             }
             .tag(1)
 
+            // 내역 탭 (기존 탭 인덱스 유지 위해 tag는 4)
+            NavigationStack {
+                HistoryView()
+            }
+            .tabItem {
+                Label("내역", systemImage: appState.selectedTab == 4 ? "calendar.circle.fill" : "calendar")
+            }
+            .tag(4)
+
             // 통계 탭
             NavigationStack {
                 StatsView()
