@@ -25,6 +25,8 @@ final class HomeViewModel {
     var carryOverMode: CarryOverMode = .full
     /// 모아둔 이월금 풀 잔액 (분리 모드)
     var carryOverPoolBalance: Int = 0
+    /// 오늘 모아둔 이월금에서 가져온 금액 (인출·부족액 충당)
+    var todayPoolWithdrawn: Int = 0
     
     // MARK: - Loading State
     var isLoading: Bool = false
@@ -47,6 +49,7 @@ final class HomeViewModel {
         unconfirmedVariableCosts = CoreDataManager.shared.unconfirmedVariableCosts()
         carryOverMode = CoreDataManager.shared.fetchBudgetConfig()?.carryOverMode ?? .full
         carryOverPoolBalance = CoreDataManager.shared.carryOverPoolBalance()
+        todayPoolWithdrawn = CoreDataManager.shared.todayPoolWithdrawnAmount()
         isLoading = false
     }
     

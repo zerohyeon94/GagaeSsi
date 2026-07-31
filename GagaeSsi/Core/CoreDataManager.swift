@@ -799,6 +799,16 @@ final class CoreDataManager {
         return entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
     }
 
+    /// 오늘 모아둔 이월금에서 가져온(인출·부족액 충당) 금액 합
+    func todayPoolWithdrawnAmount() -> Int {
+        let today = Calendar.current.startOfDay(for: Date())
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+        let req: NSFetchRequest<CarryOverPoolEntry> = CarryOverPoolEntry.fetchRequest()
+        req.predicate = NSPredicate(format: "date >= %@ AND date < %@ AND amount < 0", today as NSDate, end as NSDate)
+        let entries = (try? context.fetch(req)) ?? []
+        return entries.reduce(0) { $0 - Int(truncating: $1.amount ?? 0) }   // 음수의 절대값 합
+    }
+
     /// 남은 양수를 풀에 적립 (분리 모드 일자 생성 시 내부 호출)
     private func depositToPool(amount: Int, date: Date) {
         guard amount > 0 else { return }

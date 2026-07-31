@@ -14,6 +14,9 @@ struct SpendView: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
     @State private var justSaved = false
+    @State private var showShortfall = false
+    @State private var shortfallCover = 0
+    @State private var shortfallPool = 0
 
     enum Field { case title, amount, payback }
 
@@ -48,6 +51,14 @@ struct SpendView: View {
             Button("확인", role: .cancel) { }
         } message: {
             Text(viewModel.errorMessage)
+        }
+        .confirmationDialog("모아둔 이월금 사용", isPresented: $showShortfall, titleVisibility: .visible) {
+            Button("\(FormatterUtils.currencyString(from: shortfallCover)) 충당") {
+                viewModel.coverShortfall(amount: shortfallCover, eventBus: eventBus)
+            }
+            Button("그대로 두기", role: .cancel) { }
+        } message: {
+            Text("오늘 예산이 \(FormatterUtils.currencyString(from: shortfallCover)) 부족해요.\n모아둔 이월금 \(FormatterUtils.currencyString(from: shortfallPool)) 중 \(FormatterUtils.currencyString(from: shortfallCover))을 가져와 채울까요?")
         }
         .onTapGesture { focusedField = nil }
     }
@@ -348,6 +359,10 @@ extension SpendView {
                     let today = Calendar.current.startOfDay(for: Date())
                     viewModel.fetchSpending(on: today)
                     viewModel.loadSuggestions()
+                    // 오늘 예산이 음수 + 모아둔 이월금이 있으면 부족액 충당 제안
+                    if let (cover, pool) = viewModel.shortfallCoverage() {
+                        shortfallCover = cover; shortfallPool = pool; showShortfall = true
+                    }
                     viewModel.clearForm()
                     withAnimation { justSaved = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {

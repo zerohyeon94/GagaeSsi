@@ -128,6 +128,23 @@ final class CarryOverModeTests: XCTestCase {
         XCTAssertEqual(carrySum(day(0)), 0)                 // 오늘 이월 제거
     }
 
+    // 부족액 충당: 오늘이 음수일 때 풀에서 부족액만 가져와 0으로 채움 + 오늘 충당액 집계
+    func testShortfallCoverage_coversNegativeTodayFromPool() {
+        setup(.separate)
+        seedDay(day(-1), availableAmount: 30_000)     // 풀 30,000 적립
+        sut.processDailyBudgets(upTo: day(0))
+        let base = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(0))
+        _ = sut.createSpendingRecord(SpendingRecordModel(title: "x", amount: base + 5_000, date: day(0)))
+
+        XCTAssertEqual(sut.fetchDailyBudgetModel(date: day(0))?.todayAvailable, -5_000)
+        let pool = sut.carryOverPoolBalance()
+        XCTAssertTrue(sut.withdrawFromPool(amount: 5_000))
+
+        XCTAssertEqual(sut.fetchDailyBudgetModel(date: day(0))?.todayAvailable, 0)   // 충당 후 0
+        XCTAssertEqual(sut.carryOverPoolBalance(), pool - 5_000)
+        XCTAssertEqual(sut.todayPoolWithdrawnAmount(), 5_000)                        // 오늘 충당 집계
+    }
+
     // 전환 시 오늘 음수 이월(과소비 페널티)은 풀로 옮기지 않고 유지
     func testModeSwitch_keepsTodayNegativeCarry() {
         setup(.full)

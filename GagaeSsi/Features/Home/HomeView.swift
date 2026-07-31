@@ -317,6 +317,11 @@ extension HomeView {
                 Text(FormatterUtils.currencyString(from: viewModel.carryOverPoolBalance))
                     .font(.system(size: 20, weight: .heavy, design: .rounded))
                     .foregroundStyle(.gagaeText)
+                if viewModel.todayPoolWithdrawn > 0 {
+                    Text("오늘 \(FormatterUtils.currencyString(from: viewModel.todayPoolWithdrawn)) 가져옴")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                }
             }
             Spacer()
             Button {

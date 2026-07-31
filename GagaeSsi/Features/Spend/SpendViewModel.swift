@@ -138,6 +138,24 @@ final class SpendViewModel {
         editingPaybackReceived = record.paybackReceived
     }
 
+    /// 저장 직후, 오늘 예산이 음수이고 모아둔 이월금이 있으면 충당 가능액을 반환한다.
+    /// - Returns: (부족액=충당 제안 금액, 풀 잔액) 또는 nil
+    func shortfallCoverage() -> (cover: Int, pool: Int)? {
+        guard let today = CoreDataManager.shared.fetchOrCreateTodayDailyBudget() else { return nil }
+        let available = today.todayAvailable
+        guard available < 0 else { return nil }
+        let pool = CoreDataManager.shared.carryOverPoolBalance()
+        guard pool > 0 else { return nil }
+        return (min(-available, pool), pool)
+    }
+
+    /// 모아둔 이월금에서 부족액을 충당한다.
+    func coverShortfall(amount: Int, eventBus: AppEventBus) {
+        if CoreDataManager.shared.withdrawFromPool(amount: amount) {
+            eventBus.notifySpendingAdded()   // 오늘 예산 크레딧 → 홈 갱신
+        }
+    }
+
     /// 환급/페이백을 실제로 받음 처리
     func receivePayback(recordId: UUID, eventBus: AppEventBus) {
         if CoreDataManager.shared.receivePayback(recordId: recordId) {
