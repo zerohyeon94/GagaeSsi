@@ -199,6 +199,53 @@ final class DebtRepaymentTests: XCTestCase {
         XCTAssertEqual(todayCarrySum(), -(base * 30 / 100), "오늘 이월은 상환액(음수)만 남는다")
     }
 
+    // MARK: - 소급 처리 (앱 미실행일 backfill)
+
+    func test_앱을_며칠_안_열어도_날짜별로_상환이_소급_적용된다() {
+        setup()
+        let base = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(-4))
+
+        // 4일 전 크게 초과 → 3일 전에 부채 생성 + 계획 확정
+        _ = sut.createDailyBudget(DailyBudgetModel(availableAmount: base, date: day(-4),
+                                                   carryOverSources: [], spendingRecords: []))
+        _ = sut.createSpendingRecord(SpendingRecordModel(title: "지출", amount: base * 3, date: day(-4)))
+        sut.processDailyBudgets(upTo: day(-3))
+        _ = sut.confirmDebtPlan(ratePercent: 20)
+
+        let perDay = base * 20 / 100
+        let afterConfirm = sut.fetchActiveDebt()!.remainingAmount   // 확정일(-3) 1회 상환 반영됨
+
+        // 3일간 앱 미실행 후 오늘 실행 → -2, -1, 0 세 날짜가 한 번에 생성되며 각각 상환
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertEqual(sut.fetchActiveDebt()?.remainingAmount, afterConfirm - perDay * 3,
+                       "미실행 3일치 상환이 각각 소급 적용되어야 한다")
+        for offset in -2...0 {
+            let carry = sut.fetchDailyBudgetModel(date: day(offset))?
+                .carryOverSources.filter { $0.amount < 0 && $0.date == $0.toDate }
+                .map(\.amount).reduce(0, +) ?? 0
+            XCTAssertEqual(carry, -perDay, "\(offset)일차에 상환 기록이 있어야 한다")
+        }
+    }
+
+    func test_소급_처리를_반복_호출해도_중복_상환되지_않는다() {
+        setup()
+        let base = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(-3))
+        _ = sut.createDailyBudget(DailyBudgetModel(availableAmount: base, date: day(-3),
+                                                   carryOverSources: [], spendingRecords: []))
+        _ = sut.createSpendingRecord(SpendingRecordModel(title: "지출", amount: base * 3, date: day(-3)))
+        sut.processDailyBudgets(upTo: day(-2))
+        _ = sut.confirmDebtPlan(ratePercent: 20)
+
+        sut.processDailyBudgets(upTo: day(0))
+        let once = sut.fetchActiveDebt()?.remainingAmount
+
+        sut.processDailyBudgets(upTo: day(0))
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertEqual(sut.fetchActiveDebt()?.remainingAmount, once)
+    }
+
     // MARK: - 조기 완납 / 기능 OFF
 
     func test_조기완납하면_남은부채가_오늘예산에서_한번에_차감() {

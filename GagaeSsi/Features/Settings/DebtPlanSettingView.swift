@@ -217,7 +217,14 @@ struct DebtPlanSettingView: View {
         enabled = config?.debtPlanEnabled ?? true
         debt = CoreDataManager.shared.fetchActiveDebt()
         rate = debt?.repayRatePercent ?? DebtRepaymentPlan.defaultRate
-        dailyBudget = CoreDataManager.shared.fetchOrCreateTodayDailyBudget()?.availableAmount ?? 0
+        // 상환액 미리보기에만 쓰므로 순수 계산으로 구한다.
+        // fetchOrCreateTodayDailyBudget()을 쓰면 홈보다 먼저 오늘 일자를 생성해
+        // 전날 이월이 유실될 수 있다 (이월 처리는 홈의 processDailyBudgets가 담당).
+        dailyBudget = config.map {
+            DailyBudgetCalculator.calculate(from: $0,
+                                            installments: CoreDataManager.shared.fetchInstallments(),
+                                            for: Date())
+        } ?? 0
     }
 
     private func disable() {
