@@ -298,7 +298,7 @@ extension HomeView {
                       value: "-" + FormatterUtils.currencyString(from: viewModel.spentAmount),
                       valueColor: .gagaeDanger, bold: false)
             divider
-            statusRow(emoji: "✅", label: "잔여 예산",
+            statusRow(emoji: viewModel.todayAvailableAmount < 0 ? "⚠️" : "✅", label: "잔여 예산",
                       value: FormatterUtils.currencyString(from: viewModel.todayAvailableAmount),
                       valueColor: characterState.color, bold: true)
 

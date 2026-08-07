@@ -67,10 +67,18 @@ enum CharacterState {
     }
 
     /// 하루 예산(base) 대비 소비(spent)와 오늘 이월금 충당·초과분 상환 여부로 상태 결정.
+    ///
+    /// - Parameter todayAvailable: 오늘 실제로 쓸 수 있는 총액(이월 포함). 음수면 사용률과 무관하게
+    ///   `over`다. 이 값을 보지 않으면 이월이 −29만원인데 오늘 소비가 적다는 이유로
+    ///   "여유"가 뜨는 문제가 생긴다. `nil`이면 사용률만으로 판단한다.
     /// - 상환 중이더라도 오늘 예산을 또 넘겼으면 `over`가 우선한다 (지금 상태를 먼저 알려야 하므로).
     static func from(spent: Int, base: Int,
                      coveredFromPool: Bool,
-                     repayingDebt: Bool = false) -> CharacterState {
+                     repayingDebt: Bool = false,
+                     todayAvailable: Int? = nil) -> CharacterState {
+        // 총 가용액이 음수면 무엇보다 그 사실을 먼저 알려야 한다
+        if let todayAvailable, todayAvailable < 0 { return .over }
+
         if coveredFromPool { return .covered }
         guard base > 0 else { return repayingDebt ? .repaying : .stable }
 

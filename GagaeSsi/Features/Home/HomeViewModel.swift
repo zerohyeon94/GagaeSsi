@@ -63,7 +63,8 @@ final class HomeViewModel {
     var characterState: CharacterState {
         CharacterState.from(spent: spentAmount, base: baseBudget,
                             coveredFromPool: todayPoolWithdrawn > 0,
-                            repayingDebt: todayDebtRepayment > 0)
+                            repayingDebt: todayDebtRepayment > 0,
+                            todayAvailable: todayAvailableAmount)
     }
     
     // MARK: - Loading State

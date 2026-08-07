@@ -300,6 +300,78 @@ final class DebtRepaymentTests: XCTestCase {
         XCTAssertNil(sut.fetchActiveDebt())
     }
 
+    // MARK: - 기존 적자 즉시 전환 (업데이트 직후)
+
+    func test_이미_쌓여있던_음수이월이_앱_진입시_바로_부채로_전환된다() {
+        setup(carryOverMode: .separate)
+        let base = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(0))
+
+        // 상환 계획이 없던 버전에서 넘어온 상태: 오늘 일자에 큰 음수 이월이 이미 박혀 있다
+        _ = sut.createDailyBudget(DailyBudgetModel(
+            availableAmount: base, date: day(0),
+            carryOverSources: [CarryOverSourceModel(amount: -317_730, date: day(-1), toDate: day(0))],
+            spendingRecords: []))
+        _ = sut.createSpendingRecord(SpendingRecordModel(title: "오늘 소비", amount: 22_000, date: day(0)))
+
+        XCTAssertLessThan(sut.fetchDailyBudgetModel(date: day(0))!.todayAvailable, 0)
+
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertEqual(sut.fetchActiveDebt()?.remainingAmount, 317_730, "쌓인 적자가 부채로 전환된다")
+        XCTAssertEqual(todayCarrySum(), 0, "음수 이월이 제거된다")
+        XCTAssertEqual(sut.fetchDailyBudgetModel(date: day(0))?.todayAvailable, base - 22_000,
+                       "오늘 예산이 기본 예산 − 오늘 소비로 정상화된다")
+    }
+
+    func test_기존적자_전환은_오늘_발생한_크레딧을_건드리지_않는다() {
+        setup(carryOverMode: .separate)
+        let base = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(0))
+
+        _ = sut.createDailyBudget(DailyBudgetModel(
+            availableAmount: base, date: day(0),
+            carryOverSources: [
+                CarryOverSourceModel(amount: -200_000, date: day(-1), toDate: day(0)),  // 전날 이월(전환 대상)
+                CarryOverSourceModel(amount: 30_000, date: day(0), toDate: day(0))      // 오늘 인출(보존)
+            ],
+            spendingRecords: []))
+
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertEqual(sut.fetchActiveDebt()?.remainingAmount, 200_000)
+        XCTAssertEqual(todayCarrySum(), 30_000, "오늘 발생한 크레딧은 남아야 한다")
+    }
+
+    func test_기존적자가_임계값_미만이면_전환하지_않는다() {
+        setup()
+        let base = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(0))
+        let small = -(DebtRepaymentPlan.threshold(dailyBudget: base) - 1)
+
+        _ = sut.createDailyBudget(DailyBudgetModel(
+            availableAmount: base, date: day(0),
+            carryOverSources: [CarryOverSourceModel(amount: small, date: day(-1), toDate: day(0))],
+            spendingRecords: []))
+
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertNil(sut.fetchActiveDebt())
+        XCTAssertEqual(todayCarrySum(), small, "소액은 기존대로 음수 이월로 남는다")
+    }
+
+    func test_기존적자_전환은_기능이_꺼져있으면_일어나지_않는다() {
+        setup(debtPlanEnabled: false)
+        let base = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(0))
+
+        _ = sut.createDailyBudget(DailyBudgetModel(
+            availableAmount: base, date: day(0),
+            carryOverSources: [CarryOverSourceModel(amount: -317_730, date: day(-1), toDate: day(0))],
+            spendingRecords: []))
+
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertNil(sut.fetchActiveDebt())
+        XCTAssertEqual(todayCarrySum(), -317_730)
+    }
+
     // MARK: - 급여일 흡수 (부채 무한 지속 차단)
 
     /// 최근 며칠 중 "실효 급여일이 정확히 그날"인 오프셋을 찾는다.

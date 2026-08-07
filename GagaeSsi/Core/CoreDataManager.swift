@@ -807,7 +807,12 @@ final class CoreDataManager {
         }
 
         let latestDay = calendar.startOfDay(for: latestDate)
-        guard latestDay < today else { return }  // 이미 오늘까지 처리됨
+        guard latestDay < today else {
+            // 오늘까지 이미 처리됐어도, 이전 버전에서 넘어온 큰 음수 이월이 남아 있으면 부채로 전환한다.
+            // (일자 전환 시점에만 전환하면 업데이트 직후 하루 동안 계속 음수로 보인다)
+            convertExistingDeficitToDebt(on: today, config: config)
+            return
+        }
 
         // latestDay + 1 ~ today 까지 순회하며 누락된 날짜 생성
         var cursor = calendar.date(byAdding: .day, value: 1, to: latestDay)!
@@ -1023,6 +1028,39 @@ final class CoreDataManager {
         if newRemaining == 0 { debt.completedAt = day }
 
         _ = saveContext()
+    }
+
+    /// 이미 생성된 날짜에 남아 있는 "전날에서 넘어온 큰 음수 이월"을 부채로 전환한다.
+    ///
+    /// 상환 계획 기능이 없던 버전에서 적자가 쌓인 채 업데이트한 경우, 일자 전환 시점에만 전환하면
+    /// 하루 동안 계속 "오늘 쓸 수 있는 금액 −29만원" 같은 화면을 보게 된다. 앱 진입 시 즉시 정리한다.
+    ///
+    /// 오늘 발생한 크레딧·차감(이월금 인출, 환급, 상환 — `date == 그날`)은 건드리지 않는다.
+    private func convertExistingDeficitToDebt(on date: Date, config: BudgetConfigModel) {
+        guard config.debtPlanEnabled else { return }
+
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: date)
+        guard let budget = fetchDailyBudgetEntity(date: day) else { return }
+
+        let sources = budget.carryOverSources?.allObjects as? [CarryOverSource] ?? []
+        let carried = sources.filter {
+            calendar.startOfDay(for: $0.date ?? day) < day && Int(truncating: $0.amount ?? 0) < 0
+        }
+        let deficit = carried.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }   // 음수
+        guard deficit < 0 else { return }
+
+        let base = Int(truncating: budget.availableAmount ?? 0)
+        let threshold = DebtRepaymentPlan.threshold(dailyBudget: base)
+        guard threshold > 0, -deficit >= threshold else { return }
+
+        for source in carried {
+            budget.removeFromCarryOverSources(source)
+            context.delete(source)
+        }
+        _ = saveContext()
+
+        addToDebt(amount: -deficit, on: day)
     }
 
     /// `date`가 급여 기간 시작일(실효 급여일)이면, 남은 부채를 그 기간 예산으로 흡수하고 부채를 종료한다.
