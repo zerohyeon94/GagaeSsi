@@ -43,7 +43,7 @@
 
 `BudgetConfigModel`에 대응 프로퍼티 추가 (`init(entity:)` 변환 포함).
 
-> 주의: CoreData의 Bool 기본값은 `false`, Int16 기본값은 `0`이다. 기존 사용자 마이그레이션 시 `spendReminderHour`가 `0`(자정)이 되므로, **모델 변환 시 `enabled == false`이면 시각을 21:00으로 보정**해 UI 초기값이 자정으로 보이지 않게 한다.
+> 주의(검증됨 — `CoreDataMigrationTests`): CoreData의 Bool 기본값은 `false`, Int16 기본값은 `0`이다. 기존 사용자 마이그레이션 시 `spendReminderHour`가 `0`(자정)이 되므로, **모델 변환 시 `enabled == false`이면 시각을 21:00으로 보정**해 UI 초기값이 자정으로 보이지 않게 한다.
 
 ## 5. 알림 서비스 (`NotificationService` 확장)
 
