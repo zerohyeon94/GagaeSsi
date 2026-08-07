@@ -16,6 +16,22 @@ struct SettingsView: View {
     @State private var currentConfig: BudgetConfigModel?
     @State private var fixedCostsCount: Int = 0
     @State private var pigBreathing = false
+    @State private var activeDebt: SpendingDebtModel?
+
+    /// 상환 계획 행 우측 요약 (진행 중이면 남은 금액, 아니면 on/off)
+    private var debtPlanRightText: String? {
+        guard currentConfig?.debtPlanEnabled ?? true else { return "끔" }
+        guard let activeDebt, activeDebt.isActive else { return nil }
+        return FormatterUtils.currencyString(from: activeDebt.remainingAmount) + " 남음"
+    }
+
+    /// 소비 기록 알림 행 우측 요약 (켜져 있으면 알림 시각)
+    private var spendReminderRightText: String? {
+        guard let config = currentConfig, config.spendReminderEnabled else { return "끔" }
+        let period = config.spendReminderHour < 12 ? "오전" : "오후"
+        let hour12 = config.spendReminderHour % 12 == 0 ? 12 : config.spendReminderHour % 12
+        return String(format: "%@ %d:%02d", period, hour12, config.spendReminderMinute)
+    }
 
     // MARK: - Body
     var body: some View {
@@ -28,6 +44,7 @@ struct SettingsView: View {
                     profileCard
                         .padding(.bottom, 4)
                     budgetSection
+                    notificationSection
                     dataSection
                     appInfoSection
                 }
@@ -54,16 +71,19 @@ struct SettingsView: View {
         }
         .onChange(of: eventBus.budgetChangedTrigger) { loadConfig() }
         .onChange(of: eventBus.fixedExpenseChangedTrigger) { loadConfig() }
+        .onChange(of: eventBus.spendingAddedTrigger) { loadConfig() }
     }
 
     private func loadConfig() {
         currentConfig = CoreDataManager.shared.fetchBudgetConfig()
         fixedCostsCount = CoreDataManager.shared.fetchFixedCosts().count
+        activeDebt = CoreDataManager.shared.fetchActiveDebt()
     }
 
     private func handleReset() {
         CoreDataManager.shared.resetAllData()
         NotificationService.shared.cancelAllVariableCostReminders()
+        NotificationService.shared.cancelAllSpendReminders()
         withAnimation { showConfirm = false }
         withAnimation { showToast = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
@@ -219,6 +239,35 @@ extension SettingsView {
                     settingRow(iconBg: Color(hex: "#7BC67B"), iconContent: AnyView(Text("💰").font(.system(size: 15))),
                                label: "이월 방식",
                                rightText: currentConfig?.carryOverMode.label)
+                }
+                .buttonStyle(.plain)
+
+                rowDivider
+                NavigationLink {
+                    DebtPlanSettingView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#E8735D"), iconContent: AnyView(Text("💪").font(.system(size: 15))),
+                               label: "초과분 상환 계획",
+                               rightText: debtPlanRightText)
+                }
+                .buttonStyle(.plain)
+            }
+            .background(Color.gagaeCardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .gagaeCardShadow()
+        }
+    }
+
+    private var notificationSection: some View {
+        VStack(spacing: 0) {
+            sectionHeader("알림")
+            VStack(spacing: 0) {
+                NavigationLink {
+                    SpendReminderSettingView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#FFB03A"), iconContent: AnyView(Text("🔔").font(.system(size: 15))),
+                               label: "소비 기록 알림",
+                               rightText: spendReminderRightText)
                 }
                 .buttonStyle(.plain)
             }

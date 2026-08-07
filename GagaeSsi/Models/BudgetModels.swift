@@ -33,14 +33,30 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
     var payday: Int
     var fixedCosts: [FixedCostModel]
     var carryOverMode: CarryOverMode
+    /// 초과 소비 상환 계획 사용 여부. false면 초과분이 기존처럼 음수 전액 이월된다.
+    var debtPlanEnabled: Bool
+    /// 소비 기록 리마인더 알림 사용 여부
+    var spendReminderEnabled: Bool
+    /// 리마인더 알림 시각
+    var spendReminderHour: Int
+    var spendReminderMinute: Int
 
     // MARK: - Initializer
     /// 일반 생성자
-    init(salary: Int, payday: Int, fixedCosts: [FixedCostModel], carryOverMode: CarryOverMode = .full) {
+    init(salary: Int, payday: Int, fixedCosts: [FixedCostModel],
+         carryOverMode: CarryOverMode = .full,
+         debtPlanEnabled: Bool = true,
+         spendReminderEnabled: Bool = false,
+         spendReminderHour: Int = SpendReminderSchedule.defaultHour,
+         spendReminderMinute: Int = SpendReminderSchedule.defaultMinute) {
         self.salary = salary
         self.payday = payday
         self.fixedCosts = fixedCosts
         self.carryOverMode = carryOverMode
+        self.debtPlanEnabled = debtPlanEnabled
+        self.spendReminderEnabled = spendReminderEnabled
+        self.spendReminderHour = spendReminderHour
+        self.spendReminderMinute = spendReminderMinute
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -50,6 +66,19 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
         let costs = entity.fixedCosts?.allObjects as? [FixedCost] ?? []
         self.fixedCosts = costs.map(FixedCostModel.init)
         self.carryOverMode = CarryOverMode.from(entity.carryOverMode)
+        self.debtPlanEnabled = entity.debtPlanEnabled
+        self.spendReminderEnabled = entity.spendReminderEnabled
+        // 기존 사용자 마이그레이션 시 Int16 기본값이 0(자정)이 되므로,
+        // 알림을 켠 적이 없으면 기본 시각(21:00)으로 보정한다.
+        if entity.spendReminderEnabled {
+            self.spendReminderHour = Int(entity.spendReminderHour)
+            self.spendReminderMinute = Int(entity.spendReminderMinute)
+        } else {
+            let hour = Int(entity.spendReminderHour)
+            self.spendReminderHour = hour == 0 ? SpendReminderSchedule.defaultHour : hour
+            self.spendReminderMinute = hour == 0 ? SpendReminderSchedule.defaultMinute
+                                                 : Int(entity.spendReminderMinute)
+        }
     }
 }
 

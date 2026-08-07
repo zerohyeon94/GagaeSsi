@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23788" systemVersion="24F74" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+    <entity name="BudgetConfig" representedClassName="BudgetConfig" syncable="YES" codeGenerationType="class">
+        <attribute name="carryOverMode" optional="YES" attributeType="String" defaultValueString="full"/>
+        <attribute name="debtPlanEnabled" optional="YES" attributeType="Boolean" defaultValueString="YES" usesScalarValueType="YES"/>
+        <attribute name="payday" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="salary" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="spendReminderEnabled" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="spendReminderHour" optional="YES" attributeType="Integer 16" defaultValueString="21" usesScalarValueType="YES"/>
+        <attribute name="spendReminderMinute" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <relationship name="fixedCosts" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FixedCost" inverseName="budgetConfig" inverseEntity="FixedCost"/>
+    </entity>
+    <entity name="CarryOverPoolEntry" representedClassName="CarryOverPoolEntry" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+    </entity>
+    <entity name="CarryOverSource" representedClassName="CarryOverSource" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="toDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="dailyBudget" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="DailyBudget" inverseName="carryOverSources" inverseEntity="DailyBudget"/>
+    </entity>
+    <entity name="DailyBudget" representedClassName="DailyBudget" syncable="YES" codeGenerationType="class">
+        <attribute name="availableAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="carryOverSources" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="CarryOverSource" inverseName="dailyBudget" inverseEntity="CarryOverSource"/>
+        <relationship name="spendingRecords" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SpendingRecord" inverseName="dailyBudget" inverseEntity="SpendingRecord"/>
+        <relationship name="wishSavingEntries" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="WishSavingEntry" inverseName="dailyBudget" inverseEntity="WishSavingEntry"/>
+    </entity>
+    <entity name="WishItem" representedClassName="WishItem" syncable="YES" codeGenerationType="class">
+        <attribute name="activatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="completedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="dailySaving" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="kind" optional="YES" attributeType="String" defaultValueString="희망"/>
+        <attribute name="status" optional="YES" attributeType="String" defaultValueString="대기"/>
+        <attribute name="targetAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <relationship name="savingEntries" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="WishSavingEntry" inverseName="wishItem" inverseEntity="WishSavingEntry"/>
+    </entity>
+    <entity name="WishSavingEntry" representedClassName="WishSavingEntry" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <relationship name="dailyBudget" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="DailyBudget" inverseName="wishSavingEntries" inverseEntity="DailyBudget"/>
+        <relationship name="wishItem" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="WishItem" inverseName="savingEntries" inverseEntity="WishItem"/>
+    </entity>
+    <entity name="FixedCost" representedClassName="FixedCost" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="dueDay" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isVariable" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="kind" optional="YES" attributeType="String" defaultValueString="지출"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <relationship name="budgetConfig" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="BudgetConfig" inverseName="fixedCosts" inverseEntity="BudgetConfig"/>
+        <relationship name="monthlyEntries" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="MonthlyFixedCostEntry" inverseName="fixedCost" inverseEntity="MonthlyFixedCostEntry"/>
+    </entity>
+    <entity name="Installment" representedClassName="Installment" syncable="YES" codeGenerationType="class">
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="months" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="startMonth" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="startYear" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="totalAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+    </entity>
+    <entity name="Payback" representedClassName="Payback" syncable="YES" codeGenerationType="class">
+        <attribute name="confirmedAmount" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="estimatedAmount" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="expectedDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="periodEnd" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="periodStart" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="receivedAmount" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="receivedDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="status" optional="YES" attributeType="String" defaultValueString="예상"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="type" optional="YES" attributeType="String" defaultValueString="연결형"/>
+    </entity>
+    <entity name="MonthlyFixedCostEntry" representedClassName="MonthlyFixedCostEntry" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="confirmedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="month" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="year" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <relationship name="fixedCost" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="FixedCost" inverseName="monthlyEntries" inverseEntity="FixedCost"/>
+    </entity>
+    <entity name="SpendingRecord" representedClassName="SpendingRecord" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="category" optional="YES" attributeType="String" defaultValueString="기타"/>
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="expectedPayback" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="paybackReceived" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <relationship name="dailyBudget" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="DailyBudget" inverseName="spendingRecords" inverseEntity="DailyBudget"/>
+    </entity>
+    <entity name="SpendingDebt" representedClassName="SpendingDebt" syncable="YES" codeGenerationType="class">
+        <attribute name="completedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="deferredAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isPlanned" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="originalAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="remainingAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="repayRatePercent" optional="YES" attributeType="Integer 16" defaultValueString="20" usesScalarValueType="YES"/>
+        <attribute name="startedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="repayments" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="DebtRepaymentEntry" inverseName="debt" inverseEntity="DebtRepaymentEntry"/>
+    </entity>
+    <entity name="DebtRepaymentEntry" representedClassName="DebtRepaymentEntry" syncable="YES" codeGenerationType="class">
+        <attribute name="amount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <relationship name="debt" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="SpendingDebt" inverseName="repayments" inverseEntity="SpendingDebt"/>
+    </entity>
+</model>

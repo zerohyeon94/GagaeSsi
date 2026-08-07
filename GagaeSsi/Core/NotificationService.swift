@@ -48,6 +48,7 @@ final class NotificationService {
 
     private let center = UNUserNotificationCenter.current()
     private let idPrefix = "vcost-"
+    private let spendIdPrefix = "spend-"
 
     // MARK: - 권한
     /// 아직 결정되지 않았으면 권한을 요청한다 (거부/허용 이미 결정 시 아무것도 안 함).
@@ -55,6 +56,23 @@ final class NotificationService {
         center.getNotificationSettings { [weak self] settings in
             guard settings.authorizationStatus == .notDetermined else { return }
             self?.center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        }
+    }
+
+    /// 권한을 요청하고 결과를 돌려준다 (설정 토글 ON 시 사용).
+    /// 이미 거부된 상태면 재요청이 불가하므로 `false`를 반환한다.
+    func requestAuthorization(completion: @escaping (Bool) -> Void) {
+        center.getNotificationSettings { [weak self] settings in
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                DispatchQueue.main.async { completion(true) }
+            case .denied:
+                DispatchQueue.main.async { completion(false) }
+            default:
+                self?.center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                    DispatchQueue.main.async { completion(granted) }
+                }
+            }
         }
     }
 
@@ -106,6 +124,48 @@ final class NotificationService {
         center.getPendingNotificationRequests { [weak self] requests in
             guard let self else { return }
             let ids = requests.map(\.identifier).filter { $0.hasPrefix(self.idPrefix) }
+            self.center.removePendingNotificationRequests(withIdentifiers: ids)
+        }
+    }
+
+    // MARK: - 소비 기록 리마인더
+
+    /// 소비 기록 리마인더를 재예약한다.
+    /// 기존 `spend-` 알림을 모두 지우고 `fireDates`를 개별 예약한다.
+    /// (로컬 알림은 발송 시점에 앱 데이터를 볼 수 없어 조건부 발송이 불가능하므로 개별 예약 + rolling 갱신)
+    ///
+    /// - Parameter fireDates: 발송 시각 목록. CoreData 조회가 필요하므로
+    ///   `SpendReminderSchedule.pendingDates`로 **호출 스레드에서 미리 계산**해 넘긴다.
+    func refreshSpendReminders(fireDates: [Date]) {
+        // 제거와 재예약을 같은 콜백 안에서 처리한다.
+        // (따로 호출하면 제거 콜백이 늦게 도착해 방금 추가한 알림까지 지울 수 있다)
+        center.getPendingNotificationRequests { [weak self] requests in
+            guard let self else { return }
+            let ids = requests.map(\.identifier).filter { $0.hasPrefix(self.spendIdPrefix) }
+            self.center.removePendingNotificationRequests(withIdentifiers: ids)
+
+            for fireDate in fireDates {
+                let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute],
+                                                            from: fireDate)
+
+                let content = UNMutableNotificationContent()
+                content.title = "가계씨 🐷"
+                content.body = "오늘 쓴 내역, 아직 안 적으셨네요. 까먹기 전에 기록해요!"
+                content.sound = .default
+
+                let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+                let request = UNNotificationRequest(identifier: SpendReminderSchedule.identifier(for: fireDate),
+                                                    content: content, trigger: trigger)
+                self.center.add(request)
+            }
+        }
+    }
+
+    /// 모든 소비 기록 리마인더 제거 (기능 OFF·데이터 초기화)
+    func cancelAllSpendReminders() {
+        center.getPendingNotificationRequests { [weak self] requests in
+            guard let self else { return }
+            let ids = requests.map(\.identifier).filter { $0.hasPrefix(self.spendIdPrefix) }
             self.center.removePendingNotificationRequests(withIdentifiers: ids)
         }
     }

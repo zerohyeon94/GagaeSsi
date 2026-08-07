@@ -56,6 +56,10 @@ final class CoreDataManager {
         config.salary = NSDecimalNumber(value: model.salary)
         config.payday = NSDecimalNumber(value: model.payday)
         config.carryOverMode = model.carryOverMode.rawValue
+        config.debtPlanEnabled = model.debtPlanEnabled
+        config.spendReminderEnabled = model.spendReminderEnabled
+        config.spendReminderHour = Int16(model.spendReminderHour)
+        config.spendReminderMinute = Int16(model.spendReminderMinute)
 
         for fixed in model.fixedCosts {
             let fixedCost = FixedCost(context: context)
@@ -96,6 +100,10 @@ final class CoreDataManager {
         config.salary = NSDecimalNumber(value: model.salary)
         config.payday = NSDecimalNumber(value: model.payday)
         config.carryOverMode = model.carryOverMode.rawValue
+        config.debtPlanEnabled = model.debtPlanEnabled
+        config.spendReminderEnabled = model.spendReminderEnabled
+        config.spendReminderHour = Int16(model.spendReminderHour)
+        config.spendReminderMinute = Int16(model.spendReminderMinute)
 
         return saveContext()
     }
@@ -228,6 +236,37 @@ final class CoreDataManager {
                 self?.fetchMonthlyEntry(fixedCostId: id, year: year, month: month) != nil
             },
             now: now)
+    }
+
+    // MARK: - 소비 기록 리마인더 알림
+
+    /// 소비 기록 리마인더를 현재 설정 기준으로 재예약한다.
+    /// 예약 대상 날짜는 CoreData 조회가 필요하므로 이 스레드에서 계산한 뒤 알림 서비스에 넘긴다.
+    func refreshSpendReminders(now: Date = Date()) {
+        guard let config = fetchBudgetConfig(), config.spendReminderEnabled else {
+            NotificationService.shared.cancelAllSpendReminders()
+            return
+        }
+        let fireDates = SpendReminderSchedule.pendingDates(
+            from: now,
+            hour: config.spendReminderHour,
+            minute: config.spendReminderMinute,
+            hasRecord: { [weak self] date in
+                !(self?.fetchSpendingRecords(date: date).isEmpty ?? true)
+            })
+        NotificationService.shared.refreshSpendReminders(fireDates: fireDates)
+    }
+
+    /// 리마인더 설정 변경 (토글·시각) 후 알림을 즉시 재예약한다.
+    @discardableResult
+    func updateSpendReminder(enabled: Bool, hour: Int, minute: Int) -> Bool {
+        guard let config = fetchBudgetConfigEntity() else { return false }
+        config.spendReminderEnabled = enabled
+        config.spendReminderHour = Int16(hour)
+        config.spendReminderMinute = Int16(minute)
+        guard saveContext() else { return false }
+        refreshSpendReminders()
+        return true
     }
 
     // MARK: - 변동 고정비 월별 확정 금액
@@ -694,7 +733,7 @@ final class CoreDataManager {
 
     // MARK: - Utilities
     func resetAllData() {
-        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "Payback", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry"]
+        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "Payback", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry", "SpendingDebt", "DebtRepaymentEntry"]
 
         for entityName in entityNames {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
@@ -778,8 +817,12 @@ final class CoreDataManager {
                 let prevDay = calendar.date(byAdding: .day, value: -1, to: cursor)!
                 let prevBalance = fetchDailyBudgetModel(date: prevDay)?.todayAvailable ?? 0
 
+                // 초과분(음수)을 부채로 분리할지 판정. 분리하면 그날 음수 이월은 0이 된다.
+                let debtAmount = overspendToConvert(prevBalance: prevBalance, dailyBudget: base, config: config)
+
                 // 이월 방식: 전액 이월은 ±전액, 분리 모드는 음수(페널티)만 이월
-                let carry = (config.carryOverMode == .separate) ? min(0, prevBalance) : prevBalance
+                let rawCarry = (config.carryOverMode == .separate) ? min(0, prevBalance) : prevBalance
+                let carry = debtAmount > 0 ? max(0, rawCarry) : rawCarry
 
                 var sources: [CarryOverSourceModel] = []
                 if carry != 0 {
@@ -801,7 +844,13 @@ final class CoreDataManager {
                     let deposit = max(0, prevBalance)
                     if deposit > 0 { depositToPool(amount: deposit, date: cursor) }
                 }
+
+                // 초과분을 부채에 합산 (계획 미확정 상태로 생성/누적)
+                if debtAmount > 0 { addToDebt(amount: debtAmount, on: cursor) }
             }
+            // 계획이 확정된 부채가 있으면 이 날짜의 상환액을 차감한다 (일자당 1회, 멱등)
+            applyDebtRepayment(on: cursor, config: config)
+
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }
     }
@@ -858,6 +907,186 @@ final class CoreDataManager {
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }
         _ = saveContext()
+    }
+
+    // MARK: - 초과 소비 상환 계획 (부채)
+
+    /// 활성 부채 엔티티 (완납되지 않은 것). 항상 최대 1개.
+    private func fetchActiveDebtEntity() -> SpendingDebt? {
+        let request: NSFetchRequest<SpendingDebt> = SpendingDebt.fetchRequest()
+        request.predicate = NSPredicate(format: "completedAt == nil")
+        request.fetchLimit = 1
+        return try? context.fetch(request).first
+    }
+
+    /// 활성 부채 (없으면 nil)
+    func fetchActiveDebt() -> SpendingDebtModel? {
+        fetchActiveDebtEntity().map(SpendingDebtModel.init)
+    }
+
+    /// 전날 잔액 중 부채로 전환할 초과 금액. 0이면 기존대로 음수 이월한다.
+    /// - 기능이 꺼져 있거나 초과분이 임계값(기본 예산 10%) 미만이면 전환하지 않는다.
+    private func overspendToConvert(prevBalance: Int, dailyBudget: Int,
+                                    config: BudgetConfigModel) -> Int {
+        guard config.debtPlanEnabled, prevBalance < 0 else { return 0 }
+        let threshold = DebtRepaymentPlan.threshold(dailyBudget: dailyBudget)
+        guard threshold > 0 else { return 0 }
+        let overspend = -prevBalance
+        return overspend >= threshold ? overspend : 0
+    }
+
+    /// 초과분을 부채에 합산한다. 활성 부채가 없으면 계획 미확정 상태로 새로 만든다.
+    /// (재초과 시 비율은 유지하고 남은 금액만 늘어나 기간이 재계산된다)
+    private func addToDebt(amount: Int, on date: Date) {
+        guard amount > 0 else { return }
+        let day = Calendar.current.startOfDay(for: date)
+
+        if let debt = fetchActiveDebtEntity() {
+            debt.originalAmount = NSDecimalNumber(value: Int(truncating: debt.originalAmount ?? 0) + amount)
+            debt.remainingAmount = NSDecimalNumber(value: Int(truncating: debt.remainingAmount ?? 0) + amount)
+        } else {
+            let debt = SpendingDebt(context: context)
+            debt.id = UUID()
+            debt.originalAmount = NSDecimalNumber(value: amount)
+            debt.remainingAmount = NSDecimalNumber(value: amount)
+            debt.repayRatePercent = Int16(DebtRepaymentPlan.defaultRate)
+            debt.isPlanned = false
+            debt.startedAt = day
+        }
+        _ = saveContext()
+    }
+
+    /// 그날 이미 상환 원장이 있는지 (멱등성 가드)
+    private func hasRepayment(on day: Date) -> Bool {
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: day)!
+        let request: NSFetchRequest<DebtRepaymentEntry> = DebtRepaymentEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", day as NSDate, end as NSDate)
+        request.fetchLimit = 1
+        return ((try? context.fetch(request).first) ?? nil) != nil
+    }
+
+    /// 계획이 확정된 부채가 있으면 `date`의 상환액을 차감한다.
+    /// 상환액은 `CarryOverSource(음수, date == toDate == 그날)`로 기록하므로
+    /// `withdrawFromPool`과 동일하게 `recalculateCarryOverChain`에서 보존된다.
+    private func applyDebtRepayment(on date: Date, config: BudgetConfigModel) {
+        guard config.debtPlanEnabled else { return }
+        guard let debt = fetchActiveDebtEntity(), debt.isPlanned else { return }
+
+        let remaining = Int(truncating: debt.remainingAmount ?? 0)
+        guard remaining > 0 else { return }
+
+        let day = Calendar.current.startOfDay(for: date)
+        guard !hasRepayment(on: day) else { return }
+        guard let budget = fetchDailyBudgetEntity(date: day) else { return }
+
+        let base = Int(truncating: budget.availableAmount ?? 0)
+        let plan = DebtRepaymentPlan.calculate(debt: remaining, dailyBudget: base,
+                                               ratePercent: Int(debt.repayRatePercent))
+        guard plan.perDay > 0 else { return }
+        let amount = min(remaining, plan.perDay)
+
+        let cos = CarryOverSource(context: context)
+        cos.id = UUID()
+        cos.amount = NSDecimalNumber(value: -amount)
+        cos.date = day
+        cos.toDate = day
+        cos.dailyBudget = budget
+        budget.addToCarryOverSources(cos)
+
+        let entry = DebtRepaymentEntry(context: context)
+        entry.id = UUID()
+        entry.date = day
+        entry.amount = NSDecimalNumber(value: amount)
+        entry.debt = debt
+        debt.addToRepayments(entry)
+
+        let newRemaining = remaining - amount
+        debt.remainingAmount = NSDecimalNumber(value: newRemaining)
+        if newRemaining == 0 { debt.completedAt = day }
+
+        _ = saveContext()
+    }
+
+    /// 상환 계획을 확정한다 (팝업의 "이 계획으로 갚기"). 확정한 날부터 상환이 시작된다.
+    @discardableResult
+    func confirmDebtPlan(ratePercent: Int) -> Bool {
+        guard let debt = fetchActiveDebtEntity() else { return false }
+        debt.isPlanned = true
+        debt.repayRatePercent = Int16(ratePercent)
+        debt.deferredAt = nil
+        guard saveContext() else { return false }
+
+        if let config = fetchBudgetConfig() {
+            applyDebtRepayment(on: Date(), config: config)
+        }
+        return true
+    }
+
+    /// 계획 설정을 오늘 미룬다 (팝업의 "나중에"). 다음 날 다시 표시된다.
+    @discardableResult
+    func deferDebtPlan() -> Bool {
+        guard let debt = fetchActiveDebtEntity() else { return false }
+        debt.deferredAt = Calendar.current.startOfDay(for: Date())
+        return saveContext()
+    }
+
+    /// 상환 비율만 변경 (설정 화면). 오늘 상환이 이미 반영됐으면 내일부터 적용된다.
+    @discardableResult
+    func updateDebtRate(_ ratePercent: Int) -> Bool {
+        guard let debt = fetchActiveDebtEntity() else { return false }
+        debt.repayRatePercent = Int16(ratePercent)
+        return saveContext()
+    }
+
+    /// 남은 부채를 오늘 예산에서 한 번에 차감하고 종료한다 (조기 완납 / 기능 OFF 전환).
+    @discardableResult
+    func settleDebtImmediately() -> Bool {
+        guard let debt = fetchActiveDebtEntity() else { return false }
+        let remaining = Int(truncating: debt.remainingAmount ?? 0)
+        let today = Calendar.current.startOfDay(for: Date())
+
+        if remaining > 0, let budget = fetchOrCreateDailyBudgetEntity(date: today) {
+            let cos = CarryOverSource(context: context)
+            cos.id = UUID()
+            cos.amount = NSDecimalNumber(value: -remaining)
+            cos.date = today
+            cos.toDate = today
+            cos.dailyBudget = budget
+            budget.addToCarryOverSources(cos)
+
+            let entry = DebtRepaymentEntry(context: context)
+            entry.id = UUID()
+            entry.date = today
+            entry.amount = NSDecimalNumber(value: remaining)
+            entry.debt = debt
+            debt.addToRepayments(entry)
+        }
+
+        debt.remainingAmount = 0
+        debt.completedAt = today
+        return saveContext()
+    }
+
+    /// 상환 계획 기능 on/off. 끄면 남은 부채를 오늘 예산에 즉시 반영하고 종료한다.
+    @discardableResult
+    func setDebtPlanEnabled(_ enabled: Bool) -> Bool {
+        guard let config = fetchBudgetConfigEntity() else { return false }
+        config.debtPlanEnabled = enabled
+        guard saveContext() else { return false }
+        if !enabled, fetchActiveDebtEntity() != nil {
+            return settleDebtImmediately()
+        }
+        return true
+    }
+
+    /// 오늘 상환한 금액 (홈 표시용)
+    func todayDebtRepaymentAmount() -> Int {
+        let today = Calendar.current.startOfDay(for: Date())
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+        let request: NSFetchRequest<DebtRepaymentEntry> = DebtRepaymentEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", today as NSDate, end as NSDate)
+        let entries = (try? context.fetch(request)) ?? []
+        return entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
     }
 
     // MARK: - 모아둔 이월금 (분리 모드 풀)

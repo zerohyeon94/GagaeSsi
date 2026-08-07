@@ -27,10 +27,25 @@ final class HomeViewModel {
     var carryOverPoolBalance: Int = 0
     /// 오늘 모아둔 이월금에서 가져온 금액 (인출·부족액 충당)
     var todayPoolWithdrawn: Int = 0
+    /// 진행 중인 초과 소비 부채 (없으면 nil)
+    var activeDebt: SpendingDebtModel?
+    /// 오늘 초과분 상환으로 차감된 금액
+    var todayDebtRepayment: Int = 0
+
+    /// 계획 미확정 부채가 있어 오늘 설정 팝업을 띄워야 하는지
+    var needsDebtPlanPrompt: Bool {
+        activeDebt?.needsPlanPrompt() ?? false
+    }
+
+    /// 화면에 표시할 이월 금액. 초과분 상환은 `CarryOverSource`(음수)로 저장되지만
+    /// 예산 현황에서는 별도 행으로 보여주므로 이월 금액에서 다시 빼둔다.
+    var displayCarryOverAmount: Int { carryOverAmount + todayDebtRepayment }
 
     /// 캐릭터 소비 상태 (하루 예산 사용률 기반)
     var characterState: CharacterState {
-        CharacterState.from(spent: spentAmount, base: baseBudget, coveredFromPool: todayPoolWithdrawn > 0)
+        CharacterState.from(spent: spentAmount, base: baseBudget,
+                            coveredFromPool: todayPoolWithdrawn > 0,
+                            repayingDebt: todayDebtRepayment > 0)
     }
     
     // MARK: - Loading State
@@ -55,9 +70,23 @@ final class HomeViewModel {
         carryOverMode = CoreDataManager.shared.fetchBudgetConfig()?.carryOverMode ?? .full
         carryOverPoolBalance = CoreDataManager.shared.carryOverPoolBalance()
         todayPoolWithdrawn = CoreDataManager.shared.todayPoolWithdrawnAmount()
+        activeDebt = CoreDataManager.shared.fetchActiveDebt()
+        todayDebtRepayment = CoreDataManager.shared.todayDebtRepaymentAmount()
         isLoading = false
     }
-    
+
+    /// 상환 계획 확정 (팝업 "이 계획으로 갚기")
+    func confirmDebtPlan(ratePercent: Int) {
+        CoreDataManager.shared.confirmDebtPlan(ratePercent: ratePercent)
+        fetchTodayBudget()
+    }
+
+    /// 상환 계획 설정을 오늘 미룸 (팝업 "나중에")
+    func deferDebtPlan() {
+        CoreDataManager.shared.deferDebtPlan()
+        fetchTodayBudget()
+    }
+
     /// 모아둔 이월금에서 오늘 예산으로 꺼내 쓴다.
     @discardableResult
     func withdrawFromPool(amount: Int) -> Bool {

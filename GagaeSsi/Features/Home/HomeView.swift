@@ -19,6 +19,7 @@ struct HomeView: View {
     @State private var showWishlist = false
     @State private var showFixedExpenses = false
     @State private var showWithdraw = false
+    @State private var showDebtPlan = false
 
     // MARK: - Computed
     private var characterState: CharacterState { viewModel.characterState }
@@ -48,6 +49,12 @@ struct HomeView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
 
+                    if let debt = viewModel.activeDebt, debt.isActive {
+                        debtCard(debt)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+                    }
+
                     if let wish = viewModel.activeWish {
                         wishSavingCard(wish)
                             .padding(.horizontal, 20)
@@ -76,6 +83,7 @@ struct HomeView: View {
             viewModel.fetchTodayBudget()
             loadWeeklyData()
             startAnimations()
+            presentDebtPlanIfNeeded()
         }
         .onChange(of: eventBus.spendingAddedTrigger) {
             viewModel.fetchTodayBudget()
@@ -110,13 +118,31 @@ struct HomeView: View {
                 viewModel.withdrawFromPool(amount: amount)
             }
         }
+        .sheet(isPresented: $showDebtPlan) {
+            if let debt = viewModel.activeDebt {
+                DebtPlanSheet(
+                    debtAmount: debt.remainingAmount,
+                    dailyBudget: viewModel.baseBudget,
+                    initialRate: debt.repayRatePercent,
+                    onConfirm: { viewModel.confirmDebtPlan(ratePercent: $0) },
+                    onDefer: { viewModel.deferDebtPlan() }
+                )
+            }
+        }
         .onChange(of: scenePhase) {
             // 백그라운드에서 자정을 넘긴 경우 등 다시 활성화될 때 이월 재처리
             if scenePhase == .active {
                 viewModel.fetchTodayBudget()
                 loadWeeklyData()
+                presentDebtPlanIfNeeded()
             }
         }
+    }
+
+    /// 계획 미확정 부채가 있으면 설정 시트를 띄운다 (오늘 "나중에"를 눌렀으면 띄우지 않음)
+    private func presentDebtPlanIfNeeded() {
+        guard viewModel.needsDebtPlanPrompt, !showDebtPlan else { return }
+        showDebtPlan = true
     }
 
     private func startAnimations() {
@@ -255,12 +281,18 @@ extension HomeView {
             .padding(.bottom, 4)
 
             statusRow(emoji: "🔵", label: "이월 금액",
-                      value: FormatterUtils.currencyString(from: viewModel.carryOverAmount),
+                      value: FormatterUtils.currencyString(from: viewModel.displayCarryOverAmount),
                       valueColor: .gagaeText, bold: false)
             divider
             statusRow(emoji: "🔴", label: "오늘 기본 예산",
                       value: FormatterUtils.currencyString(from: viewModel.baseBudget),
                       valueColor: .gagaeText, bold: false)
+            if viewModel.todayDebtRepayment > 0 {
+                divider
+                statusRow(emoji: "💪", label: "초과분 상환",
+                          value: "-" + FormatterUtils.currencyString(from: viewModel.todayDebtRepayment),
+                          valueColor: .gagaePinkDark, bold: false)
+            }
             divider
             statusRow(emoji: "🛒", label: "오늘 소비",
                       value: "-" + FormatterUtils.currencyString(from: viewModel.spentAmount),
@@ -334,6 +366,65 @@ extension HomeView {
             }
             .buttonStyle(.plain)
             .disabled(viewModel.carryOverPoolBalance <= 0)
+        }
+        .padding(16)
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
+    }
+
+    /// 초과분 상환 진행 카드
+    private func debtCard(_ debt: SpendingDebtModel) -> some View {
+        let plan = DebtRepaymentPlan.calculate(debt: debt.remainingAmount,
+                                               dailyBudget: viewModel.baseBudget,
+                                               ratePercent: debt.repayRatePercent)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("💪 초과분 갚는 중")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Spacer()
+                if debt.isPlanned && plan.days > 0 {
+                    Text("앞으로 \(plan.days)일")
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9).padding(.vertical, 3)
+                        .background(Color.gagaePinkDark).clipShape(Capsule())
+                }
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.gagaeDivider.opacity(0.5)).frame(height: 9)
+                    Capsule().fill(LinearGradient(colors: [.gagaePinkDark, .gagaePink],
+                                                  startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(0, geo.size.width * debt.progress), height: 9)
+                }
+            }
+            .frame(height: 9)
+
+            HStack {
+                Text("\(FormatterUtils.currencyString(from: debt.remainingAmount)) / \(FormatterUtils.currencyString(from: debt.originalAmount))")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(.gagaeTextSecondary)
+                Spacer()
+                if debt.isPlanned {
+                    Text("하루 −\(FormatterUtils.currencyString(from: plan.perDay)) (\(debt.repayRatePercent)%)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                } else {
+                    Button {
+                        showDebtPlan = true
+                    } label: {
+                        Text("상환 계획 세우기")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Color.gagaePinkDark).clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
         .padding(16)
         .background(Color.gagaeCardBackground)

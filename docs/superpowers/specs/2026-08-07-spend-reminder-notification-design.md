@@ -1,7 +1,7 @@
 # 소비 기록 리마인더 알림 설계
 
 - **작성일**: 2026-08-07
-- **상태**: 설계 확정
+- **상태**: 구현 완료 (2026-08-07)
 - **관련 노션**: [가계씨 (GagaeSsi) — 하루 예산 관리 앱](https://app.notion.com/p/359e5d4a0bac80e6b9bec68a15a22d72)
 - **관련 코드**: `Core/NotificationService.swift`, `Core/CoreDataManager.swift`, `Models/BudgetModels.swift`, `Features/Settings/`
 
@@ -50,17 +50,18 @@
 기존 변동 고정비 알림(`vcost-` prefix)과 **완전히 분리**된 `spend-` prefix를 사용한다.
 
 ```swift
-/// 소비 기록 리마인더를 현재 설정 기준으로 재예약한다.
-/// - 기존 spend- 알림 전부 제거 후, 오늘~+13일 중
-///   "그날 소비 기록이 없는 날"만 예약한다.
-func refreshSpendReminders(enabled: Bool,
-                           hour: Int, minute: Int,
-                           hasRecord: @escaping (Date) -> Bool,
-                           now: Date = Date())
+/// 기존 spend- 알림 전부 제거 후 fireDates를 개별 예약한다.
+/// 제거와 재예약은 같은 콜백 안에서 처리한다
+/// (따로 호출하면 제거 콜백이 늦게 도착해 방금 추가한 알림까지 지운다).
+func refreshSpendReminders(fireDates: [Date])
 
 /// 모든 소비 리마인더 제거 (기능 OFF·데이터 초기화)
 func cancelAllSpendReminders()
 ```
+
+> **예약 대상 날짜는 호출 스레드에서 미리 계산해 넘긴다.** `getPendingNotificationRequests`
+> 콜백은 임의 큐에서 실행되므로, 그 안에서 CoreData(`viewContext`)를 조회하면 스레드 규칙을
+> 위반한다. 그래서 `hasRecord` 클로저를 서비스에 넘기지 않고 `[Date]`만 받는다.
 
 - 식별자: `spend-YYYYMMDD`
 - 이미 지난 시각은 예약하지 않는다 (기존 `schedule`과 동일한 가드)
@@ -71,8 +72,13 @@ func cancelAllSpendReminders()
 
 `CoreDataManager`에 래퍼 추가:
 ```swift
+/// BudgetConfig에서 설정을 읽고 SpendReminderSchedule.pendingDates로 날짜를 계산해 넘긴다.
+/// hasRecord는 fetchSpendingRecords(date:)로 판정한다.
 func refreshSpendReminders(now: Date = Date())
-// BudgetConfig에서 설정을 읽고, hasRecord는 fetchSpendingRecords(date:)로 판정
+
+/// 설정(토글·시각) 저장 후 즉시 재예약
+@discardableResult
+func updateSpendReminder(enabled: Bool, hour: Int, minute: Int) -> Bool
 ```
 
 ## 6. 갱신 시점
@@ -111,24 +117,33 @@ func refreshSpendReminders(now: Date = Date())
 | 데이터 초기화 | 모든 `spend-` 알림 제거 |
 | 기존 사용자 마이그레이션 | `enabled = false`, 시각은 모델 변환에서 21:00으로 보정 |
 
-## 9. 테스트 (`SpendReminderTests`)
+## 9. 테스트 (`SpendReminderTests` 11건)
 
 로컬 알림 예약 자체는 시뮬레이터 의존성이 커서, **예약 대상 날짜를 고르는 순수 로직**을 분리해 테스트한다.
 
 ```swift
 enum SpendReminderSchedule {
-    /// now 기준 향후 days일 중 실제로 예약할 (날짜, 발송시각) 목록
+    /// now 기준 향후 days일 중 실제로 예약할 발송 시각 목록
     static func pendingDates(from now: Date, hour: Int, minute: Int,
-                             days: Int, hasRecord: (Date) -> Bool) -> [Date]
+                             days: Int, hasRecord: (Date) -> Bool,
+                             calendar: Calendar) -> [Date]
+
+    /// 알림 식별자 (spend-YYYYMMDD)
+    static func identifier(for fireDate: Date, calendar: Calendar) -> String
 }
 ```
 
 1. 오늘 시각이 아직 안 지났고 기록 없음 → 오늘 포함
 2. 오늘 시각이 이미 지남 → 오늘 제외
 3. 오늘 기록 있음 → 오늘 제외
-4. 미래 날짜는 기록 여부와 무관하게 모두 포함
+4. 미래 날짜 필터링도 동작
 5. `days = 14` → 14개 이하 반환
-6. 시각 경계 (정확히 지금 = 발송 시각) 처리
+6. 정확히 발송 시각과 같으면 제외 (`fireDate > now`)
+7. 잘못된 시각·일수(24시, −1, 60분, 0일) → 빈 배열
+8. 식별자 형식 `spend-20260807`
+9. 식별자는 날짜마다 고유
+10. 기본값 저장 확인 (꺼짐 / 21:00)
+11. 설정 변경 저장 확인 (`updateSpendReminder`)
 
 ## 10. 범위 제외 (v-next)
 

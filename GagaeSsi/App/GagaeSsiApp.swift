@@ -54,6 +54,7 @@ final class AppState {
 /// 앱 상태에 따라 Setup 또는 Main 화면 표시
 struct RootView: View {
     @Environment(AppState.self) private var appState
+    @Environment(AppEventBus.self) private var eventBus
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -69,13 +70,19 @@ struct RootView: View {
             }
         }
         .task {
-            // 앱 실행 시 변동 고정비 지출일 알림을 현재 상태로 재설정
+            // 앱 실행 시 변동 고정비 지출일 알림 + 소비 기록 리마인더를 현재 상태로 재설정
             CoreDataManager.shared.refreshVariableCostReminders()
+            CoreDataManager.shared.refreshSpendReminders()
         }
         .onChange(of: scenePhase) {
             if scenePhase == .active {
                 CoreDataManager.shared.refreshVariableCostReminders()
+                CoreDataManager.shared.refreshSpendReminders()
             }
+        }
+        .onChange(of: eventBus.spendingAddedTrigger) {
+            // 오늘 소비를 기록하면 오늘 리마인더를 취소하고, 삭제하면 다시 복구한다
+            CoreDataManager.shared.refreshSpendReminders()
         }
         .animation(.easeInOut(duration: 0.3), value: appState.isSetupCompleted)
         // 디자인 시스템이 라이트 테마 고정이므로 다크모드에서도 라이트로 렌더링

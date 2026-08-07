@@ -1,7 +1,7 @@
 # 초과 소비 상환 계획 설계
 
 - **작성일**: 2026-08-07
-- **상태**: 설계 확정
+- **상태**: 구현 완료 (2026-08-07)
 - **관련 노션**: [가계씨 (GagaeSsi) — 하루 예산 관리 앱](https://app.notion.com/p/359e5d4a0bac80e6b9bec68a15a22d72)
 - **관련 문서**: [하루 사용 가능 금액 계산 규칙](../../2026-07-08-daily-budget-calculation-rules.md), [이월 방식 선택 설계](2026-07-29-carryover-mode-design.md)
 - **관련 코드**: `Core/CoreDataManager.swift`, `Core/Utils/BudgetCalculationUtils.swift`, `Models/BudgetModels.swift`, `Features/Home/`, `Features/Settings/`
@@ -113,6 +113,7 @@ enum DebtRepaymentPlan {
 | `isPlanned` | Bool | 계획 확정 여부 |
 | `startedAt` | Date | 최초 발생일 |
 | `completedAt` | Date? | 완납일 (nil이면 활성) |
+| `deferredAt` | Date? | 계획 설정을 "나중에"로 미룬 날. 그날은 팝업을 다시 띄우지 않는다 |
 | `repayments` | to-many → `DebtRepaymentEntry` | |
 
 활성 부채는 항상 **최대 1개** (`completedAt == nil`).
@@ -129,7 +130,7 @@ enum DebtRepaymentPlan {
 - `debtPlanEnabled: Bool` (기본 `true`)
 
 ### 값 타입 (`Models/DebtModels.swift`)
-- `struct SpendingDebtModel` — `init(entity:)` 변환 생성자 포함
+- `struct SpendingDebtModel` — `init(entity:)` 변환 생성자 + `needsPlanPrompt(on:)` 판정
 - `struct DebtRepaymentEntryModel`
 
 ## 6. UI
@@ -177,20 +178,35 @@ enum DebtRepaymentPlan {
 | 분리 모드 풀 충당과 동시 발생 | 풀 충당이 먼저 → 잔액 0 → 부채 미발생 |
 | 데이터 초기화 | `SpendingDebt`·`DebtRepaymentEntry` 함께 삭제 |
 
-## 8. 테스트 (`DebtRepaymentTests`)
+## 8. 테스트 (`DebtRepaymentTests` 18건)
 
+**순수 계산**
 1. `calculate` — 10만원 부채 / 5만원 예산 / 20% → (10,000원, 10일)
 2. `calculate` — 나누어떨어지지 않을 때 `days`가 올림
-3. `threshold` — 기본 예산 10% 원 단위 내림
-4. `isAggressive` — 40% 이상만 true
-5. 임계 초과 시 이월 0 + 부채 생성
-6. 임계 미만 시 기존 음수 이월 (부채 미생성)
-7. 기능 OFF 시 기존 음수 이월
-8. 계획 확정 후 일별 상환 차감 + 원장 기록
-9. 멱등성 — `processDailyBudgets` 2회 호출 시 중복 상환 없음
-10. 마지막 날 남은 부채만 차감 후 완납 처리
-11. 상환 중 재초과 시 부채 합산
-12. 전액 이월 모드 회귀 — 부채 기능 OFF면 기존 동작 동일
+3. `calculate` — 상환액이 0원이면 계획 불가 `(0, 0)`
+4. `threshold` — 기본 예산 10% 원 단위 내림
+5. `isAggressive` — 40% 이상만 true
+6. `rateOptions` — 10~50, 5% 단위
+
+**부채 전환**
+7. 임계 이상 초과 → 이월 0 + 부채 생성 (`isPlanned == false`)
+8. 임계 미만 소액 초과 → 기존 음수 이월 (부채 미생성)
+9. 기능 OFF → 기존 음수 이월
+10. 양수 잔액 → 기존대로 이월
+
+**상환**
+11. 계획 확정 후 상환 차감 + 원장 기록 + 음수 `CarryOverSource`
+12. 멱등성 — `processDailyBudgets` 반복 호출 시 중복 상환 없음
+13. 남은 부채 < 상환액 → 남은 만큼만 갚고 완납
+14. 재초과 시 부채 합산, 상환비율 유지
+
+**종료**
+15. 조기 완납 — 남은 부채가 오늘 예산에서 한 번에 차감
+16. 기능 OFF 전환 — 남은 부채 즉시 반영 후 종료
+
+**이월 방식 / 팝업**
+17. 분리 모드에서도 부채 전환, 양수는 기존대로 풀 적립 (2건)
+18. `needsPlanPrompt` — 미확정 true, 오늘 미루면 false, 다음 날 다시 true
 
 ## 9. 범위 제외 (v-next)
 

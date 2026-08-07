@@ -13,6 +13,7 @@ enum CharacterState {
     case caution   // 주의: 70% 이상 100% 미만
     case over      // 초과: 100% 이상 (이월금 충당 안 함)
     case covered   // 회복: 초과했지만 모아둔 이월금으로 채움
+    case repaying  // 회복 중: 초과분을 나눠 갚는 중
 
     var label: String {
         switch self {
@@ -20,6 +21,7 @@ enum CharacterState {
         case .caution: return "조심"
         case .over: return "걱정"
         case .covered: return "회복"
+        case .repaying: return "회복 중"
         }
     }
 
@@ -29,6 +31,7 @@ enum CharacterState {
         case .caution: return "🤔"
         case .over: return "😟"
         case .covered: return "😌"
+        case .repaying: return "💪"
         }
     }
 
@@ -38,6 +41,7 @@ enum CharacterState {
         case .caution: return "슬슬 조심할 때예요."
         case .over: return "오늘 예산을 넘었어요. 내일 조금 아껴봐요."
         case .covered: return "모아둔 이월금에서 채웠어요. 괜찮아요."
+        case .repaying: return "초과분을 조금씩 갚는 중이에요. 잘 하고 있어요!"
         }
     }
 
@@ -47,6 +51,7 @@ enum CharacterState {
         case .caution: return .gagaeWarning
         case .over: return .gagaeDanger
         case .covered: return .gagaePinkDark
+        case .repaying: return .gagaePinkDark
         }
     }
 
@@ -57,15 +62,21 @@ enum CharacterState {
         case .caution: return [Color(hex: "#FFA94D"), Color(hex: "#FB8B1A")]
         case .over: return [Color(hex: "#F26666"), Color(hex: "#E13F47")]
         case .covered: return [.gagaePink, .gagaePinkDark]
+        case .repaying: return [.gagaePink, .gagaePinkDark]
         }
     }
 
-    /// 하루 예산(base) 대비 소비(spent)와 오늘 이월금 충당 여부로 상태 결정
-    static func from(spent: Int, base: Int, coveredFromPool: Bool) -> CharacterState {
+    /// 하루 예산(base) 대비 소비(spent)와 오늘 이월금 충당·초과분 상환 여부로 상태 결정.
+    /// - 상환 중이더라도 오늘 예산을 또 넘겼으면 `over`가 우선한다 (지금 상태를 먼저 알려야 하므로).
+    static func from(spent: Int, base: Int,
+                     coveredFromPool: Bool,
+                     repayingDebt: Bool = false) -> CharacterState {
         if coveredFromPool { return .covered }
-        guard base > 0 else { return .stable }
+        guard base > 0 else { return repayingDebt ? .repaying : .stable }
+
         let ratio = Double(spent) / Double(base)
         if ratio >= 1.0 { return .over }
+        if repayingDebt { return .repaying }
         if ratio >= 0.7 { return .caution }
         return .stable
     }
