@@ -300,6 +300,147 @@ final class DebtRepaymentTests: XCTestCase {
         XCTAssertNil(sut.fetchActiveDebt())
     }
 
+    // MARK: - 급여일 흡수 (부채 무한 지속 차단)
+
+    /// 최근 며칠 중 "실효 급여일이 정확히 그날"인 오프셋을 찾는다.
+    /// 실효 급여일은 주말이면 금요일로 당겨지므로, 아무 날이나 급여일이 될 수 없다.
+    private func recentPaydayOffset() -> Int? {
+        for offset in stride(from: -3, through: -9, by: -1) {
+            let d = day(offset)
+            let c = cal.dateComponents([.year, .month, .day], from: d)
+            let effective = DailyBudgetCalculator.effectivePayday(
+                payday: c.day!, year: c.year!, month: c.month!)
+            if cal.isDate(effective, inSameDayAs: d) { return offset }
+        }
+        return nil
+    }
+
+    /// 최근 급여일을 기준으로 config를 만들고, 그 전날 큰 초과를 심는다.
+    /// - Returns: 급여일 오프셋
+    private func seedOverspendBeforeRecentPayday(salary: Int, spendMultiplier: Int = 3) throws -> Int {
+        let offset = try XCTUnwrap(recentPaydayOffset(), "최근 9일 내 평일 급여일을 찾지 못함")
+        let paydayDom = cal.component(.day, from: day(offset))
+        _ = sut.createBudgetConfig(from: BudgetConfigModel(
+            salary: salary, payday: paydayDom, fixedCosts: [],
+            carryOverMode: .full, debtPlanEnabled: true))
+
+        let prevBase = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(offset - 1))
+        _ = sut.createDailyBudget(DailyBudgetModel(availableAmount: prevBase, date: day(offset - 1),
+                                                   carryOverSources: [], spendingRecords: []))
+        _ = sut.createSpendingRecord(SpendingRecordModel(title: "큰 지출",
+                                                         amount: prevBase * spendMultiplier,
+                                                         date: day(offset - 1)))
+        return offset
+    }
+
+    func test_급여일에_남은_부채가_새_급여기간_예산으로_흡수된다() throws {
+        let paydayOffset = try seedOverspendBeforeRecentPayday(salary: 3_000_000)
+        let beforeBase = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(paydayOffset))
+
+        sut.processDailyBudgets(upTo: day(0))
+
+        let config = sut.fetchBudgetConfig()!
+        XCTAssertGreaterThan(config.absorbedDebtAmount, 0, "급여일에 부채가 흡수되어야 한다")
+        XCTAssertEqual(config.absorbedDebtPeriodStart.map { cal.startOfDay(for: $0) }, day(paydayOffset))
+        XCTAssertNil(sut.fetchActiveDebt(), "흡수되면 부채가 종료된다")
+
+        let afterBase = DailyBudgetCalculator.calculate(from: config, for: day(paydayOffset))
+        XCTAssertLessThan(afterBase, beforeBase, "흡수한 만큼 하루 예산이 줄어야 한다")
+        XCTAssertGreaterThanOrEqual(afterBase, 0, "하루 예산이 음수가 되면 안 된다")
+    }
+
+    func test_흡수는_해당_급여기간에만_적용된다() {
+        let todayDom = cal.component(.day, from: Date())
+        let periodStart = DailyBudgetCalculator.payPeriod(payday: todayDom, containing: day(0)).start
+        let config = BudgetConfigModel(
+            salary: 3_000_000, payday: todayDom, fixedCosts: [],
+            carryOverMode: .full, debtPlanEnabled: true,
+            absorbedDebtAmount: 300_000,
+            absorbedDebtPeriodStart: periodStart)
+
+        let thisPeriod = DailyBudgetCalculator.calculate(from: config, for: day(0))
+
+        // 다음 급여 기간에는 흡수가 적용되지 않아야 한다
+        let nextPeriodDate = DailyBudgetCalculator.payPeriod(payday: todayDom, containing: day(0)).end
+        let nextPeriod = DailyBudgetCalculator.calculate(from: config, for: nextPeriodDate)
+
+        XCTAssertLessThan(thisPeriod, nextPeriod, "흡수는 해당 기간에만 적용된다")
+    }
+
+    func test_흡수는_기간당_한번만_일어난다_멱등성() throws {
+        _ = try seedOverspendBeforeRecentPayday(salary: 3_000_000)
+
+        sut.processDailyBudgets(upTo: day(0))
+        let once = sut.fetchBudgetConfig()!.absorbedDebtAmount
+        XCTAssertGreaterThan(once, 0)
+
+        sut.processDailyBudgets(upTo: day(0))
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertEqual(sut.fetchBudgetConfig()!.absorbedDebtAmount, once)
+    }
+
+    func test_부채가_한달치보다_크면_감당할_만큼만_흡수하고_나머지는_남긴다() throws {
+        // 한 달 배분 가능액을 훨씬 넘는 초과 (기본 예산의 40배 소비)
+        let paydayOffset = try seedOverspendBeforeRecentPayday(salary: 1_000_000, spendMultiplier: 40)
+
+        sut.processDailyBudgets(upTo: day(0))
+
+        let config = sut.fetchBudgetConfig()!
+        let absorbable = DailyBudgetCalculator.absorbableSalary(from: config, for: day(paydayOffset))
+        XCTAssertEqual(config.absorbedDebtAmount, absorbable, "감당 가능한 만큼만 흡수한다")
+        XCTAssertNotNil(sut.fetchActiveDebt(), "남은 부채는 다음 급여일로 넘어간다")
+        XCTAssertGreaterThanOrEqual(DailyBudgetCalculator.calculate(from: config, for: day(paydayOffset)), 0,
+                                    "하루 예산이 음수가 되면 안 된다")
+    }
+
+    // MARK: - 상환 속도 경고
+
+    func test_상환중_쓸수있는_금액은_기본예산에서_상환액을_뺀_값() {
+        XCTAssertEqual(DebtRepaymentPlan.spendableWhileRepaying(dailyBudget: 50_000, ratePercent: 20),
+                       40_000)
+        XCTAssertEqual(DebtRepaymentPlan.spendableWhileRepaying(dailyBudget: 50_000, ratePercent: 50),
+                       25_000)
+    }
+
+    func test_최근_평균소비가_상환후_금액을_넘으면_경고대상() {
+        // 5만원 예산 / 20% 상환 → 하루 4만원까지만 써야 부채가 준다
+        XCTAssertFalse(DebtRepaymentPlan.isOffTrack(recentAverageSpending: 35_000,
+                                                    dailyBudget: 50_000, ratePercent: 20))
+        XCTAssertFalse(DebtRepaymentPlan.isOffTrack(recentAverageSpending: 40_000,
+                                                    dailyBudget: 50_000, ratePercent: 20))
+        XCTAssertTrue(DebtRepaymentPlan.isOffTrack(recentAverageSpending: 50_000,
+                                                   dailyBudget: 50_000, ratePercent: 20),
+                      "예산을 다 쓰면 상환액과 상쇄되어 부채가 줄지 않는다")
+    }
+
+    func test_얼마나_더_줄여야_하는지_계산() {
+        XCTAssertEqual(DebtRepaymentPlan.dailyCutNeeded(recentAverageSpending: 50_000,
+                                                        dailyBudget: 50_000, ratePercent: 20),
+                       10_000)
+        XCTAssertEqual(DebtRepaymentPlan.dailyCutNeeded(recentAverageSpending: 30_000,
+                                                        dailyBudget: 50_000, ratePercent: 20),
+                       0, "이미 줄고 있으면 0")
+    }
+
+    func test_최근_평균소비는_오늘을_제외하고_일수로_나눈다() {
+        setup()
+        // createSpendingRecord는 그날 DailyBudget이 있어야 저장된다
+        for offset in -3...0 {
+            _ = sut.createDailyBudget(DailyBudgetModel(availableAmount: 50_000, date: day(offset),
+                                                       carryOverSources: [], spendingRecords: []))
+        }
+        for offset in -3...(-1) {
+            XCTAssertTrue(sut.createSpendingRecord(
+                SpendingRecordModel(title: "지출", amount: 21_000, date: day(offset))))
+        }
+        // 오늘 소비는 아직 진행 중이라 평균에 넣지 않는다
+        XCTAssertTrue(sut.createSpendingRecord(
+            SpendingRecordModel(title: "오늘", amount: 999_999, date: day(0))))
+
+        XCTAssertEqual(sut.recentAverageDailySpending(days: 7), 63_000 / 7)
+    }
+
     // MARK: - 팝업 노출 판정
 
     func test_needsPlanPrompt_미확정이면_true_오늘_미루면_false() {

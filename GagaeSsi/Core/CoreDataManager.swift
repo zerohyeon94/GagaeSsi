@@ -789,7 +789,8 @@ final class CoreDataManager {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: date)
 
-        guard let config = fetchBudgetConfig() else {
+        // 급여일 부채 흡수가 일어나면 다시 읽어야 하므로 var
+        guard var config = fetchBudgetConfig() else {
             DebugLogger.log("❌ BudgetConfig 없음 → 이월 처리 생략")
             return
         }
@@ -811,16 +812,35 @@ final class CoreDataManager {
         // latestDay + 1 ~ today 까지 순회하며 누락된 날짜 생성
         var cursor = calendar.date(byAdding: .day, value: 1, to: latestDay)!
         while cursor <= today {
-            // 이미 존재하면 건너뜀 (멱등성)
-            if fetchDailyBudgetEntity(date: cursor) == nil {
+            let isNewDay = fetchDailyBudgetEntity(date: cursor) == nil   // 이미 있으면 재생성하지 않음 (멱등성)
+            let prevDay = calendar.date(byAdding: .day, value: -1, to: cursor)!
+            var prevBalance = 0
+            var debtAmount = 0
+
+            if isNewDay {
+                prevBalance = fetchDailyBudgetModel(date: prevDay)?.todayAvailable ?? 0
+
+                // 임계 판정에는 흡수 반영 전 예산을 쓴다 (흡수 여부와 무관하게 "큰 초과"인지 판단)
+                let provisionalBase = DailyBudgetCalculator.calculate(
+                    from: config, installments: installments, for: cursor)
+                debtAmount = overspendToConvert(prevBalance: prevBalance,
+                                                dailyBudget: provisionalBase, config: config)
+
+                // 흡수보다 먼저 합산해야, 이 날이 급여일일 때 전날 초과분까지 새 기간 예산으로 정산된다
+                if debtAmount > 0 { addToDebt(amount: debtAmount, on: cursor) }
+            }
+
+            // 급여일이면 남은 부채를 새 급여 기간 예산으로 흡수한다 (그날 예산 확정보다 먼저)
+            if absorbDebtIfPayday(on: cursor, config: config, installments: installments),
+               let refreshed = fetchBudgetConfig() {
+                config = refreshed
+            }
+
+            if isNewDay {
                 let base = DailyBudgetCalculator.calculate(from: config, installments: installments, for: cursor)
-                let prevDay = calendar.date(byAdding: .day, value: -1, to: cursor)!
-                let prevBalance = fetchDailyBudgetModel(date: prevDay)?.todayAvailable ?? 0
 
-                // 초과분(음수)을 부채로 분리할지 판정. 분리하면 그날 음수 이월은 0이 된다.
-                let debtAmount = overspendToConvert(prevBalance: prevBalance, dailyBudget: base, config: config)
-
-                // 이월 방식: 전액 이월은 ±전액, 분리 모드는 음수(페널티)만 이월
+                // 이월 방식: 전액 이월은 ±전액, 분리 모드는 음수(페널티)만 이월.
+                // 초과분을 부채로 뺐으면 음수 이월은 0이 된다.
                 let rawCarry = (config.carryOverMode == .separate) ? min(0, prevBalance) : prevBalance
                 let carry = debtAmount > 0 ? max(0, rawCarry) : rawCarry
 
@@ -844,10 +864,8 @@ final class CoreDataManager {
                     let deposit = max(0, prevBalance)
                     if deposit > 0 { depositToPool(amount: deposit, date: cursor) }
                 }
-
-                // 초과분을 부채에 합산 (계획 미확정 상태로 생성/누적)
-                if debtAmount > 0 { addToDebt(amount: debtAmount, on: cursor) }
             }
+
             // 계획이 확정된 부채가 있으면 이 날짜의 상환액을 차감한다 (일자당 1회, 멱등)
             applyDebtRepayment(on: cursor, config: config)
 
@@ -1007,6 +1025,58 @@ final class CoreDataManager {
         _ = saveContext()
     }
 
+    /// `date`가 급여 기간 시작일(실효 급여일)이면, 남은 부채를 그 기간 예산으로 흡수하고 부채를 종료한다.
+    ///
+    /// 부채를 계속 이월하면 사용자가 평소 씀씀이를 유지하는 한 상환액과 재초과분이 상쇄되어
+    /// 부채가 영원히 줄지 않는다. 급여일마다 남은 부채를 새 기간 예산에 녹여 하루 예산을 낮추면
+    /// 페널티는 유지되면서 부채는 반드시 정산된다.
+    ///
+    /// - Returns: 흡수가 일어나 config를 다시 읽어야 하면 `true`
+    @discardableResult
+    private func absorbDebtIfPayday(on date: Date,
+                                    config: BudgetConfigModel,
+                                    installments: [InstallmentModel]) -> Bool {
+        guard config.debtPlanEnabled else { return false }
+
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: date)
+        let period = DailyBudgetCalculator.payPeriod(payday: config.payday, containing: day)
+        guard calendar.isDate(period.start, inSameDayAs: day) else { return false }
+
+        // 같은 기간에 이미 흡수했으면 중복 처리하지 않는다 (멱등성)
+        if let absorbed = config.absorbedDebtPeriodStart,
+           calendar.isDate(absorbed, inSameDayAs: period.start) { return false }
+
+        guard let debt = fetchActiveDebtEntity() else { return false }
+        let remaining = Int(truncating: debt.remainingAmount ?? 0)
+        guard remaining > 0 else { return false }
+
+        // 하루 예산이 음수가 되지 않도록 이번 기간이 감당할 수 있는 만큼만 흡수한다.
+        // 남은 부채는 그대로 두고 다음 급여일에 다시 흡수를 시도한다.
+        let absorbable = max(0, DailyBudgetCalculator.absorbableSalary(
+            from: config, installments: installments, for: day))
+        let absorbed = min(remaining, absorbable)
+        guard absorbed > 0 else { return false }
+
+        guard let entity = fetchBudgetConfigEntity() else { return false }
+        entity.absorbedDebtAmount = Int32(absorbed)
+        entity.absorbedDebtPeriodStart = period.start
+
+        // 흡수한 만큼 부채를 상환 처리 (원장에도 남긴다)
+        let entry = DebtRepaymentEntry(context: context)
+        entry.id = UUID()
+        entry.date = day
+        entry.amount = NSDecimalNumber(value: absorbed)
+        entry.debt = debt
+        debt.addToRepayments(entry)
+
+        let newRemaining = remaining - absorbed
+        debt.remainingAmount = NSDecimalNumber(value: newRemaining)
+        if newRemaining == 0 { debt.completedAt = day }
+
+        return saveContext()
+    }
+
     /// 상환 계획을 확정한다 (팝업의 "이 계획으로 갚기"). 확정한 날부터 상환이 시작된다.
     @discardableResult
     func confirmDebtPlan(ratePercent: Int) -> Bool {
@@ -1077,6 +1147,19 @@ final class CoreDataManager {
             return settleDebtImmediately()
         }
         return true
+    }
+
+    /// 최근 `days`일의 하루 평균 소비. 오늘은 아직 진행 중이라 제외한다.
+    /// (상환 속도가 부채를 줄이기에 충분한지 판단하는 데 쓴다)
+    func recentAverageDailySpending(days: Int = 7) -> Int {
+        guard days > 0 else { return 0 }
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        guard let start = calendar.date(byAdding: .day, value: -days, to: today) else { return 0 }
+
+        let records = fetchSpendingRecords(from: start, to: today)
+        guard !records.isEmpty else { return 0 }
+        return records.reduce(0) { $0 + $1.amount } / days
     }
 
     /// 오늘 상환한 금액 (홈 표시용)

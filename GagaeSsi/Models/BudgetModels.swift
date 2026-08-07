@@ -40,6 +40,11 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
     /// 리마인더 알림 시각
     var spendReminderHour: Int
     var spendReminderMinute: Int
+    /// 급여일에 새 급여 기간 예산으로 흡수한 부채 금액.
+    /// 이 기간의 기본 일일 예산에서 균등 차감된다 (부채가 기간을 넘어 무한히 끌리지 않게).
+    var absorbedDebtAmount: Int
+    /// 위 금액이 적용되는 급여 기간의 시작일. 다른 기간에는 적용하지 않는다.
+    var absorbedDebtPeriodStart: Date?
 
     // MARK: - Initializer
     /// 일반 생성자
@@ -48,7 +53,9 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
          debtPlanEnabled: Bool = true,
          spendReminderEnabled: Bool = false,
          spendReminderHour: Int = SpendReminderSchedule.defaultHour,
-         spendReminderMinute: Int = SpendReminderSchedule.defaultMinute) {
+         spendReminderMinute: Int = SpendReminderSchedule.defaultMinute,
+         absorbedDebtAmount: Int = 0,
+         absorbedDebtPeriodStart: Date? = nil) {
         self.salary = salary
         self.payday = payday
         self.fixedCosts = fixedCosts
@@ -57,6 +64,8 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
         self.spendReminderEnabled = spendReminderEnabled
         self.spendReminderHour = spendReminderHour
         self.spendReminderMinute = spendReminderMinute
+        self.absorbedDebtAmount = absorbedDebtAmount
+        self.absorbedDebtPeriodStart = absorbedDebtPeriodStart
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -68,6 +77,8 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
         self.carryOverMode = CarryOverMode.from(entity.carryOverMode)
         self.debtPlanEnabled = entity.debtPlanEnabled
         self.spendReminderEnabled = entity.spendReminderEnabled
+        self.absorbedDebtAmount = Int(entity.absorbedDebtAmount)
+        self.absorbedDebtPeriodStart = entity.absorbedDebtPeriodStart
         // 기존 사용자 마이그레이션 시 Int16 기본값이 0(자정)이 되므로,
         // 알림을 켠 적이 없으면 기본 시각(21:00)으로 보정한다.
         if entity.spendReminderEnabled {

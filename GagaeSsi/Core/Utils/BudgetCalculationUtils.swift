@@ -11,19 +11,44 @@ struct DailyBudgetCalculator {
 
     // MARK: - 일일 예산
 
-    /// 일일 예산 계산: (월급 − 고정비 합계 − 활성 할부 월납입 합) ÷ 급여 기간 일수 (원 단위 내림)
+    /// 일일 예산 계산: (월급 − 고정비 합계 − 활성 할부 월납입 합 − 흡수한 초과분) ÷ 급여 기간 일수 (원 단위 내림)
+    ///
+    /// 흡수한 초과분은 급여일에 남아 있던 부채를 그 급여 기간 예산에 녹인 금액이다.
+    /// 부채가 급여 기간을 넘어 무한히 끌리지 않게 하고, 하루 예산이 음수로 보이지 않게 한다.
     static func calculate(from config: BudgetConfigModel,
                           installments: [InstallmentModel] = [],
                           for date: Date) -> Int {
-        let fixedTotal = config.fixedCosts.map { $0.amount }.reduce(0, +)
-        let installmentTotal = InstallmentModel.activeMonthlyTotal(installments, for: date)
-        let usableSalary = config.salary - fixedTotal - installmentTotal
-
         let period = payPeriod(payday: config.payday, containing: date)
+        let usableSalary = usableSalary(from: config, installments: installments,
+                                        for: date, period: period)
+
         let totalDays = Calendar.current.dateComponents([.day], from: period.start, to: period.end).day ?? 0
         guard totalDays > 0 else { return usableSalary }   // 방어: 비정상 기간
 
         return usableSalary / totalDays
+    }
+
+    /// 급여 기간 전체에 배분할 금액 (흡수한 초과분 차감 전/후 구분용으로 분리)
+    private static func usableSalary(from config: BudgetConfigModel,
+                                     installments: [InstallmentModel],
+                                     for date: Date,
+                                     period: (start: Date, end: Date)) -> Int {
+        let base = absorbableSalary(from: config, installments: installments, for: date)
+
+        // 이 급여 기간에 흡수한 초과분이 있으면 차감한다
+        guard let absorbedStart = config.absorbedDebtPeriodStart,
+              Calendar.current.isDate(absorbedStart, inSameDayAs: period.start) else { return base }
+        return base - config.absorbedDebtAmount
+    }
+
+    /// 초과분 흡수 전 배분 가능 금액 (월급 − 고정비 − 할부).
+    /// 급여일에 흡수할 수 있는 부채의 상한이기도 하다 — 이보다 많이 흡수하면 하루 예산이 음수가 된다.
+    static func absorbableSalary(from config: BudgetConfigModel,
+                                 installments: [InstallmentModel] = [],
+                                 for date: Date) -> Int {
+        let fixedTotal = config.fixedCosts.map { $0.amount }.reduce(0, +)
+        let installmentTotal = InstallmentModel.activeMonthlyTotal(installments, for: date)
+        return config.salary - fixedTotal - installmentTotal
     }
 
     // MARK: - 실효 급여일 (말일 보정 + 주말 보정)

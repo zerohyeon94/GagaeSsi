@@ -425,6 +425,18 @@ extension HomeView {
                     .buttonStyle(.plain)
                 }
             }
+
+            // 최근 씀씀이로는 부채가 줄지 않는 경우 — 숫자만 보여주면 사용자가 알 수 없다
+            if viewModel.isDebtOffTrack {
+                HStack(alignment: .top, spacing: 6) {
+                    Text("⚠️").font(.system(size: 12))
+                    Text("이 속도면 초과분이 줄지 않아요. 하루 \(FormatterUtils.currencyString(from: viewModel.debtDailyCutNeeded))씩 더 줄여보세요.")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeWarning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 2)
+            }
         }
         .padding(16)
         .background(Color.gagaeCardBackground)

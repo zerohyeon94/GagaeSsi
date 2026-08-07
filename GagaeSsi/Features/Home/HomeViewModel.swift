@@ -31,6 +31,24 @@ final class HomeViewModel {
     var activeDebt: SpendingDebtModel?
     /// 오늘 초과분 상환으로 차감된 금액
     var todayDebtRepayment: Int = 0
+    /// 최근 7일 하루 평균 소비 (상환 속도 점검용)
+    var recentAverageSpending: Int = 0
+
+    /// 최근 씀씀이로는 부채가 줄지 않는 상태인지
+    var isDebtOffTrack: Bool {
+        guard let debt = activeDebt, debt.isActive, debt.isPlanned else { return false }
+        return DebtRepaymentPlan.isOffTrack(recentAverageSpending: recentAverageSpending,
+                                            dailyBudget: baseBudget,
+                                            ratePercent: debt.repayRatePercent)
+    }
+
+    /// 부채를 줄이려면 하루에 더 줄여야 하는 금액
+    var debtDailyCutNeeded: Int {
+        guard let debt = activeDebt else { return 0 }
+        return DebtRepaymentPlan.dailyCutNeeded(recentAverageSpending: recentAverageSpending,
+                                                dailyBudget: baseBudget,
+                                                ratePercent: debt.repayRatePercent)
+    }
 
     /// 계획 미확정 부채가 있어 오늘 설정 팝업을 띄워야 하는지
     var needsDebtPlanPrompt: Bool {
@@ -72,6 +90,7 @@ final class HomeViewModel {
         todayPoolWithdrawn = CoreDataManager.shared.todayPoolWithdrawnAmount()
         activeDebt = CoreDataManager.shared.fetchActiveDebt()
         todayDebtRepayment = CoreDataManager.shared.todayDebtRepaymentAmount()
+        recentAverageSpending = CoreDataManager.shared.recentAverageDailySpending(days: 7)
         isLoading = false
     }
 

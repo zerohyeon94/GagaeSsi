@@ -44,6 +44,28 @@ enum DebtRepaymentPlan {
     static func isAggressive(ratePercent: Int) -> Bool {
         ratePercent >= aggressiveRate
     }
+
+    // MARK: - 상환 속도 점검
+
+    /// 상환 중 실제로 쓸 수 있는 하루 금액 (기본 예산 − 하루 상환액)
+    static func spendableWhileRepaying(dailyBudget: Int, ratePercent: Int) -> Int {
+        guard dailyBudget > 0, ratePercent > 0 else { return max(0, dailyBudget) }
+        return max(0, dailyBudget - dailyBudget * ratePercent / 100)
+    }
+
+    /// 최근 평균 소비가 상환 중 쓸 수 있는 금액을 넘으면 부채가 줄지 않는다.
+    /// (넘긴 만큼이 다음 날 다시 부채로 합산되어 상환액과 상쇄되기 때문)
+    static func isOffTrack(recentAverageSpending: Int, dailyBudget: Int, ratePercent: Int) -> Bool {
+        guard dailyBudget > 0, recentAverageSpending > 0 else { return false }
+        return recentAverageSpending > spendableWhileRepaying(dailyBudget: dailyBudget,
+                                                              ratePercent: ratePercent)
+    }
+
+    /// 부채를 줄이려면 하루에 얼마를 더 줄여야 하는지 (0이면 이미 줄고 있음)
+    static func dailyCutNeeded(recentAverageSpending: Int, dailyBudget: Int, ratePercent: Int) -> Int {
+        let spendable = spendableWhileRepaying(dailyBudget: dailyBudget, ratePercent: ratePercent)
+        return max(0, recentAverageSpending - spendable)
+    }
 }
 
 // MARK: - 부채 모델
