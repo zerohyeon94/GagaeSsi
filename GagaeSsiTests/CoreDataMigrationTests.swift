@@ -39,6 +39,19 @@ final class CoreDataMigrationTests: XCTestCase {
                              "\(version).mom을 로드할 수 없다")
     }
 
+    /// 현재 모델(.xccurrentversion). 버전을 올릴 때마다 테스트를 고치지 않도록 momd에서 읽는다.
+    ///
+    /// `BudgetConfigModel(entity:)` 같은 변환 생성자는 **최신 속성을 모두 읽으므로**
+    /// 구버전 모델로 연 스토어에 쓰면 예외가 난다. 변환을 검증하는 테스트는 이걸 쓴다.
+    private func currentModel() throws -> NSManagedObjectModel {
+        let bundle = Bundle(for: CoreDataManager.self)
+        let momdURL = try XCTUnwrap(bundle.url(forResource: "GagaeSsi", withExtension: "momd"))
+        let info = NSDictionary(contentsOf: momdURL.appendingPathComponent("VersionInfo.plist"))
+        let version = try XCTUnwrap(info?["NSManagedObjectModel_CurrentVersionName"] as? String,
+                                    "momd에서 현재 버전 이름을 찾을 수 없다")
+        return try model(named: version)
+    }
+
     /// 지정한 모델로 스토어를 열고 컨테이너를 반환한다 (lightweight migration 켬).
     private func container(with model: NSManagedObjectModel) throws -> NSPersistentContainer {
         let container = NSPersistentContainer(name: "GagaeSsi", managedObjectModel: model)
@@ -209,13 +222,14 @@ final class CoreDataMigrationTests: XCTestCase {
         try oldContainer.viewContext.save()
         try unload(oldContainer)
 
-        let newContainer = try container(with: try model(named: "GagaeSsi 8"))
+        let newContainer = try container(with: try currentModel())
         let entity = try XCTUnwrap(
             try newContainer.viewContext.fetch(NSFetchRequest<BudgetConfig>(entityName: "BudgetConfig")).first)
 
         let migrated = BudgetConfigModel(entity: entity)
         XCTAssertEqual(migrated.salary, 2_500_000)
         XCTAssertEqual(migrated.themeMode, .system, "테마는 기본이 기기 설정")
+        XCTAssertEqual(migrated.budgetMode, .recurring, "예산 방식은 기본이 정기 수입")
         XCTAssertEqual(migrated.payday, 10)
         XCTAssertTrue(migrated.debtPlanEnabled)
         XCTAssertFalse(migrated.spendReminderEnabled)
@@ -236,13 +250,47 @@ final class CoreDataMigrationTests: XCTestCase {
 
         let newContainer = try container(with: try model(named: "GagaeSsi 8"))
         let entity = try XCTUnwrap(
+            try newContainer.viewContext.fetch(NSFetchRequest<NSManagedObject>(entityName: "BudgetConfig")).first)
+
+        XCTAssertEqual(entity.value(forKey: "salary") as? NSDecimalNumber,
+                       NSDecimalNumber(value: 3_300_000))
+        XCTAssertEqual(entity.value(forKey: "carryOverMode") as? String, "separate",
+                       "기존 설정이 보존된다")
+        XCTAssertEqual(ThemeMode.from(entity.value(forKey: "themeMode") as? String), .system,
+                       "테마 값이 비어 있어도 '기기 설정'으로 해석돼야 한다")
+
+        try unload(newContainer)
+    }
+
+    /// 8까지 쓰던 사용자는 예산 방식이 비어 있다 → 지금까지와 똑같은 '정기 수입'으로 동작해야 한다
+    func test_GagaeSsi8에서_9로_마이그레이션되고_예산방식은_정기수입이_기본() throws {
+        let oldContainer = try container(with: try model(named: "GagaeSsi 8"))
+        let config = NSEntityDescription.insertNewObject(forEntityName: "BudgetConfig",
+                                                         into: oldContainer.viewContext)
+        config.setValue(NSDecimalNumber(value: 2_800_000), forKey: "salary")
+        config.setValue(NSDecimalNumber(value: 15), forKey: "payday")
+        config.setValue("dark", forKey: "themeMode")
+        try oldContainer.viewContext.save()
+        try unload(oldContainer)
+
+        let newContainer = try container(with: try currentModel())
+        let entity = try XCTUnwrap(
             try newContainer.viewContext.fetch(NSFetchRequest<BudgetConfig>(entityName: "BudgetConfig")).first)
 
         let migrated = BudgetConfigModel(entity: entity)
-        XCTAssertEqual(migrated.salary, 3_300_000)
-        XCTAssertEqual(migrated.carryOverMode, .separate, "기존 설정이 보존된다")
-        XCTAssertEqual(migrated.themeMode, .system,
-                       "테마 값이 비어 있어도 '기기 설정'으로 해석돼야 한다")
+        XCTAssertEqual(migrated.salary, 2_800_000)
+        XCTAssertEqual(migrated.themeMode, .dark, "기존 테마 설정이 보존된다")
+        XCTAssertEqual(migrated.budgetMode, .recurring,
+                       "예산 방식 값이 비어 있어도 기존 동작(정기 수입)이어야 한다")
+        XCTAssertEqual(migrated.totalAmount, 0)
+        XCTAssertEqual(migrated.dailyAmount, 0)
+        XCTAssertNil(migrated.lumpSumEnd)
+
+        // 기본 일일 예산이 마이그레이션 전과 동일하게 나오는지 (회귀 방지)
+        let period = DailyBudgetCalculator.payPeriod(payday: 15, containing: Date())
+        let days = Calendar.current.dateComponents([.day], from: period.start, to: period.end).day ?? 0
+        XCTAssertEqual(DailyBudgetCalculator.calculate(from: migrated, for: Date()),
+                       2_800_000 / days)
 
         try unload(newContainer)
     }
@@ -259,7 +307,7 @@ final class CoreDataMigrationTests: XCTestCase {
 
         // 모델 변환(BudgetConfigModel)은 현재 모델의 속성을 모두 읽으므로 최신 버전으로 연다.
         // 구버전으로 열면 나중에 추가된 속성(themeMode 등)이 없어 접근 시 예외가 난다.
-        let newContainer = try container(with: try model(named: "GagaeSsi 8"))
+        let newContainer = try container(with: try currentModel())
         let entity = try XCTUnwrap(
             try newContainer.viewContext.fetch(NSFetchRequest<BudgetConfig>(entityName: "BudgetConfig")).first)
 

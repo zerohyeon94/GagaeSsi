@@ -202,14 +202,26 @@ extension SettingsView {
             sectionHeader("예산 설정")
             VStack(spacing: 0) {
                 NavigationLink {
+                    BudgetModeSettingView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#7A5AF8"), iconContent: AnyView(Text("🧭").font(.system(size: 15))),
+                               label: "예산 방식",
+                               rightText: currentConfig?.budgetMode.label)
+                }
+                .buttonStyle(.plain)
+
+                rowDivider
+                NavigationLink {
                     EditBudgetView()
                 } label: {
                     settingRow(iconBg: .gagaePinkDark, iconContent: AnyView(
                         Text("₩").font(.system(size: 13, weight: .black)).foregroundStyle(.white)
                     ), label: "월급 & 급여일",
-                    rightText: currentConfig.map { FormatterUtils.currencyString(from: $0.salary) })
+                    rightText: currentConfig.map { FormatterUtils.currencyString(from: $0.salary) },
+                    disabled: currentConfig?.budgetMode != .recurring)
                 }
                 .buttonStyle(.plain)
+                .disabled(currentConfig?.budgetMode != .recurring)
 
                 rowDivider
                 NavigationLink {

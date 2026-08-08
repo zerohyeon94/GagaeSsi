@@ -25,6 +25,12 @@ final class HomeViewModel {
     var unconfirmedVariableCosts: [FixedCostModel] = []
     /// 이월 방식 (전액 이월 / 모아둔 이월금 분리)
     var carryOverMode: CarryOverMode = .full
+    /// 예산 모드
+    var budgetMode: BudgetMode = .recurring
+    /// 총액 모드에서 기간이 끝났는지 (재설정 안내)
+    var isLumpSumPeriodOver = false
+    /// 총액 모드 남은 일수
+    var lumpSumDaysLeft = 0
     /// 모아둔 이월금 풀 잔액 (분리 모드)
     var carryOverPoolBalance: Int = 0
     /// 오늘 모아둔 이월금에서 가져온 금액 (인출·부족액 충당)
@@ -97,7 +103,13 @@ final class HomeViewModel {
         }
 
         unconfirmedVariableCosts = CoreDataManager.shared.unconfirmedVariableCosts()
-        carryOverMode = CoreDataManager.shared.fetchBudgetConfig()?.carryOverMode ?? .full
+        let config = CoreDataManager.shared.fetchBudgetConfig()
+        carryOverMode = config?.carryOverMode ?? .full
+        budgetMode = config?.budgetMode ?? .recurring
+        if let config {
+            isLumpSumPeriodOver = DailyBudgetCalculator.isLumpSumPeriodOver(config: config)
+            lumpSumDaysLeft = DailyBudgetCalculator.lumpSumDaysLeft(config: config)
+        }
         carryOverPoolBalance = CoreDataManager.shared.carryOverPoolBalance()
         todayPoolWithdrawn = CoreDataManager.shared.todayPoolWithdrawnAmount()
         activeDebt = CoreDataManager.shared.fetchActiveDebt()

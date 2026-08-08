@@ -38,6 +38,12 @@ struct HomeView: View {
                         .padding(.top, 10)
                         .padding(.bottom, 14)
 
+                    if viewModel.isLumpSumPeriodOver {
+                        lumpSumOverBanner
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 12)
+                    }
+
                     if !viewModel.unconfirmedVariableCosts.isEmpty {
                         unconfirmedBanner
                             .padding(.horizontal, 20)
@@ -524,6 +530,35 @@ extension HomeView {
         .background(Color.gagaeCardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .gagaeCardShadow()
+    }
+
+    /// 총액 모드 기간 종료 안내 — 예산이 0이 되므로 반드시 알려야 한다
+    private var lumpSumOverBanner: some View {
+        NavigationLink {
+            BudgetModeSettingView()
+        } label: {
+            HStack(spacing: 10) {
+                Text("🫙").font(.system(size: 20))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("정한 기간이 끝났어요")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                    Text("예산을 다시 설정해야 하루 금액이 나와요")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeTextSecondary)
+                }
+                Spacer()
+                Text("설정")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color.gagaePinkDark).clipShape(Capsule())
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .background(Color.gagaePinkLight)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
     }
 
     /// 변동 고정비 미확정 프롬프트 배너

@@ -27,6 +27,55 @@ enum CarryOverMode: String, Codable {
     }
 }
 
+// MARK: - 예산 모드
+
+/// 기본 일일 예산을 어떻게 산출할지.
+///
+/// 기존 엔진은 이미 "(금액, 기간) → 기본 일일 예산 + 이월" 구조라, **기본 일일 예산의
+/// 산출 방식만 모드화**하면 이월·위시 저금·부채·통계는 그대로 동작한다.
+enum BudgetMode: String, Codable, CaseIterable, Identifiable {
+    /// 매월 정해진 날 수입이 들어옴 (기존 모델. 월급·용돈 모두 포함)
+    case recurring
+    /// 모아둔 돈으로 정해진 기간을 버팀 (취준생·수입 중단기)
+    case lumpSum
+    /// 하루 금액을 직접 정함 (수입 구조를 묻지 않는 최소 폴백)
+    case fixedDaily
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .recurring: return "정기 수입"
+        case .lumpSum: return "모아둔 돈으로 생활"
+        case .fixedDaily: return "하루 예산 직접 설정"
+        }
+    }
+
+    var emoji: String {
+        switch self {
+        case .recurring: return "💰"
+        case .lumpSum: return "🫙"
+        case .fixedDaily: return "✏️"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .recurring: return "매월 정해진 날 들어오는 월급·용돈으로 관리해요"
+        case .lumpSum: return "지금 가진 돈으로 언제까지 버틸지 정해요"
+        case .fixedDaily: return "수입은 묻지 않고 하루 쓸 금액만 정해요"
+        }
+    }
+
+    /// 급여일·급여 기간 개념이 있는 모드인지.
+    /// 급여일 부채 정산(3-7)은 이 모드에서만 일어난다.
+    var hasPayPeriod: Bool { self == .recurring }
+
+    static func from(_ raw: String?) -> BudgetMode {
+        BudgetMode(rawValue: raw ?? "") ?? .recurring
+    }
+}
+
 // MARK: - 테마 모드
 
 /// 앱 테마. 기존 사용자는 라이트 고정에 익숙하므로 직접 고를 수 있게 한다.
@@ -88,6 +137,15 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
     var absorbedDebtPeriodStart: Date?
     /// 앱 테마 (기기 설정 / 밝게 / 어둡게)
     var themeMode: ThemeMode
+    /// 예산 산출 방식
+    var budgetMode: BudgetMode
+    /// 총액 모드: 지금 가진 돈
+    var totalAmount: Int
+    /// 총액 모드: 버틸 기간 [시작, 종료]
+    var lumpSumStart: Date?
+    var lumpSumEnd: Date?
+    /// 하루 직접 설정 모드: 하루 금액
+    var dailyAmount: Int
 
     // MARK: - Initializer
     /// 일반 생성자
@@ -99,7 +157,12 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
          spendReminderMinute: Int = SpendReminderSchedule.defaultMinute,
          absorbedDebtAmount: Int = 0,
          absorbedDebtPeriodStart: Date? = nil,
-         themeMode: ThemeMode = .system) {
+         themeMode: ThemeMode = .system,
+         budgetMode: BudgetMode = .recurring,
+         totalAmount: Int = 0,
+         lumpSumStart: Date? = nil,
+         lumpSumEnd: Date? = nil,
+         dailyAmount: Int = 0) {
         self.salary = salary
         self.payday = payday
         self.fixedCosts = fixedCosts
@@ -111,6 +174,11 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
         self.absorbedDebtAmount = absorbedDebtAmount
         self.absorbedDebtPeriodStart = absorbedDebtPeriodStart
         self.themeMode = themeMode
+        self.budgetMode = budgetMode
+        self.totalAmount = totalAmount
+        self.lumpSumStart = lumpSumStart
+        self.lumpSumEnd = lumpSumEnd
+        self.dailyAmount = dailyAmount
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -125,6 +193,11 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
         self.absorbedDebtAmount = Int(entity.absorbedDebtAmount)
         self.absorbedDebtPeriodStart = entity.absorbedDebtPeriodStart
         self.themeMode = ThemeMode.from(entity.themeMode)
+        self.budgetMode = BudgetMode.from(entity.budgetMode)
+        self.totalAmount = Int(entity.totalAmount)
+        self.lumpSumStart = entity.lumpSumStart
+        self.lumpSumEnd = entity.lumpSumEnd
+        self.dailyAmount = Int(entity.dailyAmount)
         // 기존 사용자 마이그레이션 시 Int16 기본값이 0(자정)이 되므로,
         // 알림을 켠 적이 없으면 기본 시각(21:00)으로 보정한다.
         if entity.spendReminderEnabled {

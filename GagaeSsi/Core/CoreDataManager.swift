@@ -61,6 +61,7 @@ final class CoreDataManager {
         config.spendReminderHour = Int16(model.spendReminderHour)
         config.spendReminderMinute = Int16(model.spendReminderMinute)
         config.themeMode = model.themeMode.rawValue
+        applyBudgetMode(model, to: config)
 
         for fixed in model.fixedCosts {
             let fixedCost = FixedCost(context: context)
@@ -106,8 +107,18 @@ final class CoreDataManager {
         config.spendReminderHour = Int16(model.spendReminderHour)
         config.spendReminderMinute = Int16(model.spendReminderMinute)
         config.themeMode = model.themeMode.rawValue
+        applyBudgetMode(model, to: config)
 
         return saveContext()
+    }
+
+    /// 예산 모드 관련 필드를 옮긴다 (모드별로 쓰는 필드가 달라 한곳에 모아둔다)
+    private func applyBudgetMode(_ model: BudgetConfigModel, to config: BudgetConfig) {
+        config.budgetMode = model.budgetMode.rawValue
+        config.totalAmount = Int32(model.totalAmount)
+        config.lumpSumStart = model.lumpSumStart
+        config.lumpSumEnd = model.lumpSumEnd
+        config.dailyAmount = Int32(model.dailyAmount)
     }
 
     /// 앱 테마만 변경 (기기 설정 / 밝게 / 어둡게)
@@ -1214,6 +1225,10 @@ final class CoreDataManager {
                                     installments: [InstallmentModel]) -> Bool {
         let calendar = Calendar.current
         let day = calendar.startOfDay(for: date)
+
+        // 급여일 정산은 급여 기간이 있는 모드에서만 의미가 있다.
+        // 총액 모드는 기간이 한 번뿐이고, 하루 직접 설정 모드는 기간 개념 자체가 없다.
+        guard config.budgetMode.hasPayPeriod else { return false }
         let period = DailyBudgetCalculator.payPeriod(payday: config.payday, containing: day)
 
         guard config.debtPlanEnabled,
@@ -1234,6 +1249,7 @@ final class CoreDataManager {
     /// 다만 **이번 기간에 새로 생긴 부채는 대상이 아니다** (그건 나눠 갚기로 처리한다).
     /// 급여일 전날 초과분은 급여일에 부채가 만들어지므로 `startedAt <= period.start`로 판정한다.
     private func isPendingPeriodAbsorption(config: BudgetConfigModel, on date: Date) -> Bool {
+        guard config.budgetMode.hasPayPeriod else { return false }
         let calendar = Calendar.current
         let day = calendar.startOfDay(for: date)
         let period = DailyBudgetCalculator.payPeriod(payday: config.payday, containing: day)

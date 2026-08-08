@@ -11,13 +11,28 @@ struct DailyBudgetCalculator {
 
     // MARK: - 일일 예산
 
-    /// 일일 예산 계산: (월급 − 고정비 합계 − 활성 할부 월납입 합 − 흡수한 초과분) ÷ 급여 기간 일수 (원 단위 내림)
-    ///
-    /// 흡수한 초과분은 급여일에 남아 있던 부채를 그 급여 기간 예산에 녹인 금액이다.
-    /// 부채가 급여 기간을 넘어 무한히 끌리지 않게 하고, 하루 예산이 음수로 보이지 않게 한다.
+    /// 기본 일일 예산을 산출한다. **예산 모드에 따라 산출 방식만 달라지고**,
+    /// 이월·위시 저금·부채 상환·통계는 모드와 무관하게 동일하게 동작한다.
     static func calculate(from config: BudgetConfigModel,
                           installments: [InstallmentModel] = [],
                           for date: Date) -> Int {
+        switch config.budgetMode {
+        case .recurring:
+            return recurringDailyBudget(from: config, installments: installments, for: date)
+        case .lumpSum:
+            return lumpSumDailyBudget(from: config, for: date)
+        case .fixedDaily:
+            return max(0, config.dailyAmount)
+        }
+    }
+
+    /// 정기 수입: (수입 − 고정비 − 할부 − 흡수한 초과분) ÷ 급여 기간 일수 (원 단위 내림)
+    ///
+    /// 흡수한 초과분은 급여일에 남아 있던 부채를 그 급여 기간 예산에 녹인 금액이다.
+    /// 부채가 급여 기간을 넘어 무한히 끌리지 않게 하고, 하루 예산이 음수로 보이지 않게 한다.
+    private static func recurringDailyBudget(from config: BudgetConfigModel,
+                                             installments: [InstallmentModel],
+                                             for date: Date) -> Int {
         let period = payPeriod(payday: config.payday, containing: date)
         let usableSalary = usableSalary(from: config, installments: installments,
                                         for: date, period: period)
@@ -26,6 +41,43 @@ struct DailyBudgetCalculator {
         guard totalDays > 0 else { return usableSalary }   // 방어: 비정상 기간
 
         return usableSalary / totalDays
+    }
+
+    /// 총액 모드: 총액 ÷ (시작일 ~ 종료일 일수). 종료일이 지나면 **0**.
+    ///
+    /// 마지막 값을 유지하면 이미 다 쓴 돈을 계속 배정하는 셈이라, 없으면 없다고 보여준다.
+    /// 홈에서 기간 종료를 안내해 재설정을 유도한다.
+    private static func lumpSumDailyBudget(from config: BudgetConfigModel, for date: Date) -> Int {
+        guard config.totalAmount > 0,
+              let start = config.lumpSumStart, let end = config.lumpSumEnd else { return 0 }
+
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: date)
+        let startDay = calendar.startOfDay(for: start)
+        let endDay = calendar.startOfDay(for: end)
+
+        guard day <= endDay else { return 0 }              // 기간 종료 → 재설정 필요
+        guard let days = calendar.dateComponents([.day], from: startDay, to: endDay).day,
+              days >= 0 else { return 0 }
+
+        return config.totalAmount / (days + 1)             // 종료일 당일도 쓸 수 있는 날
+    }
+
+    /// 총액 모드에서 기간이 끝났는지 (홈 안내용)
+    static func isLumpSumPeriodOver(config: BudgetConfigModel, on date: Date = Date()) -> Bool {
+        guard config.budgetMode == .lumpSum, let end = config.lumpSumEnd else { return false }
+        let calendar = Calendar.current
+        return calendar.startOfDay(for: date) > calendar.startOfDay(for: end)
+    }
+
+    /// 총액 모드에서 남은 일수 (종료일 당일 포함). 기간이 끝났으면 0.
+    static func lumpSumDaysLeft(config: BudgetConfigModel, on date: Date = Date()) -> Int {
+        guard config.budgetMode == .lumpSum, let end = config.lumpSumEnd else { return 0 }
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day],
+                                           from: calendar.startOfDay(for: date),
+                                           to: calendar.startOfDay(for: end)).day ?? -1
+        return max(0, days + 1)
     }
 
     /// 급여 기간 전체에 배분할 금액 (흡수한 초과분 차감 전/후 구분용으로 분리)
