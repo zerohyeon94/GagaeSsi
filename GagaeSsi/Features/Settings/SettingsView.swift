@@ -99,6 +99,7 @@ struct SettingsView: View {
         CoreDataManager.shared.resetAllData()
         NotificationService.shared.cancelAllVariableCostReminders()
         NotificationService.shared.cancelAllSpendReminders()
+        NotificationService.shared.cancelAllPaybackReminders()
         withAnimation { showConfirm = false }
         withAnimation { showToast = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {

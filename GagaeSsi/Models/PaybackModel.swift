@@ -50,6 +50,10 @@ struct PaybackModel: Identifiable {
     var periodStart: Date?
     var periodEnd: Date?
     var createdAt: Date
+    /// 기간형에서 자동으로 묶을 소비 카테고리 (nil이면 수동 입력)
+    var linkedCategory: SpendingCategory?
+    /// 환급률 % (0이면 미사용). 묶인 소비 합계 × 이 비율로 예상액을 계산한다.
+    var refundRatePercent: Int
 
     /// 현재 대표 금액 (수령>확정>예상 순)
     var currentAmount: Int {
@@ -62,7 +66,8 @@ struct PaybackModel: Identifiable {
          status: PaybackStatus = .estimated,
          estimatedAmount: Int = 0, confirmedAmount: Int = 0, receivedAmount: Int = 0,
          expectedDate: Date? = nil, receivedDate: Date? = nil,
-         periodStart: Date? = nil, periodEnd: Date? = nil, createdAt: Date = Date()) {
+         periodStart: Date? = nil, periodEnd: Date? = nil, createdAt: Date = Date(),
+         linkedCategory: SpendingCategory? = nil, refundRatePercent: Int = 0) {
         self.id = id
         self.title = title
         self.type = type
@@ -75,6 +80,8 @@ struct PaybackModel: Identifiable {
         self.periodStart = periodStart
         self.periodEnd = periodEnd
         self.createdAt = createdAt
+        self.linkedCategory = linkedCategory
+        self.refundRatePercent = refundRatePercent
     }
 
     init(entity: Payback) {
@@ -90,5 +97,19 @@ struct PaybackModel: Identifiable {
         self.periodStart = entity.periodStart
         self.periodEnd = entity.periodEnd
         self.createdAt = entity.createdAt ?? Date()
+        self.linkedCategory = entity.linkedCategory.flatMap { SpendingCategory(rawValue: $0) }
+        self.refundRatePercent = Int(entity.refundRatePercent)
+    }
+
+    /// 기간 내 묶인 소비 합계로 예상 환급액을 계산한다 (원 단위 내림).
+    /// 환급률이 0이면 자동 계산하지 않는다 — 사용자가 직접 적은 금액을 덮어쓰면 안 된다.
+    func estimatedRefund(fromLinkedTotal total: Int) -> Int? {
+        guard refundRatePercent > 0, total > 0 else { return nil }
+        return total * refundRatePercent / 100
+    }
+
+    /// 소비를 자동으로 묶을 수 있는 상태인지 (기간형 + 카테고리 지정)
+    var canLinkSpending: Bool {
+        type == .period && linkedCategory != nil && periodStart != nil && periodEnd != nil
     }
 }

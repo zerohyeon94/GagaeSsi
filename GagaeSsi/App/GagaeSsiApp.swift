@@ -73,11 +73,13 @@ struct RootView: View {
             // 앱 실행 시 변동 고정비 지출일 알림 + 소비 기록 리마인더를 현재 상태로 재설정
             CoreDataManager.shared.refreshVariableCostReminders()
             CoreDataManager.shared.refreshSpendReminders()
+            CoreDataManager.shared.refreshPaybackReminders()
         }
         .onChange(of: scenePhase) {
             if scenePhase == .active {
                 CoreDataManager.shared.refreshVariableCostReminders()
                 CoreDataManager.shared.refreshSpendReminders()
+                CoreDataManager.shared.refreshPaybackReminders()
             }
         }
         .onChange(of: eventBus.spendingAddedTrigger) {

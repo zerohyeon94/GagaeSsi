@@ -49,6 +49,7 @@ final class NotificationService {
     private let center = UNUserNotificationCenter.current()
     private let idPrefix = "vcost-"
     private let spendIdPrefix = "spend-"
+    private let paybackIdPrefix = "payback-"
 
     // MARK: - 권한
     /// 아직 결정되지 않았으면 권한을 요청한다 (거부/허용 이미 결정 시 아무것도 안 함).
@@ -158,6 +159,50 @@ final class NotificationService {
                                                     content: content, trigger: trigger)
                 self.center.add(request)
             }
+        }
+    }
+
+    // MARK: - 페이백 수령 알림
+
+    /// 수령 예정일 아침에 "받으셨나요?"를 알린다.
+    ///
+    /// 환급은 예정일이 지나도 아무도 알려주지 않아 그냥 잊고 넘어가기 쉽다.
+    /// 이미 지난 예정일은 알림을 걸 수 없으므로(과거 시각) 홈/목록 배너가 그 역할을 한다.
+    /// - Parameter items: (식별용 id, 제목, 예정일) 목록. CoreData 조회는 호출자가 미리 한다.
+    func refreshPaybackReminders(items: [(id: UUID, title: String, expectedDate: Date)],
+                                 hour: Int = 10, now: Date = Date()) {
+        center.getPendingNotificationRequests { [weak self] requests in
+            guard let self else { return }
+            let ids = requests.map(\.identifier).filter { $0.hasPrefix(self.paybackIdPrefix) }
+            self.center.removePendingNotificationRequests(withIdentifiers: ids)
+
+            for item in items {
+                var comps = Calendar.current.dateComponents([.year, .month, .day], from: item.expectedDate)
+                comps.hour = hour
+                comps.minute = 0
+
+                guard let fireDate = Calendar.current.date(from: comps), fireDate > now else { continue }
+
+                let content = UNMutableNotificationContent()
+                content.title = "가계씨 💸"
+                content.body = "‘\(item.title)’ 환급 예정일이에요. 입금됐는지 확인해보세요."
+                content.sound = .default
+
+                let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+                let request = UNNotificationRequest(
+                    identifier: "\(self.paybackIdPrefix)\(item.id.uuidString)",
+                    content: content, trigger: trigger)
+                self.center.add(request)
+            }
+        }
+    }
+
+    /// 모든 페이백 알림 제거 (데이터 초기화)
+    func cancelAllPaybackReminders() {
+        center.getPendingNotificationRequests { [weak self] requests in
+            guard let self else { return }
+            let ids = requests.map(\.identifier).filter { $0.hasPrefix(self.paybackIdPrefix) }
+            self.center.removePendingNotificationRequests(withIdentifiers: ids)
         }
     }
 

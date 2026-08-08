@@ -84,6 +84,62 @@ struct PaybackListView: View {
         }
     }
 
+    /// 예정일이 지났는데 아직 수령하지 않았는지
+    private func isOverdue(_ item: PaybackModel) -> Bool {
+        guard item.status == .estimated || item.status == .confirmed,
+              let expected = item.expectedDate else { return false }
+        return Calendar.current.startOfDay(for: expected) <= Calendar.current.startOfDay(for: Date())
+    }
+
+    /// 자동으로 묶인 소비 합계 — 사용자가 한 달치를 직접 더하지 않아도 되게 한다
+    @ViewBuilder
+    private func linkedSummary(_ item: PaybackModel) -> some View {
+        let linked = CoreDataManager.shared.linkedSpendingTotal(for: item)
+        if linked.count > 0, let category = item.linkedCategory {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text("\(category.emoji) \(category.rawValue) \(linked.count)건")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                    Spacer()
+                    Text(FormatterUtils.currencyString(from: linked.total))
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                }
+                if let expected = item.estimatedRefund(fromLinkedTotal: linked.total) {
+                    HStack(spacing: 4) {
+                        Text("환급률 \(item.refundRatePercent)% → 예상 \(FormatterUtils.currencyString(from: expected))")
+                            .font(.gagaeCaption).foregroundStyle(.gagaePinkDark)
+                        Spacer()
+                        if expected != item.estimatedAmount {
+                            Button {
+                                applyEstimate(item, amount: expected)
+                            } label: {
+                                Text("예상액에 반영")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(Color.gagaePinkDark).clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 6).padding(.horizontal, 8)
+            .background(Color.gagaeSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private func applyEstimate(_ item: PaybackModel, amount: Int) {
+        var updated = item
+        updated.estimatedAmount = amount
+        if updated.status == .estimated || updated.status == .confirmed {
+            _ = CoreDataManager.shared.updatePayback(updated)
+            load()
+        }
+    }
+
     private func row(_ item: PaybackModel) -> some View {
         GagaeCard {
             VStack(alignment: .leading, spacing: GagaeSpacing.xs) {
@@ -101,6 +157,19 @@ struct PaybackListView: View {
                 if let ps = item.periodStart, let pe = item.periodEnd {
                     Text("기간 \(dateStr(ps)) ~ \(dateStr(pe))")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                }
+
+                // 예정일이 지났는데 아직 못 받았으면 알려준다 — 잊고 넘어가기 쉬운 돈이다
+                if isOverdue(item) {
+                    HStack(spacing: 4) {
+                        Text("⏰").font(.system(size: 11))
+                        Text("예정일이 지났어요. 입금됐는지 확인해보세요.")
+                            .font(.gagaeCaption).foregroundStyle(.gagaeWarning)
+                    }
+                }
+
+                if item.canLinkSpending {
+                    linkedSummary(item)
                 }
                 HStack(spacing: GagaeSpacing.sm) {
                     if item.status != .received && item.status != .cancelled {

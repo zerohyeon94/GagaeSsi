@@ -254,6 +254,15 @@ final class CoreDataManager {
         NotificationService.shared.refreshSpendReminders(fireDates: fireDates)
     }
 
+    /// 페이백 수령 예정일 알림을 현재 상태 기준으로 재예약한다.
+    /// 아직 받지 않은(예상·확정) 건만 대상이다.
+    func refreshPaybackReminders(now: Date = Date()) {
+        let items = fetchPaybacks()
+            .filter { ($0.status == .estimated || $0.status == .confirmed) && $0.expectedDate != nil }
+            .map { (id: $0.id, title: $0.title.isEmpty ? "환급" : $0.title, expectedDate: $0.expectedDate!) }
+        NotificationService.shared.refreshPaybackReminders(items: items, now: now)
+    }
+
     /// 리마인더 설정 변경 (토글·시각) 후 알림을 즉시 재예약한다.
     @discardableResult
     func updateSpendReminder(enabled: Bool, hour: Int, minute: Int) -> Bool {
@@ -391,6 +400,42 @@ final class CoreDataManager {
         e.receivedDate = m.receivedDate
         e.periodStart = m.periodStart
         e.periodEnd = m.periodEnd
+        e.linkedCategory = m.linkedCategory?.rawValue
+        e.refundRatePercent = Int16(m.refundRatePercent)
+    }
+
+    /// 기간형 페이백에 묶인 소비 (기간 + 카테고리로 자동 수집, 최신순).
+    /// K-패스처럼 한 달치 교통비를 사용자가 직접 더하지 않아도 되게 한다.
+    func linkedSpending(for payback: PaybackModel) -> [SpendingRecordModel] {
+        guard payback.canLinkSpending,
+              let start = payback.periodStart, let end = payback.periodEnd,
+              let category = payback.linkedCategory else { return [] }
+
+        let calendar = Calendar.current
+        let from = calendar.startOfDay(for: start)
+        // periodEnd는 사용자가 고른 '마지막 날'이라 그날 전체를 포함해야 한다
+        guard let to = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: end)) else {
+            return []
+        }
+        return fetchSpendingRecords(from: from, to: to)
+            .filter { $0.category == category }
+            .sorted { $0.date > $1.date }
+    }
+
+    /// 묶인 소비의 합계와 건수
+    func linkedSpendingTotal(for payback: PaybackModel) -> (total: Int, count: Int) {
+        let records = linkedSpending(for: payback)
+        return (records.reduce(0) { $0 + $1.amount }, records.count)
+    }
+
+    /// 수령 예정일이 지났는데 아직 받지 못한 페이백 (알림·배너용)
+    func overduePaybacks(asOf date: Date = Date()) -> [PaybackModel] {
+        let today = Calendar.current.startOfDay(for: date)
+        return fetchPaybacks().filter { payback in
+            guard payback.status == .estimated || payback.status == .confirmed,
+                  let expected = payback.expectedDate else { return false }
+            return Calendar.current.startOfDay(for: expected) <= today
+        }
     }
 
     func deletePayback(id: UUID) -> Bool {
