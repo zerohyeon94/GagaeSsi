@@ -17,6 +17,8 @@ final class HomeViewModel {
     var spentAmount: Int = 0
     /// 오늘 저금 차감액 (활성 위시)
     var wishSavingAmount: Int = 0
+    /// 오늘 저축·투자로 옮긴 금액 (소비가 아니라 이동)
+    var transferAmount: Int = 0
     /// 현재 활성 위시 아이템 (없으면 nil)
     var activeWish: WishItemModel?
     /// 지출일이 지났는데 이번 달 아직 확정 안 한 변동 고정비 (홈 프롬프트)
@@ -181,6 +183,7 @@ final class HomeViewModel {
         spentAmount = spent
         todayAvailableAmount = total
         wishSavingAmount = model.wishSavingAmount
+        transferAmount = model.transferAmount
         activeWish = CoreDataManager.shared.fetchActiveWishItem()
     }
 }

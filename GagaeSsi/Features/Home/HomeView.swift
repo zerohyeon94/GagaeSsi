@@ -319,6 +319,12 @@ extension HomeView {
                           value: "-" + FormatterUtils.currencyString(from: viewModel.todayDebtRepayment),
                           valueColor: .gagaePinkDark, bold: false)
             }
+            if viewModel.transferAmount > 0 {
+                divider
+                statusRow(emoji: "📈", label: "저축·투자",
+                          value: "-" + FormatterUtils.currencyString(from: viewModel.transferAmount),
+                          valueColor: .gagaeGood, bold: false)
+            }
             divider
             statusRow(emoji: "🛒", label: "오늘 소비",
                       value: "-" + FormatterUtils.currencyString(from: viewModel.spentAmount),

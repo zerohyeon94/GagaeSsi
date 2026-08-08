@@ -17,6 +17,7 @@ struct SpendView: View {
     @State private var showShortfall = false
     @State private var shortfallCover = 0
     @State private var shortfallPool = 0
+    @State private var showAssetTransfer = false
 
     enum Field { case title, amount, payback }
 
@@ -42,6 +43,23 @@ struct SpendView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(Color.gagaePinkGradientTop, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showAssetTransfer = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("📈").font(.system(size: 13))
+                        Text("저축·투자")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(.gagaePinkDark)
+                }
+            }
+        }
+        .sheet(isPresented: $showAssetTransfer) {
+            AssetTransferView()
+        }
         .onAppear {
             let today = Calendar.current.startOfDay(for: Date())
             viewModel.fetchSpending(on: today)

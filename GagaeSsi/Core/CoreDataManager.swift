@@ -791,7 +791,7 @@ final class CoreDataManager {
 
     // MARK: - Utilities
     func resetAllData() {
-        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "Payback", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry", "SpendingDebt", "DebtRepaymentEntry"]
+        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "Payback", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry", "SpendingDebt", "DebtRepaymentEntry", "AssetTransfer"]
 
         for entityName in entityNames {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
@@ -1435,6 +1435,70 @@ final class CoreDataManager {
         entry.amount = NSDecimalNumber(value: -amount)
 
         return saveContext()
+    }
+
+    // MARK: - 저축·투자 (이동)
+
+    /// 저축·투자 기록을 추가한다.
+    /// SpendingRecord를 만들지 않으므로 소비 통계·초과한 날 판정에 잡히지 않고,
+    /// DailyBudget에 달린 관계로만 오늘 예산에서 차감된다 (위시 저금과 같은 구조).
+    @discardableResult
+    func createAssetTransfer(_ model: AssetTransferModel) -> Bool {
+        guard model.amount > 0 else { return false }
+        let day = Calendar.current.startOfDay(for: model.date)
+        guard let budget = fetchOrCreateDailyBudgetEntity(date: day) else { return false }
+
+        let transfer = AssetTransfer(context: context)
+        transfer.id = model.id
+        transfer.date = model.date
+        transfer.amount = NSDecimalNumber(value: model.amount)
+        transfer.title = model.title
+        transfer.kind = model.kind.rawValue
+        transfer.dailyBudget = budget
+        budget.addToAssetTransfers(transfer)
+
+        return saveContext()
+    }
+
+    @discardableResult
+    func deleteAssetTransfer(id: UUID) -> Bool {
+        let request: NSFetchRequest<AssetTransfer> = AssetTransfer.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        guard let entity = try? context.fetch(request).first else { return false }
+        context.delete(entity)
+        return saveContext()
+    }
+
+    /// 특정 날짜의 저축·투자 기록 (최신순)
+    func fetchAssetTransfers(date: Date) -> [AssetTransferModel] {
+        let day = Calendar.current.startOfDay(for: date)
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: day)!
+        return fetchAssetTransfers(from: day, to: end)
+    }
+
+    /// 기간 내 저축·투자 기록 (최신순). `[from, to)` 반개구간.
+    func fetchAssetTransfers(from startDate: Date, to endDate: Date) -> [AssetTransferModel] {
+        let request: NSFetchRequest<AssetTransfer> = AssetTransfer.fetchRequest()
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@",
+                                        startDate as NSDate, endDate as NSDate)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
+        let entities = (try? context.fetch(request)) ?? []
+        return entities.map(AssetTransferModel.init)
+    }
+
+    /// 그 달의 저축·투자 집계
+    func assetTransferSummary(year: Int, month: Int) -> AssetTransferSummary {
+        let calendar = Calendar.current
+        guard let start = calendar.date(from: DateComponents(year: year, month: month, day: 1)),
+              let end = calendar.date(byAdding: .month, value: 1, to: start) else {
+            return AssetTransferSummary()
+        }
+        return AssetTransferSummary.make(from: fetchAssetTransfers(from: start, to: end))
+    }
+
+    /// 오늘 저축·투자로 옮긴 금액 (홈 표시용)
+    func todayAssetTransferAmount() -> Int {
+        fetchAssetTransfers(date: Date()).reduce(0) { $0 + $1.amount }
     }
 
     // MARK: - 위시리스트 저금

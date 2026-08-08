@@ -211,22 +211,27 @@ struct DailyBudgetModel: Identifiable {
     var spendingRecords: [SpendingRecordModel]
     /// 그날 위시리스트에 저금한 금액 합계 (오늘 가용 금액에서 차감)
     var wishSavingAmount: Int
+    /// 그날 저축·투자로 옮긴 금액 합계.
+    /// 예산에서는 빠지지만 소비가 아니라 '이동'이라 소비 통계·초과 판정에는 잡히지 않는다.
+    var transferAmount: Int
 
     // 실제 오늘 쓸 수 있는 총 금액
     var todayAvailable: Int {
         let carry = carryOverSources.map { $0.amount }.reduce(0, +)
         let spent = spendingRecords.map { $0.amount }.reduce(0, +)
-        return availableAmount + carry - spent - wishSavingAmount
+        return availableAmount + carry - spent - wishSavingAmount - transferAmount
     }
 
     // MARK: - Initializer
     init(availableAmount: Int, date: Date, carryOverSources: [CarryOverSourceModel],
-         spendingRecords: [SpendingRecordModel], wishSavingAmount: Int = 0) {
+         spendingRecords: [SpendingRecordModel], wishSavingAmount: Int = 0,
+         transferAmount: Int = 0) {
         self.availableAmount = availableAmount
         self.date = date
         self.carryOverSources = carryOverSources
         self.spendingRecords = spendingRecords
         self.wishSavingAmount = wishSavingAmount
+        self.transferAmount = transferAmount
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -242,6 +247,9 @@ struct DailyBudgetModel: Identifiable {
 
         let savings = entity.wishSavingEntries?.allObjects as? [WishSavingEntry] ?? []
         self.wishSavingAmount = savings.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+
+        let transfers = entity.assetTransfers?.allObjects as? [AssetTransfer] ?? []
+        self.transferAmount = transfers.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
     }
 }
 

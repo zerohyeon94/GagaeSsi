@@ -24,6 +24,7 @@ struct StatsView: View {
                         emptyStateCard
                     } else {
                         monthlySummaryCard
+                        if viewModel.transferSummary.total > 0 { transferCard }
                         categoryCard
                         dailyChartCard
                         timeSlotCard
@@ -224,6 +225,44 @@ extension StatsView {
             }
             .frame(height: 8)
         }
+    }
+
+    /// 이번 달 저축·투자 카드 — 소비가 아니라 '이동'이라 위 소비 합계와 별개다
+    private var transferCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("이번 달 모은 돈")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Spacer()
+                Text(FormatterUtils.currencyString(from: viewModel.transferSummary.total))
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.gagaeGood)
+            }
+
+            HStack(spacing: 0) {
+                ForEach(AssetTransferKind.allCases) { kind in
+                    VStack(spacing: 3) {
+                        Text(FormatterUtils.currencyString(from: viewModel.transferSummary.total(of: kind)))
+                            .font(.system(size: 15, weight: .heavy, design: .rounded))
+                            .foregroundStyle(kind.color)
+                        Text("\(kind.emoji) \(kind.label)")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundStyle(.gagaeTextTertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+
+            Text("저축·투자는 쓴 돈이 아니라 옮긴 돈이라 위 소비 통계에는 포함되지 않아요.")
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(.gagaeTextTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
     }
 
     /// 카테고리별 지출 카드

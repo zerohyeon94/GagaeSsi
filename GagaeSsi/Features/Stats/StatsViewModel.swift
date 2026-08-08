@@ -21,6 +21,9 @@ final class StatsViewModel {
     var dailyAverage: Int = 0
     var baseDailyBudget: Int = 0
 
+    /// 이번 달 저축·투자 (소비가 아니라 이동이라 위 소비 합계에는 포함되지 않는다)
+    var transferSummary = AssetTransferSummary()
+
     /// 시간대별 소비 (오전/점심/저녁/심야)
     var timeSlotTotals: [TimeSlotTotal] = []
     /// 시간 정보가 있어 시간대 집계에 포함된 기록 수
@@ -98,6 +101,13 @@ final class StatsViewModel {
         loadDailyStats()
         loadMonthlyComparison()
         loadTimeSlotStats()
+        loadTransferSummary()
+    }
+
+    private func loadTransferSummary() {
+        let comps = Calendar.current.dateComponents([.year, .month], from: selectedMonth)
+        transferSummary = CoreDataManager.shared.assetTransferSummary(
+            year: comps.year ?? 0, month: comps.month ?? 0)
     }
 
     func goToPrevMonth() {
