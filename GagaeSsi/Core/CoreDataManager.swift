@@ -139,10 +139,7 @@ final class CoreDataManager {
             }
         }
         if swept > 0 {
-            let entry = CarryOverPoolEntry(context: context)
-            entry.id = UUID()
-            entry.date = today
-            entry.amount = NSDecimalNumber(value: swept)
+            addPoolEntry(amount: swept, date: today, reason: .sweep)
         }
     }
 
@@ -978,10 +975,7 @@ final class CoreDataManager {
                 if config.carryOverMode == .separate {
                     let deposit = max(0, prevBalance)
                     if deposit > 0 {
-                        let entry = CarryOverPoolEntry(context: context)
-                        entry.id = UUID()
-                        entry.date = cursor
-                        entry.amount = NSDecimalNumber(value: deposit)
+                        addPoolEntry(amount: deposit, date: cursor, reason: .deposit)
                     }
                 }
             }
@@ -1076,11 +1070,7 @@ final class CoreDataManager {
 
         let today = Calendar.current.startOfDay(for: Date())
 
-        let poolEntry = CarryOverPoolEntry(context: context)
-        poolEntry.id = UUID()
-        poolEntry.date = today
-        poolEntry.amount = NSDecimalNumber(value: -amount)
-
+        addPoolEntry(amount: -amount, date: today, reason: .debtRepay)
         recordRepayment(amount, on: today, source: .pool, debt: debt)
         return saveContext()
     }
@@ -1403,20 +1393,17 @@ final class CoreDataManager {
         return entries.reduce(0) { $0 - Int(truncating: $1.amount ?? 0) }   // 음수의 절대값 합
     }
 
-    /// 남은 양수를 풀에 적립 (분리 모드 일자 생성 시 내부 호출)
     /// 모아둔 이월금 풀에 적립한다 (일자 전환 시 남은 양수 / 테스트 시드용)
-    func depositToPool(amount: Int, date: Date) {
+    func depositToPool(amount: Int, date: Date, reason: CarryOverPoolReason = .deposit) {
         guard amount > 0 else { return }
-        let entry = CarryOverPoolEntry(context: context)
-        entry.id = UUID()
-        entry.date = date
-        entry.amount = NSDecimalNumber(value: amount)
+        addPoolEntry(amount: amount, date: date, reason: reason)
         _ = saveContext()
     }
 
     /// 풀에서 오늘 예산으로 꺼내 쓴다. 오늘 이월(+) 추가 + 풀 인출(−). 잔액 초과 불가.
+    /// - Parameter reason: 왜 꺼냈는지. 원장에 남아 나중에 사용 내역으로 볼 수 있다.
     @discardableResult
-    func withdrawFromPool(amount: Int) -> Bool {
+    func withdrawFromPool(amount: Int, reason: CarryOverPoolReason = .withdraw) -> Bool {
         guard amount > 0, amount <= carryOverPoolBalance() else { return false }
         let today = Calendar.current.startOfDay(for: Date())
         guard let budget = fetchOrCreateDailyBudgetEntity(date: today) else { return false }
@@ -1429,12 +1416,31 @@ final class CoreDataManager {
         cos.dailyBudget = budget
         budget.addToCarryOverSources(cos)
 
+        addPoolEntry(amount: -amount, date: today, reason: reason)
+        return saveContext()
+    }
+
+    /// 원장 한 줄 추가 (저장은 호출자가 한다)
+    private func addPoolEntry(amount: Int, date: Date, reason: CarryOverPoolReason) {
         let entry = CarryOverPoolEntry(context: context)
         entry.id = UUID()
-        entry.date = today
-        entry.amount = NSDecimalNumber(value: -amount)
+        entry.date = date
+        entry.amount = NSDecimalNumber(value: amount)
+        entry.reason = reason.rawValue
+    }
 
-        return saveContext()
+    /// 최근 `months`개월 모아둔 이월금 원장 (최신순)
+    func fetchPoolEntries(months: Int = 3, now: Date = Date()) -> [CarryOverPoolEntryModel] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        guard let start = calendar.date(byAdding: .month, value: -months, to: today),
+              let end = calendar.date(byAdding: .day, value: 1, to: today) else { return [] }
+
+        let request: NSFetchRequest<CarryOverPoolEntry> = CarryOverPoolEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", start as NSDate, end as NSDate)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
+        let entities = (try? context.fetch(request)) ?? []
+        return entities.map(CarryOverPoolEntryModel.init)
     }
 
     // MARK: - 저축·투자 (이동)

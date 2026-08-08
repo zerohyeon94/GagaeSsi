@@ -151,7 +151,7 @@ final class SpendViewModel {
 
     /// 모아둔 이월금에서 부족액을 충당한다.
     func coverShortfall(amount: Int, eventBus: AppEventBus) {
-        if CoreDataManager.shared.withdrawFromPool(amount: amount) {
+        if CoreDataManager.shared.withdrawFromPool(amount: amount, reason: .shortfall) {
             eventBus.notifySpendingAdded()   // 오늘 예산 크레딧 → 홈 갱신
         }
     }

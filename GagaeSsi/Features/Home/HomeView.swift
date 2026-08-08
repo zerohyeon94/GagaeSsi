@@ -372,19 +372,30 @@ extension HomeView {
                 Circle().fill(Color.gagaePinkLight).frame(width: 40, height: 40)
                 Text("🐷").font(.system(size: 20))
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("모아둔 이월금")
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(.gagaeTextSecondary)
-                Text(FormatterUtils.currencyString(from: viewModel.carryOverPoolBalance))
-                    .font(.system(size: 20, weight: .heavy, design: .rounded))
-                    .foregroundStyle(.gagaeText)
-                if viewModel.todayPoolWithdrawn > 0 {
-                    Text("오늘 \(FormatterUtils.currencyString(from: viewModel.todayPoolWithdrawn)) 가져옴")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.gagaePinkDark)
+            NavigationLink {
+                CarryOverPoolHistoryView(balance: viewModel.carryOverPoolBalance)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 3) {
+                        Text("모아둔 이월금")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(.gagaeTextSecondary)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.gagaeTextTertiary)
+                    }
+                    Text(FormatterUtils.currencyString(from: viewModel.carryOverPoolBalance))
+                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                    if viewModel.todayPoolWithdrawn > 0 {
+                        Text("오늘 \(FormatterUtils.currencyString(from: viewModel.todayPoolWithdrawn)) 가져옴")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.gagaePinkDark)
+                    }
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             Spacer()
             Button {
                 showWithdraw = true
