@@ -24,7 +24,7 @@ final class OverspendHistoryTests: XCTestCase {
 
     // MARK: - 순수 역산 로직
 
-    func test_잔액이_음수인_날만_초과일로_잡는다() {
+    func test_배정액을_넘긴_날만_초과일로_잡는다() {
         let budgets = [
             DailyBudgetModel(availableAmount: 50_000, date: day(-3),
                              carryOverSources: [], spendingRecords: [
@@ -43,23 +43,56 @@ final class OverspendHistoryTests: XCTestCase {
         XCTAssertEqual(days[0].availableThatDay, 50_000)
     }
 
-    func test_이월을_반영해_초과를_판정한다() {
-        // 소비는 기본 예산보다 많지만 이월이 넉넉해 실제로는 초과가 아니다
-        let notOver = DailyBudgetModel(
+    func test_아껴서_넘어온_이월은_그날_쓸_수_있는_돈에_포함된다() {
+        // 소비가 기본 예산보다 많아도 아껴둔 이월이 넉넉하면 초과가 아니다
+        let budget = DailyBudgetModel(
             availableAmount: 50_000, date: day(-1),
             carryOverSources: [CarryOverSourceModel(amount: 100_000, date: day(-2), toDate: day(-1))],
             spendingRecords: [SpendingRecordModel(title: "큰 지출", amount: 120_000, date: day(-1))])
 
-        // 소비는 적지만 음수 이월 때문에 실제로는 초과다
-        let over = DailyBudgetModel(
-            availableAmount: 50_000, date: day(-2),
-            carryOverSources: [CarryOverSourceModel(amount: -80_000, date: day(-3), toDate: day(-2))],
-            spendingRecords: [SpendingRecordModel(title: "커피", amount: 5_000, date: day(-2))])
+        XCTAssertTrue(OverspendAnalyzer.overspendDays(from: [budget]).isEmpty)
+        XCTAssertEqual(OverspendAnalyzer.evaluate(budget).allowance, 150_000)
+    }
 
-        let days = OverspendAnalyzer.overspendDays(from: [notOver, over])
+    /// 핵심 회귀: 적자에 빠진 뒤 조금만 써도 초과일로 잡히면 안 된다.
+    /// (실제 제보 — 6,200원 쓴 날이 "258,036원 초과"로 표시됨)
+    func test_음수_이월은_그날_과소비로_치지_않는다() {
+        let budget = DailyBudgetModel(
+            availableAmount: 54_670, date: day(-1),
+            carryOverSources: [CarryOverSourceModel(amount: -301_506, date: day(-2), toDate: day(-1))],
+            spendingRecords: [SpendingRecordModel(title: "편의점", amount: 6_200, date: day(-1))])
 
-        XCTAssertEqual(days.map(\.date), [day(-2)], "이월까지 봐야 실제 초과일을 가린다")
-        XCTAssertEqual(days[0].overspentAmount, 35_000)
+        XCTAssertTrue(OverspendAnalyzer.overspendDays(from: [budget]).isEmpty,
+                      "과거 적자를 떠안았을 뿐 그날 과소비한 게 아니다")
+        XCTAssertEqual(OverspendAnalyzer.evaluate(budget).allowance, 54_670,
+                       "음수 이월은 배정액에서 제외한다")
+        XCTAssertEqual(OverspendAnalyzer.evaluate(budget).overspent, 0)
+    }
+
+    func test_적자_상태에서도_배정액을_넘기면_초과로_잡힌다() {
+        let budget = DailyBudgetModel(
+            availableAmount: 54_670, date: day(-1),
+            carryOverSources: [CarryOverSourceModel(amount: -258_034, date: day(-2), toDate: day(-1))],
+            spendingRecords: [SpendingRecordModel(title: "쇼핑", amount: 131_310, date: day(-1))])
+
+        let days = OverspendAnalyzer.overspendDays(from: [budget])
+
+        XCTAssertEqual(days.count, 1)
+        XCTAssertEqual(days[0].overspentAmount, 131_310 - 54_670)
+    }
+
+    func test_그날_발생한_크레딧과_상환은_배정액에_반영된다() {
+        let budget = DailyBudgetModel(
+            availableAmount: 50_000, date: day(-1),
+            carryOverSources: [
+                CarryOverSourceModel(amount: 20_000, date: day(-1), toDate: day(-1)),   // 이월금 인출
+                CarryOverSourceModel(amount: -10_000, date: day(-1), toDate: day(-1))   // 초과분 상환
+            ],
+            spendingRecords: [SpendingRecordModel(title: "지출", amount: 55_000, date: day(-1))])
+
+        let evaluation = OverspendAnalyzer.evaluate(budget)
+        XCTAssertEqual(evaluation.allowance, 60_000, "50,000 + 20,000 − 10,000")
+        XCTAssertEqual(evaluation.overspent, 0)
     }
 
     func test_위시저금도_초과_계산에_포함된다() {
@@ -133,6 +166,38 @@ final class OverspendHistoryTests: XCTestCase {
 
         XCTAssertTrue(sut.fetchOverspendDays(months: 3).isEmpty)
         XCTAssertEqual(sut.fetchOverspendDays(months: 6).count, 1)
+    }
+
+    /// 실제 제보 화면(8일 연속 초과 표시) 재현 — 진짜 넘긴 날만 남아야 한다
+    func test_적자가_이어져도_진짜_넘긴_날만_잡힌다() {
+        let base = 54_670
+        // 7/31에 크게 초과 → 이후 적자가 계속 이월되는 상황
+        let spends = [351_180, 6_200, 131_310, 2_480, 4_300, 74_170, 4_100, 141_362]
+        var carry = 0
+        var budgets: [DailyBudgetModel] = []
+
+        for (index, spend) in spends.enumerated() {
+            let date = day(-(spends.count - index))
+            let sources = carry == 0 ? []
+                : [CarryOverSourceModel(amount: carry,
+                                        date: cal.date(byAdding: .day, value: -1, to: date)!,
+                                        toDate: date)]
+            let budget = DailyBudgetModel(
+                availableAmount: base, date: date,
+                carryOverSources: sources,
+                spendingRecords: [SpendingRecordModel(title: "지출", amount: spend, date: date)])
+            budgets.append(budget)
+            carry = budget.todayAvailable   // 다음 날로 적자 이월
+        }
+
+        let days = OverspendAnalyzer.overspendDays(from: budgets)
+        let overspentSpends = days
+            .sorted { $0.date < $1.date }
+            .map(\.spent)
+
+        XCTAssertEqual(overspentSpends, [351_180, 131_310, 74_170, 141_362],
+                       "기본 예산을 넘긴 4일만 잡혀야 한다 (8일 전부가 아니라)")
+        XCTAssertEqual(days.count, 4)
     }
 
     func test_부채로_전환돼도_초과한_날_기록은_남는다() {

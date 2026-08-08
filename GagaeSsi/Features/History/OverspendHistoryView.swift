@@ -117,7 +117,7 @@ struct OverspendHistoryView: View {
                     Text(dayLabel(day.date))
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundStyle(.gagaeText)
-                    Text("쓸 수 있던 \(FormatterUtils.currencyString(from: day.availableThatDay)) · 쓴 돈 \(FormatterUtils.currencyString(from: day.spent))")
+                    Text("그날 배정 \(FormatterUtils.currencyString(from: day.availableThatDay)) · 쓴 돈 \(FormatterUtils.currencyString(from: day.outgoing))")
                         .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(.gagaeTextSecondary)
                 }
