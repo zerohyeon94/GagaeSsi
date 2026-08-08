@@ -466,6 +466,123 @@ final class DebtRepaymentTests: XCTestCase {
                                     "하루 예산이 음수가 되면 안 된다")
     }
 
+    // MARK: - 모아둔 이월금으로 상환
+
+    /// 풀 → 부채 상환. 오늘 예산은 건드리지 않는다.
+    private func seedDebtWithPool(debtMultiplier: Int = 3, pool: Int) -> Int {
+        setup(carryOverMode: .separate)
+        let base = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(-1))
+        seedYesterday(available: base, spend: base * debtMultiplier)
+        sut.processDailyBudgets(upTo: day(0))
+        sut.depositToPool(amount: pool, date: day(0))
+        return base
+    }
+
+    func test_모아둔_이월금으로_갚으면_풀과_부채가_함께_줄고_오늘예산은_그대로() {
+        _ = seedDebtWithPool(pool: 25_760)
+        let debtBefore = sut.fetchActiveDebt()!.remainingAmount
+        let availableBefore = sut.fetchDailyBudgetModel(date: day(0))!.todayAvailable
+
+        XCTAssertTrue(sut.repayDebtFromPool(amount: 25_760))
+
+        XCTAssertEqual(sut.fetchActiveDebt()?.remainingAmount, debtBefore - 25_760)
+        XCTAssertEqual(sut.carryOverPoolBalance(), 0)
+        XCTAssertEqual(sut.fetchDailyBudgetModel(date: day(0))!.todayAvailable, availableBefore,
+                       "오늘 쓸 수 있는 금액은 변하지 않는다")
+    }
+
+    func test_풀_상환은_그날_매일상환을_막지_않는다() {
+        let base = seedDebtWithPool(pool: 25_760)
+        _ = sut.confirmDebtPlan(ratePercent: 20)          // 오늘 매일 상환 1회 발생
+        let dailyRepaid = sut.todayDebtRepaymentAmount()
+        XCTAssertEqual(dailyRepaid, base * 20 / 100)
+
+        XCTAssertTrue(sut.repayDebtFromPool(amount: 25_760))
+
+        XCTAssertEqual(sut.todayDebtRepaymentAmount(), dailyRepaid,
+                       "풀 상환은 '오늘 예산에서 빠진 상환액'에 포함되지 않는다")
+        XCTAssertEqual(sut.todayPoolRepaymentAmount(), 25_760)
+    }
+
+    func test_풀_잔액이나_남은_부채보다_많이_갚을_수_없다() {
+        _ = seedDebtWithPool(pool: 10_000)
+        XCTAssertFalse(sut.repayDebtFromPool(amount: 10_001), "풀 잔액 초과")
+
+        let remaining = sut.fetchActiveDebt()!.remainingAmount
+        _ = sut.depositToPool(amount: remaining * 2, date: day(0))
+        XCTAssertFalse(sut.repayDebtFromPool(amount: remaining + 1), "남은 부채 초과")
+    }
+
+    func test_풀로_전액_갚으면_완납_처리된다() {
+        _ = seedDebtWithPool(pool: 0)
+        let remaining = sut.fetchActiveDebt()!.remainingAmount
+        sut.depositToPool(amount: remaining, date: day(0))
+
+        XCTAssertTrue(sut.repayDebtFromPool(amount: remaining))
+
+        XCTAssertNil(sut.fetchActiveDebt(), "완납되면 활성 부채가 사라진다")
+        XCTAssertEqual(sut.carryOverPoolBalance(), 0)
+    }
+
+    func test_maxRepayableFromPool은_풀과_부채중_작은쪽() {
+        _ = seedDebtWithPool(pool: 10_000)
+        XCTAssertEqual(sut.maxRepayableFromPool(), 10_000, "풀이 더 적으면 풀 잔액")
+
+        let remaining = sut.fetchActiveDebt()!.remainingAmount
+        sut.depositToPool(amount: remaining, date: day(0))
+        XCTAssertEqual(sut.maxRepayableFromPool(), remaining, "부채가 더 적으면 남은 부채")
+    }
+
+    // MARK: - 급여일 이월금 사용 확인
+
+    func test_풀이_있으면_급여일_흡수를_보류하고_물어본다() throws {
+        let paydayOffset = try seedOverspendBeforeRecentPayday(salary: 3_000_000)
+        sut.depositToPool(amount: 25_760, date: day(paydayOffset - 1))
+
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertEqual(sut.fetchBudgetConfig()?.absorbedDebtAmount, 0, "흡수가 보류된다")
+        XCTAssertNotNil(sut.fetchActiveDebt(), "부채가 남아 있다")
+        XCTAssertTrue(sut.needsPaydayAbsorptionPrompt(), "사용자에게 물어봐야 한다")
+    }
+
+    func test_급여일_프롬프트에서_이월금을_쓰면_풀로_먼저_갚고_나머지를_흡수한다() throws {
+        let paydayOffset = try seedOverspendBeforeRecentPayday(salary: 3_000_000)
+        sut.depositToPool(amount: 25_760, date: day(paydayOffset - 1))
+        sut.processDailyBudgets(upTo: day(0))
+        let debtBefore = sut.fetchActiveDebt()!.remainingAmount
+
+        XCTAssertTrue(sut.resolvePaydayAbsorption(usingPool: true))
+
+        XCTAssertEqual(sut.carryOverPoolBalance(), 0, "이월금이 상환에 쓰인다")
+        XCTAssertEqual(sut.fetchBudgetConfig()?.absorbedDebtAmount, debtBefore - 25_760,
+                       "남은 부채만 흡수된다")
+        XCTAssertNil(sut.fetchActiveDebt())
+        XCTAssertFalse(sut.needsPaydayAbsorptionPrompt())
+    }
+
+    func test_급여일_프롬프트에서_이월금을_안쓰면_풀은_보존되고_전액_흡수된다() throws {
+        let paydayOffset = try seedOverspendBeforeRecentPayday(salary: 3_000_000)
+        sut.depositToPool(amount: 25_760, date: day(paydayOffset - 1))
+        sut.processDailyBudgets(upTo: day(0))
+        let debtBefore = sut.fetchActiveDebt()!.remainingAmount
+
+        XCTAssertTrue(sut.resolvePaydayAbsorption(usingPool: false))
+
+        XCTAssertEqual(sut.carryOverPoolBalance(), 25_760, "모아둔 돈은 그대로 남는다")
+        XCTAssertEqual(sut.fetchBudgetConfig()?.absorbedDebtAmount, debtBefore)
+        XCTAssertNil(sut.fetchActiveDebt())
+    }
+
+    func test_풀이_없으면_급여일에_묻지_않고_바로_흡수한다() throws {
+        _ = try seedOverspendBeforeRecentPayday(salary: 3_000_000)
+
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertGreaterThan(sut.fetchBudgetConfig()!.absorbedDebtAmount, 0)
+        XCTAssertFalse(sut.needsPaydayAbsorptionPrompt())
+    }
+
     // MARK: - 상환 속도 경고
 
     func test_상환중_쓸수있는_금액은_기본예산에서_상환액을_뺀_값() {

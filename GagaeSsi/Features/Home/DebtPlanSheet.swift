@@ -15,18 +15,27 @@ struct DebtPlanSheet: View {
     let dailyBudget: Int
     /// 초기 선택 비율
     var initialRate: Int = DebtRepaymentPlan.defaultRate
+    /// 모아둔 이월금으로 먼저 갚을 수 있는 금액 (0이면 제안하지 않음)
+    var repayableFromPool: Int = 0
     /// 확정 시 선택한 비율 전달
     let onConfirm: (Int) -> Void
     /// "나중에" — 오늘은 다시 띄우지 않는다
     var onDefer: (() -> Void)?
+    /// 모아둔 이월금으로 먼저 갚기
+    var onRepayFromPool: ((Int) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var rate: Int = DebtRepaymentPlan.defaultRate
+    @State private var usePool = false
 
-    private var plan: (perDay: Int, days: Int) {
-        DebtRepaymentPlan.calculate(debt: debtAmount, dailyBudget: dailyBudget, ratePercent: rate)
+    /// 풀로 먼저 갚은 뒤 실제로 계획을 세울 금액
+    private var effectiveDebt: Int {
+        usePool ? max(0, debtAmount - repayableFromPool) : debtAmount
     }
-    private var isValid: Bool { plan.perDay > 0 }
+    private var plan: (perDay: Int, days: Int) {
+        DebtRepaymentPlan.calculate(debt: effectiveDebt, dailyBudget: dailyBudget, ratePercent: rate)
+    }
+    private var isValid: Bool { effectiveDebt == 0 || plan.perDay > 0 }
 
     var body: some View {
         NavigationStack {
@@ -36,7 +45,8 @@ struct DebtPlanSheet: View {
                 ScrollView {
                     VStack(spacing: GagaeSpacing.md) {
                         summaryCard
-                        rateCard
+                        if repayableFromPool > 0 { poolCard }
+                        if effectiveDebt > 0 { rateCard }
                         resultCard
                         actionButtons
                     }
@@ -80,6 +90,37 @@ struct DebtPlanSheet: View {
                     Spacer()
                     Text(FormatterUtils.currencyString(from: dailyBudget))
                         .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
+                }
+            }
+        }
+    }
+
+    // MARK: - 모아둔 이월금 선상환 제안
+
+    private var poolCard: some View {
+        GagaeCard {
+            VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
+                Toggle(isOn: $usePool.animation(.easeInOut(duration: 0.15))) {
+                    HStack(spacing: 6) {
+                        Text("🐷").font(.system(size: 16))
+                        Text("모아둔 이월금으로 먼저 갚기")
+                            .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
+                    }
+                }
+                .tint(.gagaePinkDark)
+
+                Text("모아둔 \(FormatterUtils.currencyString(from: repayableFromPool))을 먼저 쓰면 갚을 금액이 줄어 기간이 짧아져요. 오늘 쓸 수 있는 금액은 그대로예요.")
+                    .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if usePool {
+                    GagaeDivider()
+                    HStack {
+                        Text("갚을 금액").font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+                        Spacer()
+                        Text("\(FormatterUtils.currencyString(from: debtAmount)) → \(FormatterUtils.currencyString(from: effectiveDebt))")
+                            .font(.gagaeCalloutMedium).foregroundStyle(.gagaePinkDark)
+                    }
                 }
             }
         }
@@ -155,7 +196,13 @@ struct DebtPlanSheet: View {
     private var resultCard: some View {
         GagaeCard {
             VStack(spacing: GagaeSpacing.sm) {
-                if isValid {
+                if effectiveDebt == 0 {
+                    Text("모아둔 이월금으로 다 갚아요")
+                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                    Text("따로 나눠 갚을 금액이 없어요")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                } else if isValid {
                     Text("하루 \(FormatterUtils.currencyString(from: plan.perDay))씩")
                         .font(.system(size: 24, weight: .heavy, design: .rounded))
                         .foregroundStyle(.gagaePinkDark)
@@ -181,8 +228,11 @@ struct DebtPlanSheet: View {
 
     private var actionButtons: some View {
         VStack(spacing: GagaeSpacing.sm) {
-            GagaePrimaryButton(title: "이 계획으로 갚기", isEnabled: isValid) {
-                onConfirm(rate)
+            GagaePrimaryButton(title: effectiveDebt == 0 ? "이월금으로 갚기" : "이 계획으로 갚기",
+                               isEnabled: isValid) {
+                // 풀 선상환을 먼저 반영해야 남은 금액 기준으로 계획이 세워진다
+                if usePool, repayableFromPool > 0 { onRepayFromPool?(repayableFromPool) }
+                if effectiveDebt > 0 { onConfirm(rate) }
                 dismiss()
             }
             Button {

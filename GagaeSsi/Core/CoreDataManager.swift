@@ -979,13 +979,58 @@ final class CoreDataManager {
         _ = saveContext()
     }
 
-    /// 그날 이미 상환 원장이 있는지 (멱등성 가드)
+    /// 그날 이미 "매일 상환"이 있었는지 (멱등성 가드).
+    /// 풀 상환·급여일 흡수·조기 완납은 매일 상환을 대체하지 않으므로 제외한다.
     private func hasRepayment(on day: Date) -> Bool {
         let end = Calendar.current.date(byAdding: .day, value: 1, to: day)!
         let request: NSFetchRequest<DebtRepaymentEntry> = DebtRepaymentEntry.fetchRequest()
-        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", day as NSDate, end as NSDate)
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@ AND source == %@",
+                                        day as NSDate, end as NSDate,
+                                        DebtRepaymentSource.daily.rawValue)
         request.fetchLimit = 1
         return ((try? context.fetch(request).first) ?? nil) != nil
+    }
+
+    /// 부채에 상환 원장을 남기고 잔액을 줄인다. 잔액이 0이 되면 완납 처리한다.
+    private func recordRepayment(_ amount: Int, on day: Date,
+                                 source: DebtRepaymentSource, debt: SpendingDebt) {
+        let entry = DebtRepaymentEntry(context: context)
+        entry.id = UUID()
+        entry.date = day
+        entry.amount = NSDecimalNumber(value: amount)
+        entry.source = source.rawValue
+        entry.debt = debt
+        debt.addToRepayments(entry)
+
+        let remaining = Int(truncating: debt.remainingAmount ?? 0) - amount
+        debt.remainingAmount = NSDecimalNumber(value: max(0, remaining))
+        if remaining <= 0 { debt.completedAt = day }
+    }
+
+    /// 모아둔 이월금으로 초과분을 갚는다.
+    /// 오늘 예산은 건드리지 않는다 — 풀과 부채 모두 같은 예산 흐름에 대한 장부라 그대로 상계된다.
+    @discardableResult
+    func repayDebtFromPool(amount: Int) -> Bool {
+        guard amount > 0, amount <= carryOverPoolBalance() else { return false }
+        guard let debt = fetchActiveDebtEntity() else { return false }
+        let remaining = Int(truncating: debt.remainingAmount ?? 0)
+        guard remaining > 0, amount <= remaining else { return false }
+
+        let today = Calendar.current.startOfDay(for: Date())
+
+        let poolEntry = CarryOverPoolEntry(context: context)
+        poolEntry.id = UUID()
+        poolEntry.date = today
+        poolEntry.amount = NSDecimalNumber(value: -amount)
+
+        recordRepayment(amount, on: today, source: .pool, debt: debt)
+        return saveContext()
+    }
+
+    /// 모아둔 이월금으로 갚을 수 있는 최대 금액 (풀 잔액과 남은 부채 중 작은 쪽)
+    func maxRepayableFromPool() -> Int {
+        guard let debt = fetchActiveDebt(), debt.isActive else { return 0 }
+        return max(0, min(carryOverPoolBalance(), debt.remainingAmount))
     }
 
     /// 계획이 확정된 부채가 있으면 `date`의 상환액을 차감한다.
@@ -1016,17 +1061,7 @@ final class CoreDataManager {
         cos.dailyBudget = budget
         budget.addToCarryOverSources(cos)
 
-        let entry = DebtRepaymentEntry(context: context)
-        entry.id = UUID()
-        entry.date = day
-        entry.amount = NSDecimalNumber(value: amount)
-        entry.debt = debt
-        debt.addToRepayments(entry)
-
-        let newRemaining = remaining - amount
-        debt.remainingAmount = NSDecimalNumber(value: newRemaining)
-        if newRemaining == 0 { debt.completedAt = day }
-
+        recordRepayment(amount, on: day, source: .daily, debt: debt)
         _ = saveContext()
     }
 
@@ -1074,16 +1109,76 @@ final class CoreDataManager {
     private func absorbDebtIfPayday(on date: Date,
                                     config: BudgetConfigModel,
                                     installments: [InstallmentModel]) -> Bool {
-        guard config.debtPlanEnabled else { return false }
-
         let calendar = Calendar.current
         let day = calendar.startOfDay(for: date)
         let period = DailyBudgetCalculator.payPeriod(payday: config.payday, containing: day)
-        guard calendar.isDate(period.start, inSameDayAs: day) else { return false }
+
+        guard config.debtPlanEnabled,
+              calendar.isDate(period.start, inSameDayAs: day),
+              isPendingPeriodAbsorption(config: config, on: day) else { return false }
+
+        // 모아둔 이월금이 있으면 "먼저 갚을까요?"를 물어야 하므로 흡수를 보류한다.
+        // 사용자가 답하면 resolvePaydayAbsorption(usingPool:)이 이어서 처리한다.
+        guard carryOverPoolBalance() <= 0 else { return false }
+
+        return performPaydayAbsorption(on: date, config: config, installments: installments)
+    }
+
+    /// `date`가 속한 급여 기간의 부채 정산이 아직 남아 있는지.
+    ///
+    /// 급여일 당일만 보지 않는다 — 급여일에 앱을 안 열었거나 이월금 사용 여부를 묻느라 보류됐다면
+    /// 기간 중 언제 들어와도 정산할 수 있어야 한다.
+    /// 다만 **이번 기간에 새로 생긴 부채는 대상이 아니다** (그건 나눠 갚기로 처리한다).
+    /// 급여일 전날 초과분은 급여일에 부채가 만들어지므로 `startedAt <= period.start`로 판정한다.
+    private func isPendingPeriodAbsorption(config: BudgetConfigModel, on date: Date) -> Bool {
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: date)
+        let period = DailyBudgetCalculator.payPeriod(payday: config.payday, containing: day)
 
         // 같은 기간에 이미 흡수했으면 중복 처리하지 않는다 (멱등성)
         if let absorbed = config.absorbedDebtPeriodStart,
            calendar.isDate(absorbed, inSameDayAs: period.start) { return false }
+
+        guard let debt = fetchActiveDebt(), debt.isActive, debt.remainingAmount > 0 else { return false }
+        return calendar.startOfDay(for: debt.startedAt) <= period.start
+    }
+
+    /// "모아둔 이월금으로 먼저 갚을지" 물어봐야 하는 상태인지 (홈 프롬프트용)
+    func needsPaydayAbsorptionPrompt() -> Bool {
+        guard let config = fetchBudgetConfig(), config.debtPlanEnabled else { return false }
+        return isPendingPeriodAbsorption(config: config, on: Date()) && carryOverPoolBalance() > 0
+    }
+
+    /// 급여일 프롬프트의 사용자 선택을 반영한다.
+    /// - Parameter usingPool: true면 모아둔 이월금으로 먼저 갚고 남은 부채만 흡수한다.
+    @discardableResult
+    func resolvePaydayAbsorption(usingPool: Bool) -> Bool {
+        guard let config = fetchBudgetConfig(), config.debtPlanEnabled,
+              isPendingPeriodAbsorption(config: config, on: Date()) else { return false }
+
+        if usingPool {
+            let amount = maxRepayableFromPool()
+            if amount > 0 { _ = repayDebtFromPool(amount: amount) }
+            // 풀로 완납됐으면 흡수할 부채가 없다
+            guard let debt = fetchActiveDebt(), debt.isActive, debt.remainingAmount > 0 else {
+                return true
+            }
+        }
+
+        guard let refreshed = fetchBudgetConfig() else { return false }
+        let ok = performPaydayAbsorption(on: Date(), config: refreshed,
+                                         installments: fetchInstallments())
+        // 흡수로 이번 기간 기본 예산이 바뀌었으므로 오늘 일자에 반영한다
+        if ok { recalculateTodayBaseBudget() }
+        return ok
+    }
+
+    private func performPaydayAbsorption(on date: Date,
+                                         config: BudgetConfigModel,
+                                         installments: [InstallmentModel]) -> Bool {
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: date)
+        let period = DailyBudgetCalculator.payPeriod(payday: config.payday, containing: day)
 
         guard let debt = fetchActiveDebtEntity() else { return false }
         let remaining = Int(truncating: debt.remainingAmount ?? 0)
@@ -1100,18 +1195,7 @@ final class CoreDataManager {
         entity.absorbedDebtAmount = Int32(absorbed)
         entity.absorbedDebtPeriodStart = period.start
 
-        // 흡수한 만큼 부채를 상환 처리 (원장에도 남긴다)
-        let entry = DebtRepaymentEntry(context: context)
-        entry.id = UUID()
-        entry.date = day
-        entry.amount = NSDecimalNumber(value: absorbed)
-        entry.debt = debt
-        debt.addToRepayments(entry)
-
-        let newRemaining = remaining - absorbed
-        debt.remainingAmount = NSDecimalNumber(value: newRemaining)
-        if newRemaining == 0 { debt.completedAt = day }
-
+        recordRepayment(absorbed, on: day, source: .absorbed, debt: debt)
         return saveContext()
     }
 
@@ -1162,12 +1246,7 @@ final class CoreDataManager {
             cos.dailyBudget = budget
             budget.addToCarryOverSources(cos)
 
-            let entry = DebtRepaymentEntry(context: context)
-            entry.id = UUID()
-            entry.date = today
-            entry.amount = NSDecimalNumber(value: remaining)
-            entry.debt = debt
-            debt.addToRepayments(entry)
+            recordRepayment(remaining, on: today, source: .settle, debt: debt)
         }
 
         debt.remainingAmount = 0
@@ -1200,12 +1279,35 @@ final class CoreDataManager {
         return records.reduce(0) { $0 + $1.amount } / days
     }
 
-    /// 오늘 상환한 금액 (홈 표시용)
+    /// 오늘 일자의 기본 예산만 현재 설정 기준으로 다시 계산한다.
+    /// (급여일 흡수처럼 기간 예산이 바뀌었을 때 오늘 화면에 즉시 반영하기 위해)
+    @discardableResult
+    func recalculateTodayBaseBudget() -> Bool {
+        let today = Calendar.current.startOfDay(for: Date())
+        guard let config = fetchBudgetConfig(),
+              let budget = fetchDailyBudgetEntity(date: today) else { return false }
+        let base = DailyBudgetCalculator.calculate(from: config, installments: fetchInstallments(), for: today)
+        budget.availableAmount = NSDecimalNumber(value: base)
+        return saveContext()
+    }
+
+    /// 오늘 하루 예산에서 차감된 상환액 (홈의 "초과분 상환" 행 표시용).
+    /// 풀 상환·급여일 흡수는 오늘 예산을 건드리지 않으므로 제외한다.
     func todayDebtRepaymentAmount() -> Int {
+        todayRepaymentAmount(sources: [.daily, .settle])
+    }
+
+    /// 오늘 모아둔 이월금으로 갚은 금액 (홈 안내 표시용)
+    func todayPoolRepaymentAmount() -> Int {
+        todayRepaymentAmount(sources: [.pool])
+    }
+
+    private func todayRepaymentAmount(sources: [DebtRepaymentSource]) -> Int {
         let today = Calendar.current.startOfDay(for: Date())
         let end = Calendar.current.date(byAdding: .day, value: 1, to: today)!
         let request: NSFetchRequest<DebtRepaymentEntry> = DebtRepaymentEntry.fetchRequest()
-        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", today as NSDate, end as NSDate)
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@ AND source IN %@",
+                                        today as NSDate, end as NSDate, sources.map(\.rawValue))
         let entries = (try? context.fetch(request)) ?? []
         return entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
     }
@@ -1230,7 +1332,8 @@ final class CoreDataManager {
     }
 
     /// 남은 양수를 풀에 적립 (분리 모드 일자 생성 시 내부 호출)
-    private func depositToPool(amount: Int, date: Date) {
+    /// 모아둔 이월금 풀에 적립한다 (일자 전환 시 남은 양수 / 테스트 시드용)
+    func depositToPool(amount: Int, date: Date) {
         guard amount > 0 else { return }
         let entry = CarryOverPoolEntry(context: context)
         entry.id = UUID()

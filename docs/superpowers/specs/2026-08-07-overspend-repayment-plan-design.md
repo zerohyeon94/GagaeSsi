@@ -1,7 +1,7 @@
 # 초과 소비 상환 계획 설계
 
 - **작성일**: 2026-08-07
-- **상태**: 구현 완료 (2026-08-07)
+- **상태**: 구현 완료 (2026-08-08 — 모아둔 이월금 상환 추가)
 - **관련 노션**: [가계씨 (GagaeSsi) — 하루 예산 관리 앱](https://app.notion.com/p/359e5d4a0bac80e6b9bec68a15a22d72)
 - **관련 문서**: [하루 사용 가능 금액 계산 규칙](../../2026-07-08-daily-budget-calculation-rules.md), [이월 방식 선택 설계](2026-07-29-carryover-mode-design.md)
 - **관련 코드**: `Core/CoreDataManager.swift`, `Core/Utils/BudgetCalculationUtils.swift`, `Models/BudgetModels.swift`, `Features/Home/`, `Features/Settings/`
@@ -44,6 +44,7 @@
 | 급여일 | **남은 부채를 새 급여 기간 예산으로 흡수하고 종료** (2026-08-07 개정 — 아래 참조) |
 | 이월 방식(전액/분리)과의 관계 | 부채는 **음수 처리만 대체**. 양수 처리(이월/풀 적립)는 두 모드 모두 기존과 동일 |
 | 모아둔 이월금 풀과의 우선순위 | **풀 부족액 충당이 먼저** — 충당하면 잔액이 0이 되어 부채가 생기지 않음 (별도 분기 불필요) |
+| 모아둔 이월금으로 상환 | **사용자가 직접 선택** (버튼 · 계획 팝업 토글 · 급여일 프롬프트). 자동 차감 안 함 |
 
 ## 4. 계산 규칙
 
@@ -163,6 +164,22 @@ enum DebtRepaymentPlan {
 | `date` | Date | 상환일 (startOfDay) |
 | `amount` | Decimal | 그날 상환액 |
 | `debt` | to-one → `SpendingDebt` | |
+
+### 상환 출처 (`DebtRepaymentEntry.source`, `GagaeSsi 4`)
+
+출처를 구분하지 않으면 "그날 이미 상환했는지" 판정(`hasRepayment`)과 홈의 상환액 표시가 어긋난다.
+풀 상환을 `daily`와 같게 기록하면 **그날 매일 상환이 통째로 건너뛰어진다.**
+
+| 출처 | 오늘 예산 차감 | 매일 상환 대체 |
+|---|---|---|
+| `daily` | O (음수 `CarryOverSource`) | — |
+| `pool` | X | 아니오 |
+| `absorbed` | X (기간 예산 반영) | 예 |
+| `settle` | O | 예 |
+
+> `GagaeSsi 3`은 이미 사용자 기기에 설치된 버전이라 in-place 수정이 불가능하다.
+> 모델 해시가 바뀌면 저장된 스토어의 소스 모델을 찾지 못해 **앱이 실행 즉시 죽는다.**
+> 반드시 새 버전(`GagaeSsi 4`)을 만든다.
 
 ### `BudgetConfig` 필드 추가
 - `debtPlanEnabled: Bool` (기본 `true`)

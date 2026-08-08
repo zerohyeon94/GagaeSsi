@@ -20,6 +20,8 @@ struct HomeView: View {
     @State private var showFixedExpenses = false
     @State private var showWithdraw = false
     @State private var showDebtPlan = false
+    @State private var showPoolRepay = false
+    @State private var showPaydayPrompt = false
 
     // MARK: - Computed
     private var characterState: CharacterState { viewModel.characterState }
@@ -124,10 +126,29 @@ struct HomeView: View {
                     debtAmount: debt.remainingAmount,
                     dailyBudget: viewModel.baseBudget,
                     initialRate: debt.repayRatePercent,
+                    repayableFromPool: viewModel.maxRepayableFromPool,
                     onConfirm: { viewModel.confirmDebtPlan(ratePercent: $0) },
-                    onDefer: { viewModel.deferDebtPlan() }
+                    onDefer: { viewModel.deferDebtPlan() },
+                    onRepayFromPool: { viewModel.repayDebtFromPool(amount: $0) }
                 )
             }
+        }
+        .sheet(isPresented: $showPoolRepay) {
+            if let debt = viewModel.activeDebt {
+                DebtPoolRepayView(poolBalance: viewModel.carryOverPoolBalance,
+                                  remainingDebt: debt.remainingAmount) { amount in
+                    viewModel.repayDebtFromPool(amount: amount)
+                }
+            }
+        }
+        .alert("급여일이에요 🎉", isPresented: $showPaydayPrompt) {
+            Button("이월금으로 먼저 갚기") { viewModel.resolvePaydayAbsorption(usingPool: true) }
+            Button("이월금은 그대로 두기") { viewModel.resolvePaydayAbsorption(usingPool: false) }
+        } message: {
+            Text("""
+                 남은 초과분 \(FormatterUtils.currencyString(from: viewModel.activeDebt?.remainingAmount ?? 0))을 이번 달 예산으로 정산해요.
+                 모아둔 이월금 \(FormatterUtils.currencyString(from: viewModel.carryOverPoolBalance))으로 먼저 갚을까요?
+                 """)
         }
         .onChange(of: scenePhase) {
             // 백그라운드에서 자정을 넘긴 경우 등 다시 활성화될 때 이월 재처리
@@ -139,8 +160,13 @@ struct HomeView: View {
         }
     }
 
-    /// 계획 미확정 부채가 있으면 설정 시트를 띄운다 (오늘 "나중에"를 눌렀으면 띄우지 않음)
+    /// 계획 미확정 부채가 있으면 설정 시트를, 급여일이면 이월금 사용 확인을 띄운다.
+    /// 급여일 정산이 먼저다 — 정산 후에 남은 부채 기준으로 계획을 세워야 하기 때문.
     private func presentDebtPlanIfNeeded() {
+        if viewModel.needsPaydayAbsorptionPrompt {
+            if !showPaydayPrompt { showPaydayPrompt = true }
+            return
+        }
         guard viewModel.needsDebtPlanPrompt, !showDebtPlan else { return }
         showDebtPlan = true
     }
@@ -435,6 +461,32 @@ extension HomeView {
                         .foregroundStyle(.gagaeWarning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .padding(.top, 2)
+            }
+
+            if viewModel.todayPoolRepayment > 0 {
+                Text("오늘 모아둔 이월금 \(FormatterUtils.currencyString(from: viewModel.todayPoolRepayment))으로 갚았어요")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.gagaePinkDark)
+            }
+
+            // 모아둔 이월금이 있으면 그 돈으로 초과분을 갚을 수 있게 한다
+            if viewModel.canRepayDebtFromPool {
+                Button {
+                    showPoolRepay = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("🐷").font(.system(size: 13))
+                        Text("모아둔 이월금 \(FormatterUtils.currencyString(from: viewModel.maxRepayableFromPool))으로 갚기")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(.gagaePinkDark)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(Color.gagaePinkLight)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
                 .padding(.top, 2)
             }
         }

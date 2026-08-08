@@ -131,17 +131,38 @@ struct SpendingDebtModel: Identifiable, Equatable {
     }
 }
 
+// MARK: - 상환 출처
+
+/// 부채가 어떤 경로로 줄었는지. 출처를 구분하지 않으면
+/// "그날 이미 상환했는지" 판정과 홈의 상환액 표시가 서로 어긋난다.
+enum DebtRepaymentSource: String, Codable {
+    /// 매일 하루 예산에서 자동 차감 (음수 `CarryOverSource` 동반)
+    case daily
+    /// 모아둔 이월금 풀에서 상환 (오늘 예산은 건드리지 않음)
+    case pool
+    /// 급여일에 새 급여 기간 예산으로 흡수
+    case absorbed
+    /// 조기 완납 / 기능 OFF 전환
+    case settle
+
+    static func from(_ raw: String?) -> DebtRepaymentSource {
+        DebtRepaymentSource(rawValue: raw ?? "") ?? .daily
+    }
+}
+
 // MARK: - 상환 원장 모델
 
 struct DebtRepaymentEntryModel: Identifiable, Equatable {
     var id: UUID
     var date: Date
     var amount: Int
+    var source: DebtRepaymentSource
 
-    init(id: UUID = UUID(), date: Date, amount: Int) {
+    init(id: UUID = UUID(), date: Date, amount: Int, source: DebtRepaymentSource = .daily) {
         self.id = id
         self.date = date
         self.amount = amount
+        self.source = source
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -149,5 +170,6 @@ struct DebtRepaymentEntryModel: Identifiable, Equatable {
         self.id = entity.id ?? UUID()
         self.date = entity.date ?? Date()
         self.amount = Int(truncating: entity.amount ?? 0)
+        self.source = DebtRepaymentSource.from(entity.source)
     }
 }

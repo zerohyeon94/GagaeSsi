@@ -120,9 +120,46 @@ final class CoreDataMigrationTests: XCTestCase {
         try unload(newContainer)
     }
 
-    /// 아주 오래된 버전(v1)에 머물러 있던 사용자도 한 번에 올라와야 한다.
+    /// GagaeSsi 3은 이미 사용자 기기에 설치된 버전이라 in-place 수정이 불가능하다.
+    /// (모델 해시가 바뀌면 저장된 스토어의 소스 모델을 못 찾아 앱이 실행 즉시 죽는다)
+    func test_GagaeSsi3에서_4로_마이그레이션되고_기존_상환원장은_daily로_남는다() throws {
+        let oldContainer = try container(with: try model(named: "GagaeSsi 3"))
+        let oldContext = oldContainer.viewContext
+
+        let debt = NSEntityDescription.insertNewObject(forEntityName: "SpendingDebt", into: oldContext)
+        debt.setValue(UUID(), forKey: "id")
+        debt.setValue(NSDecimalNumber(value: 300_000), forKey: "originalAmount")
+        debt.setValue(NSDecimalNumber(value: 280_000), forKey: "remainingAmount")
+        debt.setValue(Int16(20), forKey: "repayRatePercent")
+        debt.setValue(Date(), forKey: "startedAt")
+
+        let entry = NSEntityDescription.insertNewObject(forEntityName: "DebtRepaymentEntry", into: oldContext)
+        entry.setValue(UUID(), forKey: "id")
+        entry.setValue(Date(), forKey: "date")
+        entry.setValue(NSDecimalNumber(value: 20_000), forKey: "amount")
+        entry.setValue(debt, forKey: "debt")
+
+        try oldContext.save()
+        try unload(oldContainer)
+
+        let newContainer = try container(with: try model(named: "GagaeSsi 4"))
+        let newContext = newContainer.viewContext
+
+        let entries = try newContext.fetch(NSFetchRequest<DebtRepaymentEntry>(entityName: "DebtRepaymentEntry"))
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(DebtRepaymentEntryModel(entity: entries[0]).source, .daily,
+                       "출처가 없던 기존 원장은 매일 상환으로 해석되어야 한다")
+
+        let debts = try newContext.fetch(NSFetchRequest<SpendingDebt>(entityName: "SpendingDebt"))
+        XCTAssertEqual(SpendingDebtModel(entity: debts[0]).remainingAmount, 280_000,
+                       "진행 중이던 부채가 보존되어야 한다")
+
+        try unload(newContainer)
+    }
+
+    /// 아주 오래된 버전(v1)에 머물러 있던 사용자도 현재 버전까지 한 번에 올라와야 한다.
     /// (실패하면 loadPersistentStores가 에러 → 앱은 fatalError로 죽는다)
-    func test_최초버전에서_3으로도_한번에_마이그레이션된다() throws {
+    func test_최초버전에서_4까지_한번에_마이그레이션된다() throws {
         let oldContainer = try container(with: try model(named: "GagaeSsi"))
         let config = NSEntityDescription.insertNewObject(forEntityName: "BudgetConfig",
                                                          into: oldContainer.viewContext)
@@ -131,7 +168,7 @@ final class CoreDataMigrationTests: XCTestCase {
         try oldContainer.viewContext.save()
         try unload(oldContainer)
 
-        let newContainer = try container(with: try model(named: "GagaeSsi 3"))
+        let newContainer = try container(with: try model(named: "GagaeSsi 4"))
         let entity = try XCTUnwrap(
             try newContainer.viewContext.fetch(NSFetchRequest<BudgetConfig>(entityName: "BudgetConfig")).first)
 

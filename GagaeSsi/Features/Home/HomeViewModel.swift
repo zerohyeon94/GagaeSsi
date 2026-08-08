@@ -33,6 +33,15 @@ final class HomeViewModel {
     var todayDebtRepayment: Int = 0
     /// 최근 7일 하루 평균 소비 (상환 속도 점검용)
     var recentAverageSpending: Int = 0
+    /// 오늘 모아둔 이월금으로 갚은 금액
+    var todayPoolRepayment: Int = 0
+    /// 모아둔 이월금으로 갚을 수 있는 최대 금액 (풀 잔액과 남은 부채 중 작은 쪽)
+    var maxRepayableFromPool: Int = 0
+    /// 급여일에 "모아둔 이월금으로 먼저 갚을까요?"를 물어야 하는 상태
+    var needsPaydayAbsorptionPrompt: Bool = false
+
+    /// 모아둔 이월금으로 갚기 버튼을 노출할지
+    var canRepayDebtFromPool: Bool { maxRepayableFromPool > 0 }
 
     /// 최근 씀씀이로는 부채가 줄지 않는 상태인지
     var isDebtOffTrack: Bool {
@@ -92,7 +101,24 @@ final class HomeViewModel {
         activeDebt = CoreDataManager.shared.fetchActiveDebt()
         todayDebtRepayment = CoreDataManager.shared.todayDebtRepaymentAmount()
         recentAverageSpending = CoreDataManager.shared.recentAverageDailySpending(days: 7)
+        todayPoolRepayment = CoreDataManager.shared.todayPoolRepaymentAmount()
+        maxRepayableFromPool = CoreDataManager.shared.maxRepayableFromPool()
+        needsPaydayAbsorptionPrompt = CoreDataManager.shared.needsPaydayAbsorptionPrompt()
         isLoading = false
+    }
+
+    /// 모아둔 이월금으로 초과분을 갚는다.
+    @discardableResult
+    func repayDebtFromPool(amount: Int) -> Bool {
+        let ok = CoreDataManager.shared.repayDebtFromPool(amount: amount)
+        if ok { fetchTodayBudget() }
+        return ok
+    }
+
+    /// 급여일 프롬프트 응답 (모아둔 이월금을 먼저 쓸지)
+    func resolvePaydayAbsorption(usingPool: Bool) {
+        CoreDataManager.shared.resolvePaydayAbsorption(usingPool: usingPool)
+        fetchTodayBudget()
     }
 
     /// 상환 계획 확정 (팝업 "이 계획으로 갚기")
