@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 // MARK: - 이월 방식
 enum CarryOverMode: String, Codable {
@@ -23,6 +24,46 @@ enum CarryOverMode: String, Codable {
         case .full: return "전액 이월"
         case .separate: return "모아둔 이월금으로 분리"
         }
+    }
+}
+
+// MARK: - 테마 모드
+
+/// 앱 테마. 기존 사용자는 라이트 고정에 익숙하므로 직접 고를 수 있게 한다.
+enum ThemeMode: String, Codable, CaseIterable, Identifiable {
+    case system   // 기기 설정을 따름
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: return "기기 설정"
+        case .light: return "밝게"
+        case .dark: return "어둡게"
+        }
+    }
+
+    var emoji: String {
+        switch self {
+        case .system: return "⚙️"
+        case .light: return "☀️"
+        case .dark: return "🌙"
+        }
+    }
+
+    /// SwiftUI에 넘길 값. `nil`이면 기기 설정을 따른다.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+
+    static func from(_ raw: String?) -> ThemeMode {
+        ThemeMode(rawValue: raw ?? "") ?? .system
     }
 }
 
@@ -45,6 +86,8 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
     var absorbedDebtAmount: Int
     /// 위 금액이 적용되는 급여 기간의 시작일. 다른 기간에는 적용하지 않는다.
     var absorbedDebtPeriodStart: Date?
+    /// 앱 테마 (기기 설정 / 밝게 / 어둡게)
+    var themeMode: ThemeMode
 
     // MARK: - Initializer
     /// 일반 생성자
@@ -55,7 +98,8 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
          spendReminderHour: Int = SpendReminderSchedule.defaultHour,
          spendReminderMinute: Int = SpendReminderSchedule.defaultMinute,
          absorbedDebtAmount: Int = 0,
-         absorbedDebtPeriodStart: Date? = nil) {
+         absorbedDebtPeriodStart: Date? = nil,
+         themeMode: ThemeMode = .system) {
         self.salary = salary
         self.payday = payday
         self.fixedCosts = fixedCosts
@@ -66,6 +110,7 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
         self.spendReminderMinute = spendReminderMinute
         self.absorbedDebtAmount = absorbedDebtAmount
         self.absorbedDebtPeriodStart = absorbedDebtPeriodStart
+        self.themeMode = themeMode
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -79,6 +124,7 @@ struct BudgetConfigModel: Equatable, Codable, Identifiable {
         self.spendReminderEnabled = entity.spendReminderEnabled
         self.absorbedDebtAmount = Int(entity.absorbedDebtAmount)
         self.absorbedDebtPeriodStart = entity.absorbedDebtPeriodStart
+        self.themeMode = ThemeMode.from(entity.themeMode)
         // 기존 사용자 마이그레이션 시 Int16 기본값이 0(자정)이 되므로,
         // 알림을 켠 적이 없으면 기본 시각(21:00)으로 보정한다.
         if entity.spendReminderEnabled {

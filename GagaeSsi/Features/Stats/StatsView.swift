@@ -73,7 +73,7 @@ extension StatsView {
     private func navButton(systemName: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Circle()
-                .fill(enabled ? Color.gagaePinkLight : Color(hex: "#F5F5F5"))
+                .fill(enabled ? Color.gagaePinkLight : Color.gagaeSurfaceAlt)
                 .frame(width: 36, height: 36)
                 .overlay(
                     Image(systemName: systemName)

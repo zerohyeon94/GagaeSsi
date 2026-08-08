@@ -56,6 +56,8 @@ struct RootView: View {
     @Environment(AppState.self) private var appState
     @Environment(AppEventBus.self) private var eventBus
     @Environment(\.scenePhase) private var scenePhase
+    /// 앱 테마 (기기 설정 / 밝게 / 어둡게)
+    @State private var themeMode: ThemeMode = .system
 
     var body: some View {
         Group {
@@ -74,6 +76,7 @@ struct RootView: View {
             CoreDataManager.shared.refreshVariableCostReminders()
             CoreDataManager.shared.refreshSpendReminders()
             CoreDataManager.shared.refreshPaybackReminders()
+            loadTheme()
         }
         .onChange(of: scenePhase) {
             if scenePhase == .active {
@@ -86,10 +89,15 @@ struct RootView: View {
             // 오늘 소비를 기록하면 오늘 리마인더를 취소하고, 삭제하면 다시 복구한다
             CoreDataManager.shared.refreshSpendReminders()
         }
+        .onChange(of: eventBus.budgetChangedTrigger) { loadTheme() }
         .animation(.easeInOut(duration: 0.3), value: appState.isSetupCompleted)
-        // 디자인 시스템이 라이트 테마 고정이므로 다크모드에서도 라이트로 렌더링
-        // (다크모드에서 TextField 글자가 흰색이 되어 보이지 않는 문제 방지)
-        .preferredColorScheme(.light)
+        // 디자인 토큰이 라이트/다크 양쪽 값을 갖게 되어 고정 해제 (2026-08-08).
+        // nil이면 기기 설정을 따른다.
+        .preferredColorScheme(themeMode.colorScheme)
+    }
+
+    private func loadTheme() {
+        themeMode = CoreDataManager.shared.fetchBudgetConfig()?.themeMode ?? .system
     }
 }
 

@@ -140,7 +140,7 @@ extension SetupFixedCostView {
                 viewModel.removeFixedCost(at: IndexSet(integer: index))
             } label: {
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(Color(hex: "#FFF0F0"))
+                    .fill(Color.gagaePinkPale)
                     .frame(width: 26, height: 26)
                     .overlay(
                         Image(systemName: "trash")
@@ -204,7 +204,7 @@ extension SetupFixedCostView {
                 focusedField = nil
             } label: {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(hex: "#F5F5F5"))
+                    .fill(Color.gagaeSurfaceAlt)
                     .frame(width: 40, height: 40)
                     .overlay(Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.gagaeTextTertiary))
             }

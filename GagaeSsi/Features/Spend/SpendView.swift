@@ -115,7 +115,7 @@ extension SpendView {
                         .foregroundStyle(.gagaeTextSecondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(Color(hex: "#F5F5F5"))
+                        .background(Color.gagaeSurfaceAlt)
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -182,7 +182,7 @@ extension SpendView {
             }
             .padding(.horizontal, 13)
             .padding(.vertical, 7)
-            .background(isSelected ? category.color : Color(hex: "#F5F5F5"))
+            .background(isSelected ? category.color : Color.gagaeSurfaceAlt)
             .clipShape(Capsule())
             .overlay(
                 Capsule().stroke(isSelected ? .clear : Color.gagaeDivider, lineWidth: 1.5)
@@ -553,7 +553,7 @@ extension SpendView {
                 viewModel.fetchSpending(on: today)
             } label: {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(hex: "#FFF0F0"))
+                    .fill(Color.gagaePinkPale)
                     .frame(width: 28, height: 28)
                     .overlay(
                         Image(systemName: "trash")

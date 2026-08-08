@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Hex Initializer
 
@@ -20,46 +21,62 @@ extension Color {
         let b = Double(int & 0xFF) / 255.0
         self.init(red: r, green: g, blue: b)
     }
+
+    /// 라이트/다크에 따라 값이 바뀌는 색.
+    ///
+    /// `UIColor`의 동적 제공자를 쓰므로 시스템 트레잇 변화(제어 센터 전환, 설정의 테마 변경)에
+    /// 자동으로 반응한다. Assets 컬러셋으로 빼지 않은 이유는 팔레트를 이 파일 한 곳에서
+    /// 보고 고칠 수 있게 하기 위해서다.
+    static func adaptive(light: String, dark: String) -> Color {
+        Color(UIColor { traits in
+            UIColor(Color(hex: traits.userInterfaceStyle == .dark ? dark : light))
+        })
+    }
 }
 
 // MARK: - Color Palette
-// Claude Design 토큰 기준 (라이트 테마 고정)
+// Claude Design 토큰 기준. 라이트/다크 모두 지원 (따뜻한 계열의 다크 — 돼지 테마 유지)
 
 extension Color {
     // 주요 색상 (분홍 계열 - 돼지 테마)
-    static let gagaePink = Color(hex: "#FFB0B0")        // primaryLight
-    static let gagaePinkDark = Color(hex: "#F5706B")    // primary
-    static let gagaePinkLight = Color(hex: "#FFE1E6")   // primaryPale
+    // 다크에서는 어두운 배경 위에서 묻히지 않도록 primary를 한 단계 밝게 쓴다
+    static let gagaePink = Color.adaptive(light: "#FFB0B0", dark: "#FFA9A9")        // primaryLight
+    static let gagaePinkDark = Color.adaptive(light: "#F5706B", dark: "#FF8A85")    // primary
+    static let gagaePinkLight = Color.adaptive(light: "#FFE1E6", dark: "#3B2A2F")   // primaryPale
 
     // 포인트 색상
-    static let gagaePoint = Color(hex: "#FFD766")
-    static let gagaePointDark = Color(hex: "#F5BF26")
+    static let gagaePoint = Color.adaptive(light: "#FFD766", dark: "#FFDE80")
+    static let gagaePointDark = Color.adaptive(light: "#F5BF26", dark: "#FFCB45")
 
     // 상태 색상
-    static let gagaeGood = Color(hex: "#59C78D")        // 초록 - 여유
-    static let gagaeWarning = Color(hex: "#FFA633")     // 주황 - 주의
-    static let gagaeDanger = Color(hex: "#F25959")      // 빨강 - 위험
+    static let gagaeGood = Color.adaptive(light: "#59C78D", dark: "#63D89B")        // 초록 - 여유
+    static let gagaeWarning = Color.adaptive(light: "#FFA633", dark: "#FFB558")     // 주황 - 주의
+    static let gagaeDanger = Color.adaptive(light: "#F25959", dark: "#FF7A7A")      // 빨강 - 위험
 
     // 배경 색상
-    static let gagaeBackground = Color(hex: "#FFF5F7")
-    static let gagaeCardBackground = Color(hex: "#FFFFFF")
-    static let gagaeSurface = Color(hex: "#FAFAFA")
+    static let gagaeBackground = Color.adaptive(light: "#FFF5F7", dark: "#171315")
+    static let gagaeCardBackground = Color.adaptive(light: "#FFFFFF", dark: "#221C20")
+    static let gagaeSurface = Color.adaptive(light: "#FAFAFA", dark: "#2B242A")
+    /// 버튼·칩처럼 한 단계 더 눌린 면 (기존에 뷰마다 #F5F5F5로 흩어져 있던 것)
+    static let gagaeSurfaceAlt = Color.adaptive(light: "#F5F5F5", dark: "#322A30")
+    /// 옅은 분홍 면 (강조 배너 등, 기존 #FFF0F0)
+    static let gagaePinkPale = Color.adaptive(light: "#FFF0F0", dark: "#35272B")
 
     // 텍스트 색상
-    static let gagaeText = Color(hex: "#1A1A1A")
-    static let gagaeTextSecondary = Color(hex: "#888888")
-    static let gagaeTextTertiary = Color(hex: "#BBBBBB")
+    static let gagaeText = Color.adaptive(light: "#1A1A1A", dark: "#F4EFF1")
+    static let gagaeTextSecondary = Color.adaptive(light: "#888888", dark: "#A99FA5")
+    static let gagaeTextTertiary = Color.adaptive(light: "#BBBBBB", dark: "#6F656B")
 
     // 구분선
-    static let gagaeDivider = Color(hex: "#EEEEEE")
+    static let gagaeDivider = Color.adaptive(light: "#EEEEEE", dark: "#382F35")
 
     // 배경 그라디언트용
-    static let gagaePinkGradientTop = Color(hex: "#FFF0F3")
-    static let gagaePinkGradientBottom = Color(hex: "#F9F7FF")
+    static let gagaePinkGradientTop = Color.adaptive(light: "#FFF0F3", dark: "#1D171A")
+    static let gagaePinkGradientBottom = Color.adaptive(light: "#F9F7FF", dark: "#17151D")
 
-    // 메인 예산 카드 그라디언트
-    static let gagaeBudgetCardTop = Color(hex: "#F5706B")
-    static let gagaeBudgetCardBottom = Color(hex: "#E84060")
+    // 메인 예산 카드 그라디언트 (흰 글씨가 올라가므로 다크에서도 충분히 진하게)
+    static let gagaeBudgetCardTop = Color.adaptive(light: "#F5706B", dark: "#E0605C")
+    static let gagaeBudgetCardBottom = Color.adaptive(light: "#E84060", dark: "#C93A54")
 }
 
 extension ShapeStyle where Self == Color {
@@ -81,6 +98,8 @@ extension ShapeStyle where Self == Color {
     static var gagaeBackground: Color { .gagaeBackground }
     static var gagaeCardBackground: Color { .gagaeCardBackground }
     static var gagaeSurface: Color { .gagaeSurface }
+    static var gagaeSurfaceAlt: Color { .gagaeSurfaceAlt }
+    static var gagaePinkPale: Color { .gagaePinkPale }
 
     // 텍스트 색상
     static var gagaeText: Color { .gagaeText }

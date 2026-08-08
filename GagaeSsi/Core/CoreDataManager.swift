@@ -60,6 +60,7 @@ final class CoreDataManager {
         config.spendReminderEnabled = model.spendReminderEnabled
         config.spendReminderHour = Int16(model.spendReminderHour)
         config.spendReminderMinute = Int16(model.spendReminderMinute)
+        config.themeMode = model.themeMode.rawValue
 
         for fixed in model.fixedCosts {
             let fixedCost = FixedCost(context: context)
@@ -104,7 +105,16 @@ final class CoreDataManager {
         config.spendReminderEnabled = model.spendReminderEnabled
         config.spendReminderHour = Int16(model.spendReminderHour)
         config.spendReminderMinute = Int16(model.spendReminderMinute)
+        config.themeMode = model.themeMode.rawValue
 
+        return saveContext()
+    }
+
+    /// 앱 테마만 변경 (기기 설정 / 밝게 / 어둡게)
+    @discardableResult
+    func updateThemeMode(_ mode: ThemeMode) -> Bool {
+        guard let config = fetchBudgetConfigEntity() else { return false }
+        config.themeMode = mode.rawValue
         return saveContext()
     }
 

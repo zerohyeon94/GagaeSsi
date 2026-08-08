@@ -200,7 +200,7 @@ final class CoreDataMigrationTests: XCTestCase {
 
     /// 아주 오래된 버전(v1)에 머물러 있던 사용자도 현재 버전까지 한 번에 올라와야 한다.
     /// (실패하면 loadPersistentStores가 에러 → 앱은 fatalError로 죽는다)
-    func test_최초버전에서_5까지_한번에_마이그레이션된다() throws {
+    func test_최초버전에서_현재버전까지_한번에_마이그레이션된다() throws {
         let oldContainer = try container(with: try model(named: "GagaeSsi"))
         let config = NSEntityDescription.insertNewObject(forEntityName: "BudgetConfig",
                                                          into: oldContainer.viewContext)
@@ -209,15 +209,40 @@ final class CoreDataMigrationTests: XCTestCase {
         try oldContainer.viewContext.save()
         try unload(oldContainer)
 
-        let newContainer = try container(with: try model(named: "GagaeSsi 5"))
+        let newContainer = try container(with: try model(named: "GagaeSsi 8"))
         let entity = try XCTUnwrap(
             try newContainer.viewContext.fetch(NSFetchRequest<BudgetConfig>(entityName: "BudgetConfig")).first)
 
         let migrated = BudgetConfigModel(entity: entity)
         XCTAssertEqual(migrated.salary, 2_500_000)
+        XCTAssertEqual(migrated.themeMode, .system, "테마는 기본이 기기 설정")
         XCTAssertEqual(migrated.payday, 10)
         XCTAssertTrue(migrated.debtPlanEnabled)
         XCTAssertFalse(migrated.spendReminderEnabled)
+
+        try unload(newContainer)
+    }
+
+    /// GagaeSsi 7까지 쓰던 사용자가 테마 설정이 추가된 8로 올라와도 기존 설정이 살아 있어야 한다
+    func test_GagaeSsi7에서_8로_마이그레이션되고_테마는_기기설정이_기본() throws {
+        let oldContainer = try container(with: try model(named: "GagaeSsi 7"))
+        let config = NSEntityDescription.insertNewObject(forEntityName: "BudgetConfig",
+                                                         into: oldContainer.viewContext)
+        config.setValue(NSDecimalNumber(value: 3_300_000), forKey: "salary")
+        config.setValue(NSDecimalNumber(value: 20), forKey: "payday")
+        config.setValue("separate", forKey: "carryOverMode")
+        try oldContainer.viewContext.save()
+        try unload(oldContainer)
+
+        let newContainer = try container(with: try model(named: "GagaeSsi 8"))
+        let entity = try XCTUnwrap(
+            try newContainer.viewContext.fetch(NSFetchRequest<BudgetConfig>(entityName: "BudgetConfig")).first)
+
+        let migrated = BudgetConfigModel(entity: entity)
+        XCTAssertEqual(migrated.salary, 3_300_000)
+        XCTAssertEqual(migrated.carryOverMode, .separate, "기존 설정이 보존된다")
+        XCTAssertEqual(migrated.themeMode, .system,
+                       "테마 값이 비어 있어도 '기기 설정'으로 해석돼야 한다")
 
         try unload(newContainer)
     }
@@ -232,7 +257,9 @@ final class CoreDataMigrationTests: XCTestCase {
         try oldContainer.viewContext.save()
         try unload(oldContainer)
 
-        let newContainer = try container(with: try model(named: "GagaeSsi 3"))
+        // 모델 변환(BudgetConfigModel)은 현재 모델의 속성을 모두 읽으므로 최신 버전으로 연다.
+        // 구버전으로 열면 나중에 추가된 속성(themeMode 등)이 없어 접근 시 예외가 난다.
+        let newContainer = try container(with: try model(named: "GagaeSsi 8"))
         let entity = try XCTUnwrap(
             try newContainer.viewContext.fetch(NSFetchRequest<BudgetConfig>(entityName: "BudgetConfig")).first)
 

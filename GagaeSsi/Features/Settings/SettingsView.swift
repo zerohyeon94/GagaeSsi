@@ -276,7 +276,7 @@ extension SettingsView {
 
     private var notificationSection: some View {
         VStack(spacing: 0) {
-            sectionHeader("알림")
+            sectionHeader("알림 · 화면")
             VStack(spacing: 0) {
                 NavigationLink {
                     SpendReminderSettingView()
@@ -284,6 +284,16 @@ extension SettingsView {
                     settingRow(iconBg: Color(hex: "#FFB03A"), iconContent: AnyView(Text("🔔").font(.system(size: 15))),
                                label: "소비 기록 알림",
                                rightText: spendReminderRightText)
+                }
+                .buttonStyle(.plain)
+
+                rowDivider
+                NavigationLink {
+                    ThemeSettingView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#6B7280"), iconContent: AnyView(Text("🌗").font(.system(size: 15))),
+                               label: "화면 테마",
+                               rightText: currentConfig?.themeMode.label)
                 }
                 .buttonStyle(.plain)
             }
@@ -440,7 +450,7 @@ extension SettingsView {
                         .foregroundStyle(.gagaeText)
                         .frame(maxWidth: .infinity)
                         .frame(height: 52)
-                        .background(Color(hex: "#F5F5F5"))
+                        .background(Color.gagaeSurfaceAlt)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 .buttonStyle(.plain)

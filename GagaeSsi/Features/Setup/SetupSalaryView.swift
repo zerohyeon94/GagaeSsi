@@ -226,7 +226,7 @@ extension SetupSalaryView {
                 .font(.system(size: 12, weight: isOn ? .heavy : .medium, design: .rounded))
                 .foregroundStyle(isOn ? .white : .gagaeTextSecondary)
                 .frame(width: 34, height: 34)
-                .background(isOn ? Color.gagaePinkDark : Color(hex: "#F2F2F2"))
+                .background(isOn ? Color.gagaePinkDark : Color.gagaeSurfaceAlt)
                 .clipShape(Circle())
                 .gagaeShadow(color: isOn ? .gagaePinkDark.opacity(0.38) : .clear, radius: 5, y: 3)
         }
@@ -246,7 +246,7 @@ extension SetupSalaryView {
                     viewModel.isValid
                         ? AnyShapeStyle(LinearGradient(colors: [.gagaePinkDark, .gagaePink],
                                                        startPoint: .topLeading, endPoint: .bottomTrailing))
-                        : AnyShapeStyle(Color(hex: "#E8E8E8"))
+                        : AnyShapeStyle(Color.gagaeDivider)
                 )
                 .clipShape(Capsule())
                 .gagaeShadow(color: viewModel.isValid ? .gagaePinkDark.opacity(0.32) : .clear, radius: 14, y: 10)
