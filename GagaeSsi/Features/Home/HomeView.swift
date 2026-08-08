@@ -419,6 +419,19 @@ extension HomeView {
                 }
             }
 
+            // "이 돈이 어디서 왔지?" → 초과한 날과 그날 소비로 바로 이동
+            NavigationLink {
+                OverspendHistoryView(remainingDebt: debt.remainingAmount)
+            } label: {
+                HStack(spacing: 4) {
+                    Text("언제 초과했는지 보기")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                }
+                .foregroundStyle(.gagaePinkDark)
+            }
+            .buttonStyle(.plain)
+
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.gagaeDivider.opacity(0.5)).frame(height: 9)

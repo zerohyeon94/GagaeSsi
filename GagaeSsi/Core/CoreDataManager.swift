@@ -639,6 +639,27 @@ final class CoreDataManager {
     }
 
     /// 최근 N일 일별 지출 합계 [(Date, Int)] 반환
+    /// 기간 내 일자별 예산 기록 (날짜 오름차순). `[from, to)` 반개구간.
+    func fetchDailyBudgetModels(from startDate: Date, to endDate: Date) -> [DailyBudgetModel] {
+        let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@",
+                                        Calendar.current.startOfDay(for: startDate) as NSDate,
+                                        Calendar.current.startOfDay(for: endDate) as NSDate)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: true)]
+        let entities = (try? context.fetch(request)) ?? []
+        return entities.map(DailyBudgetModel.init)
+    }
+
+    /// 최근 `months`개월 동안 하루 예산을 넘긴 날 (최신순).
+    /// 부채가 어디서 왔는지 되짚어보기 위한 조회.
+    func fetchOverspendDays(months: Int = 3, now: Date = Date()) -> [OverspendDay] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        guard let start = calendar.date(byAdding: .month, value: -months, to: today),
+              let end = calendar.date(byAdding: .day, value: 1, to: today) else { return [] }
+        return OverspendAnalyzer.overspendDays(from: fetchDailyBudgetModels(from: start, to: end))
+    }
+
     func fetchDailyTotals(days: Int) -> [(date: Date, total: Int)] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())

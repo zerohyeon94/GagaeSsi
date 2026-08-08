@@ -137,6 +137,23 @@ private extension HistoryView {
                         .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.gagaeDanger)
                 }
             }
+
+            // 그날 실제로 넘겼는지 — 소비액만 봐서는 이월 때문에 판단할 수 없다
+            if viewModel.selectedOverspentAmount > 0 {
+                HStack(spacing: 6) {
+                    Text("⚠️").font(.system(size: 12))
+                    Text("이 날 \(FormatterUtils.currencyString(from: viewModel.selectedOverspentAmount)) 초과했어요")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaeDanger)
+                    Spacer()
+                    Text("쓸 수 있던 \(FormatterUtils.currencyString(from: viewModel.selectedAvailable))")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeTextSecondary)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(Color.gagaeDanger.opacity(0.09))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
             if viewModel.selectedRecords.isEmpty {
                 Text("이 날은 소비 기록이 없어요")
                     .font(.system(size: 13, design: .rounded)).foregroundStyle(.gagaeTextTertiary)
