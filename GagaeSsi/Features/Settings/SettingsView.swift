@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var fixedCostsCount: Int = 0
     @State private var pigBreathing = false
     @State private var activeDebt: SpendingDebtModel?
+    @State private var showMailUnavailable = false
 
     /// 상환 계획 행 우측 요약 (진행 중이면 남은 금액, 아니면 on/off)
     private var debtPlanRightText: String? {
@@ -72,12 +73,26 @@ struct SettingsView: View {
         .onChange(of: eventBus.budgetChangedTrigger) { loadConfig() }
         .onChange(of: eventBus.fixedExpenseChangedTrigger) { loadConfig() }
         .onChange(of: eventBus.spendingAddedTrigger) { loadConfig() }
+        .alert("메일 앱을 열 수 없어요", isPresented: $showMailUnavailable) {
+            Button("확인", role: .cancel) {}
+        } message: {
+            Text("기기에 메일 계정이 없는 것 같아요.\n\(FeedbackMail.supportEmail) 으로 직접 보내주셔도 됩니다.")
+        }
     }
 
     private func loadConfig() {
         currentConfig = CoreDataManager.shared.fetchBudgetConfig()
         fixedCostsCount = CoreDataManager.shared.fetchFixedCosts().count
         activeDebt = CoreDataManager.shared.fetchActiveDebt()
+    }
+
+    /// 기본 메일 앱을 연다. 메일 계정이 없는 기기에서는 열리지 않으므로 안내한다.
+    private func sendFeedback() {
+        guard let url = FeedbackMail.url(), UIApplication.shared.canOpenURL(url) else {
+            withAnimation { showMailUnavailable = true }
+            return
+        }
+        UIApplication.shared.open(url)
     }
 
     private func handleReset() {
@@ -290,8 +305,14 @@ extension SettingsView {
                 .buttonStyle(.plain)
 
                 rowDivider
-                settingRow(iconBg: Color(hex: "#5BC8FA"), iconContent: AnyView(Text("☁️").font(.system(size: 16))),
-                           label: "데이터 백업", rightText: "준비 중", disabled: true)
+                NavigationLink {
+                    DataExportView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#5BC8FA"), iconContent: AnyView(Text("📤").font(.system(size: 15))),
+                               label: "데이터 내보내기", rightText: "CSV")
+                }
+                .buttonStyle(.plain)
+
                 rowDivider
                 Button {
                     withAnimation { showConfirm = true }
@@ -312,8 +333,14 @@ extension SettingsView {
         VStack(spacing: 0) {
             sectionHeader("앱 정보")
             VStack(spacing: 0) {
-                settingRow(iconBg: Color(hex: "#8C73E5"), iconContent: AnyView(Text("✉️").font(.system(size: 16))),
-                           label: "피드백 보내기", rightText: "준비 중", disabled: true)
+                Button {
+                    sendFeedback()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#8C73E5"), iconContent: AnyView(Text("✉️").font(.system(size: 16))),
+                               label: "피드백 보내기")
+                }
+                .buttonStyle(.plain)
+
                 rowDivider
                 settingRow(iconBg: Color.gagaeTextTertiary, iconContent: AnyView(Text("ℹ️").font(.system(size: 15))),
                            label: "버전", rightText: appVersion, showChevron: false)
