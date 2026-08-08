@@ -95,17 +95,29 @@ final class OverspendHistoryTests: XCTestCase {
         XCTAssertEqual(evaluation.overspent, 0)
     }
 
-    func test_위시저금도_초과_계산에_포함된다() {
+    /// 저금은 쓴 돈이 아니라 모은 돈이라 과소비로 치지 않는다
+    func test_위시저금은_초과액에_포함하지_않는다() {
         let budget = DailyBudgetModel(
             availableAmount: 50_000, date: day(-1), carryOverSources: [],
             spendingRecords: [SpendingRecordModel(title: "점심", amount: 48_000, date: day(-1))],
             wishSavingAmount: 5_000)
 
+        XCTAssertTrue(OverspendAnalyzer.overspendDays(from: [budget]).isEmpty,
+                      "소비 48,000 < 배정 50,000 — 저금 5,000을 더해 초과로 잡으면 안 된다")
+        XCTAssertEqual(OverspendAnalyzer.evaluate(budget).outgoing, 48_000)
+    }
+
+    func test_위시저금이_있어도_소비만으로_초과를_판정한다() {
+        let budget = DailyBudgetModel(
+            availableAmount: 50_000, date: day(-1), carryOverSources: [],
+            spendingRecords: [SpendingRecordModel(title: "쇼핑", amount: 70_000, date: day(-1))],
+            wishSavingAmount: 5_000)
+
         let days = OverspendAnalyzer.overspendDays(from: [budget])
 
         XCTAssertEqual(days.count, 1)
-        XCTAssertEqual(days[0].overspentAmount, 3_000)
-        XCTAssertEqual(days[0].wishSaving, 5_000)
+        XCTAssertEqual(days[0].overspentAmount, 20_000, "70,000 − 50,000 (저금 제외)")
+        XCTAssertEqual(days[0].wishSaving, 5_000, "저금액은 참고용으로 함께 보여준다")
     }
 
     func test_최신순_정렬되고_합계와_최악의날을_구한다() {
@@ -198,6 +210,42 @@ final class OverspendHistoryTests: XCTestCase {
         XCTAssertEqual(overspentSpends, [351_180, 131_310, 74_170, 141_362],
                        "기본 예산을 넘긴 4일만 잡혀야 한다 (8일 전부가 아니라)")
         XCTAssertEqual(days.count, 4)
+    }
+
+    // MARK: - 갚은 내역
+
+    func test_상환내역은_출처별로_최신순_조회된다() {
+        _ = sut.createBudgetConfig(from: BudgetConfigModel(
+            salary: 3_000_000, payday: 25, fixedCosts: [],
+            carryOverMode: .separate, debtPlanEnabled: true))
+        let base = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(-1))
+
+        _ = sut.createDailyBudget(DailyBudgetModel(availableAmount: base, date: day(-1),
+                                                   carryOverSources: [], spendingRecords: []))
+        _ = sut.createSpendingRecord(SpendingRecordModel(title: "큰 지출", amount: base * 3, date: day(-1)))
+        sut.processDailyBudgets(upTo: day(0))
+        _ = sut.confirmDebtPlan(ratePercent: 20)      // 오늘 daily 상환 1건
+        sut.depositToPool(amount: 10_000, date: day(0))
+        _ = sut.repayDebtFromPool(amount: 10_000)     // pool 상환 1건
+
+        let repayments = sut.fetchDebtRepayments(months: 3)
+
+        XCTAssertEqual(repayments.count, 2)
+        XCTAssertEqual(Set(repayments.map(\.source)), [.daily, .pool])
+        XCTAssertEqual(repayments.first(where: { $0.source == .pool })?.amount, 10_000)
+        XCTAssertEqual(repayments.first(where: { $0.source == .daily })?.amount, base * 20 / 100)
+    }
+
+    func test_상환내역이_없으면_빈배열() {
+        _ = sut.createBudgetConfig(from: BudgetConfigModel(salary: 3_000_000, payday: 25, fixedCosts: []))
+        XCTAssertTrue(sut.fetchDebtRepayments(months: 3).isEmpty)
+    }
+
+    func test_상환_출처_라벨이_모두_정의되어_있다() {
+        for source in [DebtRepaymentSource.daily, .pool, .absorbed, .settle] {
+            XCTAssertFalse(source.label.isEmpty)
+            XCTAssertFalse(source.emoji.isEmpty)
+        }
     }
 
     func test_부채로_전환돼도_초과한_날_기록은_남는다() {

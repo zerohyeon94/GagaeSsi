@@ -1312,6 +1312,20 @@ final class CoreDataManager {
         return saveContext()
     }
 
+    /// 최근 `months`개월 상환 내역 (최신순). 완납된 부채의 기록도 함께 나온다.
+    func fetchDebtRepayments(months: Int = 3, now: Date = Date()) -> [DebtRepaymentEntryModel] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        guard let start = calendar.date(byAdding: .month, value: -months, to: today),
+              let end = calendar.date(byAdding: .day, value: 1, to: today) else { return [] }
+
+        let request: NSFetchRequest<DebtRepaymentEntry> = DebtRepaymentEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", start as NSDate, end as NSDate)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
+        let entities = (try? context.fetch(request)) ?? []
+        return entities.map(DebtRepaymentEntryModel.init)
+    }
+
     /// 오늘 하루 예산에서 차감된 상환액 (홈의 "초과분 상환" 행 표시용).
     /// 풀 상환·급여일 흡수는 오늘 예산을 건드리지 않으므로 제외한다.
     func todayDebtRepaymentAmount() -> Int {

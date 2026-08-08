@@ -37,8 +37,6 @@ struct OverspendDay: Identifiable, Equatable {
 
     /// 그날 실제로 쓸 수 있었던 금액
     var availableThatDay: Int { baseBudget + savedCarryOver + sameDayAdjustment }
-    /// 그날 빠져나간 금액 (소비 + 위시 저금)
-    var outgoing: Int { spent + wishSaving }
 }
 
 enum OverspendAnalyzer {
@@ -75,7 +73,10 @@ enum OverspendAnalyzer {
         // 음수 이월(과거 적자)은 그날 과소비의 근거가 될 수 없다.
         // 포함하면 적자에 빠진 뒤 모든 날이 초과일로 표시된다.
         let allowance = budget.availableAmount + max(0, savedCarryOver) + sameDayAdjustment
-        let outgoing = budget.spendingRecords.map(\.amount).reduce(0, +) + budget.wishSavingAmount
+
+        // 위시리스트 저금은 쓴 돈이 아니라 모은 돈이라 초과액에 넣지 않는다.
+        // (잔액 계산에는 반영되지만, 되짚어보기에서 저금을 과소비로 치면 안 된다)
+        let outgoing = budget.spendingRecords.map(\.amount).reduce(0, +)
         return DayEvaluation(allowance: allowance, outgoing: outgoing)
     }
 

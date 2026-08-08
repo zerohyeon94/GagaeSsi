@@ -148,6 +148,24 @@ enum DebtRepaymentSource: String, Codable {
     static func from(_ raw: String?) -> DebtRepaymentSource {
         DebtRepaymentSource(rawValue: raw ?? "") ?? .daily
     }
+
+    var label: String {
+        switch self {
+        case .daily: return "하루 예산에서"
+        case .pool: return "모아둔 이월금에서"
+        case .absorbed: return "급여일 정산"
+        case .settle: return "한 번에 갚기"
+        }
+    }
+
+    var emoji: String {
+        switch self {
+        case .daily: return "💪"
+        case .pool: return "🐷"
+        case .absorbed: return "🎉"
+        case .settle: return "✅"
+        }
+    }
 }
 
 // MARK: - 상환 원장 모델
