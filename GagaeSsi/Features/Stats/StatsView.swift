@@ -229,9 +229,17 @@ extension StatsView {
     /// 카테고리별 지출 카드
     private var categoryCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("카테고리별 지출")
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundStyle(.gagaeText)
+            HStack {
+                Text("카테고리별 지출")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Spacer()
+                if !viewModel.categoryTotals.isEmpty {
+                    Text("눌러서 자세히")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                }
+            }
 
             if viewModel.categoryTotals.isEmpty {
                 Text("기록이 없어요")
@@ -240,16 +248,53 @@ extension StatsView {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
             } else {
-                HStack(spacing: 16) {
-                    donutChart
-                    legend
-                }
+                donutChart
+                    .frame(maxWidth: .infinity)
+                categoryRows
             }
         }
         .padding(16)
         .background(Color.gagaeCardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .gagaeCardShadow()
+    }
+
+    /// 카테고리 행 — 금액까지 보여주고, 누르면 그 카테고리의 지출 목록으로
+    private var categoryRows: some View {
+        VStack(spacing: 0) {
+            ForEach(viewModel.categoryTotals) { item in
+                NavigationLink {
+                    CategoryDetailView(category: item.category,
+                                       month: viewModel.selectedMonth,
+                                       monthlyTotal: viewModel.monthlyTotal)
+                } label: {
+                    HStack(spacing: 9) {
+                        Circle().fill(item.category.color).frame(width: 9, height: 9)
+                        Text("\(item.category.emoji) \(item.category.rawValue)")
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundStyle(.gagaeText)
+                        Spacer()
+                        Text(FormatterUtils.currencyString(from: item.amount))
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.gagaeText)
+                        Text("\(Int((item.percentage * 100).rounded()))%")
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundStyle(.gagaeTextTertiary)
+                            .frame(width: 38, alignment: .trailing)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.gagaeTextTertiary)
+                    }
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if item.id != viewModel.categoryTotals.last?.id {
+                    Rectangle().fill(Color.gagaeDivider).frame(height: 0.5).padding(.leading, 18)
+                }
+            }
+        }
     }
 
     private var donutChart: some View {
@@ -272,23 +317,6 @@ extension StatsView {
                 Text("만원")
                     .font(.system(size: 9.5, design: .rounded))
                     .foregroundStyle(.gagaeTextSecondary)
-            }
-        }
-    }
-
-    private var legend: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            ForEach(viewModel.categoryTotals) { item in
-                HStack(spacing: 7) {
-                    Circle().fill(item.category.color).frame(width: 9, height: 9)
-                    Text(item.category.rawValue)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.gagaeText)
-                    Spacer()
-                    Text("\(Int((item.percentage * 100).rounded()))%")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(.gagaeText)
-                }
             }
         }
     }
