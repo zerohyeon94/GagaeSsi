@@ -281,6 +281,15 @@ extension SettingsView {
         VStack(spacing: 0) {
             sectionHeader("데이터")
             VStack(spacing: 0) {
+                NavigationLink {
+                    SpendingTitleCleanupView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#9B8BF4"), iconContent: AnyView(Text("🏷️").font(.system(size: 15))),
+                               label: "항목 이름 정리")
+                }
+                .buttonStyle(.plain)
+
+                rowDivider
                 settingRow(iconBg: Color(hex: "#5BC8FA"), iconContent: AnyView(Text("☁️").font(.system(size: 16))),
                            label: "데이터 백업", rightText: "준비 중", disabled: true)
                 rowDivider

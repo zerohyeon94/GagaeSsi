@@ -639,6 +639,43 @@ final class CoreDataManager {
     }
 
     /// 최근 N일 일별 지출 합계 [(Date, Int)] 반환
+    /// 전체 소비 기록 (최신순) — 항목 이름 정리처럼 기간 제한이 없는 작업용
+    func fetchAllSpendingRecords() -> [SpendingRecordModel] {
+        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
+        let entities = (try? context.fetch(request)) ?? []
+        return entities.map(SpendingRecordModel.init)
+    }
+
+    /// 항목 이름 일괄 변경. `titles` 중 하나와 일치하는 기록의 제목을 `newTitle`로 바꾼다.
+    ///
+    /// 비교는 자동완성과 같은 `정규화 + 소문자` 기준이라 "스타벅스 커피"를 지정하면
+    /// "  스타벅스   커피 " 같은 표기도 함께 잡힌다.
+    /// **제목만 바꾼다** — 금액·날짜·카테고리는 그대로라 예산·이월 계산에 영향이 없다.
+    /// - Returns: 실제로 바뀐 기록 수
+    @discardableResult
+    func renameSpendingTitles(matching titles: [String], to newTitle: String) -> Int {
+        let target = SpendingSuggestionEngine.normalize(newTitle)
+        guard !target.isEmpty else { return 0 }
+
+        let keys = Set(titles.map { SpendingSuggestionEngine.normalize($0).lowercased() })
+        guard !keys.isEmpty else { return 0 }
+
+        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        let entities = (try? context.fetch(request)) ?? []
+
+        var changed = 0
+        for entity in entities {
+            let normalized = SpendingSuggestionEngine.normalize(entity.title ?? "")
+            guard keys.contains(normalized.lowercased()), normalized != target else { continue }
+            entity.title = target
+            changed += 1
+        }
+
+        guard changed > 0 else { return 0 }
+        return saveContext() ? changed : 0
+    }
+
     /// 기간 내 일자별 예산 기록 (날짜 오름차순). `[from, to)` 반개구간.
     func fetchDailyBudgetModels(from startDate: Date, to endDate: Date) -> [DailyBudgetModel] {
         let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
