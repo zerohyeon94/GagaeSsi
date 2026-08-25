@@ -33,8 +33,8 @@ struct HistoryView: View {
         .onAppear { viewModel.load() }
         .onChange(of: eventBus.spendingAddedTrigger) { viewModel.load() }
         .sheet(item: $editingRecord) { record in
-            HistorySpendEditView(record: record) { affectedFrom in
-                viewModel.afterEdit(affectedFrom: affectedFrom, eventBus: eventBus)
+            HistorySpendEditView(record: record) {
+                viewModel.afterEdit(eventBus: eventBus)
             }
         }
     }

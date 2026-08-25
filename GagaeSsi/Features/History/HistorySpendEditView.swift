@@ -9,8 +9,8 @@ import SwiftUI
 
 struct HistorySpendEditView: View {
     let record: SpendingRecordModel
-    /// 저장 완료 콜백 — 영향받는 가장 이른 날짜(old/new 중)를 전달
-    let onSaved: (Date) -> Void
+    /// 저장 완료 콜백
+    let onSaved: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
@@ -143,8 +143,7 @@ struct HistorySpendEditView: View {
         // paybackReceived는 record 값 유지
 
         if CoreDataManager.shared.updateSpendingRecord(updated) {
-            let affectedFrom = min(cal.startOfDay(for: record.date), cal.startOfDay(for: newDate))
-            onSaved(affectedFrom)
+            onSaved()
             dismiss()
         }
     }

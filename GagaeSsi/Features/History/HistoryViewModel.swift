@@ -143,18 +143,17 @@ final class HistoryViewModel {
         load()
     }
 
-    // MARK: - 삭제 (과거 → 이월 체인 재계산)
+    // MARK: - 삭제
+    /// 과거 날짜의 이월 체인 재계산은 `deleteSpendingRecord`가 직접 책임진다.
     func delete(_ record: SpendingRecordModel, eventBus: AppEventBus) {
         if CoreDataManager.shared.deleteSpendingRecord(id: record.id) {
-            CoreDataManager.shared.recalculateCarryOverChain(from: record.date)
             eventBus.notifySpendingAdded()
             load()
         }
     }
 
     /// 편집 저장 후 호출 (편집 시트에서 updateSpendingRecord 완료 후)
-    func afterEdit(affectedFrom: Date, eventBus: AppEventBus) {
-        CoreDataManager.shared.recalculateCarryOverChain(from: affectedFrom)
+    func afterEdit(eventBus: AppEventBus) {
         eventBus.notifySpendingAdded()
         load()
     }
