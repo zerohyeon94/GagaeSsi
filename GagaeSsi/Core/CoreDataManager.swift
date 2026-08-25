@@ -35,6 +35,10 @@ final class CoreDataManager {
         persistentContainer.viewContext
     }
 
+    /// 이월 백필(`processDailyBudgets`)이 도는 중인지. 백필이 만드는 일자가 다시 백필을
+    /// 부르는 재진입을 막는다.
+    private var isBackfilling = false
+
     // MARK: - Save
     @discardableResult
     func saveContext() -> Bool {
@@ -665,6 +669,14 @@ final class CoreDataManager {
         if let existing = fetchDailyBudgetEntity(date: startOfDay) {
             return existing
         }
+        // 오늘(이후)을 만드는 경우엔 백필을 먼저 돌려 전날 이월을 이어받게 한다.
+        // 과거 날짜는 그날 이후 이월을 소비 CRUD의 체인 재계산이 다시 맞춘다.
+        if startOfDay >= Calendar.current.startOfDay(for: Date()) {
+            processDailyBudgets(upTo: startOfDay)
+            if let filled = fetchDailyBudgetEntity(date: startOfDay) {
+                return filled
+            }
+        }
         guard let config = fetchBudgetConfig() else { return nil }
         let base = DailyBudgetCalculator.calculate(from: config, installments: fetchInstallments(), for: startOfDay)
         let dailyBudget = DailyBudget(context: context)
@@ -907,6 +919,12 @@ final class CoreDataManager {
         if let model = fetchDailyBudgetModel(date: today) {
             return model
         }
+        // 이월을 달지 않고 그냥 만들면 전날 잔액이 사라진다. 홈이 아닌 화면에서 먼저
+        // 들어와도 같은 결과가 되도록 백필을 먼저 돌린다 (기록이 있으면 오늘까지 채워진다).
+        processDailyBudgets(upTo: today)
+        if let model = fetchDailyBudgetModel(date: today) {
+            return model
+        }
         // BudgetConfig 없으면 nil
         guard let config = fetchBudgetConfig() else {
             DebugLogger.log("❌ BudgetConfig 없음 → Budget 설정 필요")
@@ -931,6 +949,11 @@ final class CoreDataManager {
     /// 전날 잔액(todayAvailable, 음수 가능)을 다음날 이월금으로 누적 연결한다.
     /// - 멱등성: 이미 존재하는 날짜는 건너뛰므로 여러 번 호출해도 중복 이월되지 않는다.
     func processDailyBudgets(upTo date: Date) {
+        // 백필 도중 내부에서 일자를 만드는 경로(위시 저금 등)가 다시 백필로 들어오지 않게 한다
+        guard !isBackfilling else { return }
+        isBackfilling = true
+        defer { isBackfilling = false }
+
         // 그날 처리가 끝난 뒤 부채 잔액을 원장과 맞춘다 (홈 진입마다 — 어긋난 채로 남지 않는다)
         defer { reconcileDebtNow(now: date) }
 
@@ -944,26 +967,26 @@ final class CoreDataManager {
         }
         let installments = fetchInstallments()
 
-        // 가장 최근 DailyBudget 날짜 조회
-        let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
-        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
-        request.fetchLimit = 1
-        guard let latest = try? context.fetch(request).first,
-              let latestDate = latest.date else {
+        // 채워야 할 첫 날.
+        //
+        // "가장 최근 날짜 다음"만 보면, 홈보다 먼저 오늘을 만든 경로가 있었을 때
+        // 중간이 빈 채로 "이미 처리됨"이 되어 이월이 영영 끊긴다. 실제로 비어 있는
+        // 가장 이른 날을 찾아 거기서부터 채운다 (이미 끊긴 데이터도 이때 복구된다).
+        let existingDays = fetchDailyBudgetDays()
+        guard let firstDay = existingDays.min() else {
             // 기록이 전혀 없으면 신규 사용자 → 오늘은 fetchOrCreateTodayDailyBudget()가 이월 0으로 생성
             return
         }
 
-        let latestDay = calendar.startOfDay(for: latestDate)
-        guard latestDay < today else {
-            // 오늘까지 이미 처리됐어도, 이전 버전에서 넘어온 큰 음수 이월이 남아 있으면 부채로 전환한다.
+        guard let startDay = firstMissingDay(after: firstDay, upTo: today, in: existingDays) else {
+            // 빈 날이 없어도, 이전 버전에서 넘어온 큰 음수 이월이 남아 있으면 부채로 전환한다.
             // (일자 전환 시점에만 전환하면 업데이트 직후 하루 동안 계속 음수로 보인다)
             convertExistingDeficitToDebt(on: today, config: config)
             return
         }
 
-        // latestDay + 1 ~ today 까지 순회하며 누락된 날짜 생성
-        var cursor = calendar.date(byAdding: .day, value: 1, to: latestDay)!
+        // startDay ~ today 까지 순회하며 누락된 날짜 생성 (이미 있는 날은 건너뛴다)
+        var cursor = startDay
         while cursor <= today {
             let isNewDay = fetchDailyBudgetEntity(date: cursor) == nil   // 이미 있으면 재생성하지 않음 (멱등성)
             let prevDay = calendar.date(byAdding: .day, value: -1, to: cursor)!
@@ -1031,6 +1054,31 @@ final class CoreDataManager {
 
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }
+
+        // 채운 날 뒤에 이미 있던 날들은 끊긴 이월을 그대로 들고 있으므로 다시 이어준다.
+        // 방금 만든 날들은 같은 값으로 재계산되므로 결과가 달라지지 않는다 (멱등).
+        recalculateCarryOverChain(from: calendar.date(byAdding: .day, value: -1, to: startDay)!)
+    }
+
+    /// 기록이 있는 모든 일자(자정 기준) 집합. 빈 날 탐지용이라 날짜만 가볍게 읽는다.
+    private func fetchDailyBudgetDays() -> Set<Date> {
+        let request: NSFetchRequest<DailyBudget> = DailyBudget.fetchRequest()
+        request.propertiesToFetch = ["date"]
+        let entities = (try? context.fetch(request)) ?? []
+        let calendar = Calendar.current
+        return Set(entities.compactMap { $0.date.map { calendar.startOfDay(for: $0) } })
+    }
+
+    /// `firstDay` 다음날부터 `today`까지 중 기록이 비어 있는 가장 이른 날 (없으면 nil)
+    private func firstMissingDay(after firstDay: Date, upTo today: Date,
+                                 in existingDays: Set<Date>) -> Date? {
+        let calendar = Calendar.current
+        var cursor = calendar.date(byAdding: .day, value: 1, to: firstDay)!
+        while cursor <= today {
+            if !existingDays.contains(cursor) { return cursor }
+            cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
+        }
+        return nil
     }
 
     /// `from`(변경된 소비 날짜)부터 오늘까지 일자 이월(및 분리 모드 풀 적립)을 다시 계산한다.
