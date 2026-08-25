@@ -165,6 +165,23 @@ final class DebtCarryOverDoubleCountTests: XCTestCase {
         XCTAssertNil(sut.fetchActiveDebt(), "이월된 저축 적자가 뒤늦게 빚이 되면 안 된다")
     }
 
+    /// 체인 재계산은 저축이 만든 적자를 빚으로 바꾸지 않는다.
+    /// 적자 전액을 부채 크레딧에 맞추면, 과거 소비를 고칠 때마다 저축분이 빚으로 불어난다.
+    func test_체인재계산이_저축_적자를_빚으로_만들지_않는다() {
+        setup()
+        seedDay(day(-2), available: 20_000)
+        addSpend(35_000, on: day(-2))               // 소비 초과 15,000
+        sut.createAssetTransfer(AssetTransferModel(date: day(-2), amount: 50_000, title: "적금"))
+
+        sut.processDailyBudgets(upTo: day(-1))      // 잔액 −65,000 중 15,000만 부채로
+        XCTAssertEqual(remainingDebt(), 15_000)
+
+        sut.recalculateCarryOverChain(from: day(-2))
+
+        XCTAssertEqual(remainingDebt(), 15_000, "저축 50,000이 빚에 얹히면 안 된다")
+        XCTAssertEqual(overspendTotal(), 15_000)
+    }
+
     // MARK: - 잔액 보정 (원장 기준 재계산)
 
     /// 부채 잔액이 원장과 어긋나면 보정이 원장 값으로 덮어쓴다.

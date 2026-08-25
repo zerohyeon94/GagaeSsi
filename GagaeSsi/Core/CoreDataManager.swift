@@ -1035,7 +1035,8 @@ final class CoreDataManager {
         while cursor <= today {
             if let budget = fetchDailyBudgetEntity(date: cursor) {
                 let prevDay = calendar.date(byAdding: .day, value: -1, to: cursor)!
-                let prevBalance = fetchDailyBudgetModel(date: prevDay)?.todayAvailable ?? 0
+                let prevBudget = fetchDailyBudgetModel(date: prevDay)
+                let prevBalance = prevBudget?.todayAvailable ?? 0
 
                 // 1) 기존 '일자 이월'(date < cursor)만 제거
                 let sources = budget.carryOverSources?.allObjects as? [CarryOverSource] ?? []
@@ -1056,8 +1057,12 @@ final class CoreDataManager {
                     addCarryOverSource(to: budget, amount: carry, date: prevDay, toDate: cursor,
                                        reason: .carryOver)
                 }
-                // 4) 이 날 부채로 옮긴 적자가 있었다면 새로 계산된 적자에 맞춰 크레딧·부채를 함께 조정한다
-                reconcileDebtTransfer(on: budget, newDeficit: max(0, -carry), day: cursor)
+                // 4) 이 날 부채로 옮긴 적자가 있었다면 새로 계산된 적자에 맞춰 크레딧·부채를 함께 조정한다.
+                //    적자 전액이 아니라 '전날 소비가 배정을 넘긴 만큼'만 쓴다 — 저축·투자가 만든
+                //    적자까지 넣으면 재계산할 때마다 저축이 빚으로 둔갑한다
+                //    (`overspendToConvert`와 같은 기준).
+                let convertible = convertibleOverspend(of: prevBudget, deficit: max(0, -carry))
+                reconcileDebtTransfer(on: budget, newDeficit: convertible, day: cursor)
 
                 if config.carryOverMode == .separate {
                     let deposit = max(0, prevBalance)
