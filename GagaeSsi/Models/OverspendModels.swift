@@ -11,6 +11,9 @@
 //  잔액(todayAvailable)이 음수인 날을 초과일로 잡으면, 한 번 적자에 빠진 뒤로는
 //  6,200원만 쓴 날도 "258,036원 초과"가 되어 모든 날이 초과일로 표시된다.
 //  그래서 **음수 이월은 그날의 잘못으로 치지 않는다.**
+//  같은 이유로 **초과분 상환·부채 이관(`CarryOverReason`)도 배정액에서 빼지 않는다.**
+//  빼면 갚는 날마다 이미 목록에 있는 과거 초과가 새 초과로 다시 잡혀
+//  '아직 갚는 중' 금액과 '초과한 날' 합계가 어긋난다.
 //
 //  별도 원장을 두지 않은 이유: 원장은 앞으로 생기는 초과만 담을 수 있어
 //  이미 쌓여 있는 부채의 출처를 보여주지 못한다.
@@ -28,8 +31,11 @@ struct OverspendDay: Identifiable, Equatable {
     let baseBudget: Int
     /// 아껴서 넘어온 이월 (음수 이월은 제외)
     let savedCarryOver: Int
-    /// 그날 발생한 크레딧·차감 (이월금 인출·환급 +, 초과분 상환 −)
+    /// 그날 발생한 크레딧 (이월금 인출·환급)
     let sameDayAdjustment: Int
+    /// 그날 초과분 정산으로 오간 금액 (상환 차감 −, 부채 이관 크레딧 +).
+    /// 배정액에는 넣지 않고 안내용으로만 쓴다.
+    let debtAdjustment: Int
     /// 그날 소비 합계
     let spent: Int
     /// 그날 위시리스트 저금액
@@ -55,24 +61,48 @@ enum OverspendAnalyzer {
         }
     }
 
+    /// 하루의 이월 항목을 성격별로 나눈 값
+    struct DayBreakdown {
+        /// 전날에서 넘어온 이월 (음수 가능)
+        let savedCarryOver: Int
+        /// 그날 배정에 더해지는 크레딧 (이월금 인출·환급)
+        let sameDayAdjustment: Int
+        /// 그날 초과분 정산으로 오간 금액 (상환 차감 −, 부채 이관 크레딧 +)
+        let debtAdjustment: Int
+    }
+
+    /// 이월 항목을 성격별로 나눈다.
+    ///
+    /// **초과분 정산으로 오간 돈은 배정액에서 뺀다.** 상환 차감을 배정액에서 깎으면
+    /// 기본 예산 안에서 쓴 날도 상환액만큼 초과로 잡혀, 이미 목록에 있는 과거 초과를
+    /// 상환하는 날마다 새 초과로 다시 세게 된다.
+    static func breakdown(of budget: DailyBudgetModel) -> DayBreakdown {
+        var savedCarryOver = 0
+        var sameDayAdjustment = 0
+        var debtAdjustment = 0
+        for source in budget.carryOverSources {
+            switch source.reason {
+            case .carryOver:
+                savedCarryOver += source.amount
+            case .poolWithdraw, .refund:
+                sameDayAdjustment += source.amount
+            case .debtRepay, .debtTransfer:
+                debtAdjustment += source.amount
+            }
+        }
+        return DayBreakdown(savedCarryOver: savedCarryOver,
+                            sameDayAdjustment: sameDayAdjustment,
+                            debtAdjustment: debtAdjustment)
+    }
+
     /// 하루의 배정액·지출을 계산한다. 초과 판정·캘린더 상태 색이 모두 이 값을 쓴다.
     static func evaluate(_ budget: DailyBudgetModel,
                          calendar: Calendar = .current) -> DayEvaluation {
-        let day = calendar.startOfDay(for: budget.date)
-
-        var savedCarryOver = 0      // 전날에서 넘어온 이월
-        var sameDayAdjustment = 0   // 그날 발생한 크레딧·차감
-        for source in budget.carryOverSources {
-            if calendar.startOfDay(for: source.date) < day {
-                savedCarryOver += source.amount
-            } else {
-                sameDayAdjustment += source.amount
-            }
-        }
+        let parts = breakdown(of: budget)
 
         // 음수 이월(과거 적자)은 그날 과소비의 근거가 될 수 없다.
         // 포함하면 적자에 빠진 뒤 모든 날이 초과일로 표시된다.
-        let allowance = budget.availableAmount + max(0, savedCarryOver) + sameDayAdjustment
+        let allowance = budget.availableAmount + max(0, parts.savedCarryOver) + parts.sameDayAdjustment
 
         // 위시리스트 저금은 쓴 돈이 아니라 모은 돈이라 초과액에 넣지 않는다.
         // (잔액 계산에는 반영되지만, 되짚어보기에서 저금을 과소비로 치면 안 된다)
@@ -87,26 +117,17 @@ enum OverspendAnalyzer {
                               calendar: Calendar = .current) -> [OverspendDay] {
         budgets
             .compactMap { budget -> OverspendDay? in
-                let day = calendar.startOfDay(for: budget.date)
                 let evaluation = evaluate(budget, calendar: calendar)
                 guard evaluation.overspent >= minimumAmount else { return nil }
 
-                var savedCarryOver = 0
-                var sameDayAdjustment = 0
-                for source in budget.carryOverSources {
-                    if calendar.startOfDay(for: source.date) < day {
-                        savedCarryOver += source.amount
-                    } else {
-                        sameDayAdjustment += source.amount
-                    }
-                }
-
+                let parts = breakdown(of: budget)
                 return OverspendDay(
                     date: budget.date,
                     overspentAmount: evaluation.overspent,
                     baseBudget: budget.availableAmount,
-                    savedCarryOver: max(0, savedCarryOver),
-                    sameDayAdjustment: sameDayAdjustment,
+                    savedCarryOver: max(0, parts.savedCarryOver),
+                    sameDayAdjustment: parts.sameDayAdjustment,
+                    debtAdjustment: parts.debtAdjustment,
                     spent: budget.spendingRecords.map(\.amount).reduce(0, +),
                     wishSaving: budget.wishSavingAmount
                 )

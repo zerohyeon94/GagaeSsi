@@ -373,24 +373,74 @@ struct DailyBudgetModel: Identifiable {
 }
 
 // MARK: - 이월 금액 모델
+
+/// 이월 항목이 어떤 성격의 돈인지.
+///
+/// 금액 부호와 날짜만으로는 "그날 내가 더 쓸 수 있게 된 돈"과 "초과분 정산 때문에 오간 돈"을
+/// 구분할 수 없다. 이 구분이 없으면 상환 차감이 그날의 과소비로 잡히고,
+/// 부채로 옮긴 적자를 재계산이 되살려 이중 계상된다.
+enum CarryOverReason: String {
+    /// 전날 잔액이 넘어온 일자 이월
+    case carryOver
+    /// 모아둔 이월금 인출
+    case poolWithdraw
+    /// 환급·페이백 수령
+    case refund
+    /// 초과분 상환으로 그날 예산에서 빠진 금액 (음수)
+    case debtRepay
+    /// 음수 이월을 부채로 옮기면서 남긴 상쇄 크레딧 (양수).
+    /// 이게 있어야 이월 체인을 다시 계산해도 같은 적자가 두 번 잡히지 않는다.
+    case debtTransfer
+
+    /// 그날 쓸 수 있었던 금액(배정)에 포함되는 항목인지.
+    /// 부채 관련 항목은 과거 초과의 결과일 뿐 그날의 과소비 판정 기준이 아니다.
+    var countsTowardAllowance: Bool {
+        switch self {
+        case .carryOver, .poolWithdraw, .refund: return true
+        case .debtRepay, .debtTransfer: return false
+        }
+    }
+
+    /// `reason`이 없는 예전 데이터의 성격을 날짜·부호로 추정한다.
+    /// (전날→오늘이면 일자 이월, 그날 발생한 양수는 인출·환급, 음수는 상환 차감)
+    static func infer(amount: Int, date: Date, toDate: Date,
+                      calendar: Calendar = .current) -> CarryOverReason {
+        if calendar.startOfDay(for: date) < calendar.startOfDay(for: toDate) { return .carryOver }
+        return amount >= 0 ? .refund : .debtRepay
+    }
+
+    static func from(_ raw: String?, amount: Int, date: Date, toDate: Date,
+                     calendar: Calendar = .current) -> CarryOverReason {
+        if let raw, let reason = CarryOverReason(rawValue: raw) { return reason }
+        return infer(amount: amount, date: date, toDate: toDate, calendar: calendar)
+    }
+}
+
 struct CarryOverSourceModel: Identifiable {
     var id: UUID
     var amount: Int
     var date: Date      // 남은 금액이 발생한 날짜
     var toDate: Date    // 이월된 날짜 (다음날)
-    
-    init(id: UUID = UUID(), amount: Int, date: Date, toDate: Date) {
+    var reason: CarryOverReason
+
+    /// `reason`을 생략하면 날짜·부호로 추정한다 (전날→오늘은 일자 이월, 그날 발생한 양수는 크레딧).
+    /// 성격이 분명한 항목은 반드시 명시해야 배정액 계산에서 제자리를 찾는다.
+    init(id: UUID = UUID(), amount: Int, date: Date, toDate: Date,
+         reason: CarryOverReason? = nil) {
         self.id = id
         self.amount = amount
         self.date = date
         self.toDate = toDate
+        self.reason = reason ?? CarryOverReason.infer(amount: amount, date: date, toDate: toDate)
     }
-    
+
     init(entity: CarryOverSource) {
         self.id = entity.id ?? UUID()
         self.amount = Int(truncating: entity.amount ?? 0)
         self.date = entity.date ?? Date()
         self.toDate = entity.toDate ?? Date()
+        self.reason = CarryOverReason.from(entity.reason, amount: self.amount,
+                                           date: self.date, toDate: self.toDate)
     }
 }
 

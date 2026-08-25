@@ -81,18 +81,40 @@ final class OverspendHistoryTests: XCTestCase {
         XCTAssertEqual(days[0].overspentAmount, 131_310 - 54_670)
     }
 
-    func test_그날_발생한_크레딧과_상환은_배정액에_반영된다() {
+    /// 인출·환급은 그날 더 쓸 수 있게 된 돈이라 배정액에 더한다.
+    /// 초과분 상환은 과거 초과의 결과일 뿐이라 배정액에서 빼지 않는다 —
+    /// 빼면 갚는 날마다 이미 목록에 있는 초과를 새 초과로 다시 세게 된다.
+    func test_인출은_배정액에_더하고_상환차감은_빼지_않는다() {
         let budget = DailyBudgetModel(
             availableAmount: 50_000, date: day(-1),
             carryOverSources: [
-                CarryOverSourceModel(amount: 20_000, date: day(-1), toDate: day(-1)),   // 이월금 인출
-                CarryOverSourceModel(amount: -10_000, date: day(-1), toDate: day(-1))   // 초과분 상환
+                CarryOverSourceModel(amount: 20_000, date: day(-1), toDate: day(-1),
+                                     reason: .poolWithdraw),
+                CarryOverSourceModel(amount: -10_000, date: day(-1), toDate: day(-1),
+                                     reason: .debtRepay)
             ],
             spendingRecords: [SpendingRecordModel(title: "지출", amount: 55_000, date: day(-1))])
 
         let evaluation = OverspendAnalyzer.evaluate(budget)
-        XCTAssertEqual(evaluation.allowance, 60_000, "50,000 + 20,000 − 10,000")
+        XCTAssertEqual(evaluation.allowance, 70_000, "50,000 + 인출 20,000 (상환 10,000은 제외)")
         XCTAssertEqual(evaluation.overspent, 0)
+    }
+
+    /// 부채로 옮긴 적자는 음수 이월 + 상쇄 크레딧으로 남지만, 둘 다 배정액을 건드리지 않는다.
+    func test_부채로_옮긴_적자는_배정액을_건드리지_않는다() {
+        let budget = DailyBudgetModel(
+            availableAmount: 50_000, date: day(-1),
+            carryOverSources: [
+                CarryOverSourceModel(amount: -80_000, date: day(-2), toDate: day(-1),
+                                     reason: .carryOver),
+                CarryOverSourceModel(amount: 80_000, date: day(-1), toDate: day(-1),
+                                     reason: .debtTransfer)
+            ],
+            spendingRecords: [SpendingRecordModel(title: "지출", amount: 55_000, date: day(-1))])
+
+        let evaluation = OverspendAnalyzer.evaluate(budget)
+        XCTAssertEqual(evaluation.allowance, 50_000, "기본 예산 그대로")
+        XCTAssertEqual(evaluation.overspent, 5_000)
     }
 
     /// 저금은 쓴 돈이 아니라 모은 돈이라 과소비로 치지 않는다

@@ -24,6 +24,11 @@ struct OverspendHistoryView: View {
     @State private var records: [Date: [SpendingRecordModel]] = [:]
 
     private var total: Int { OverspendAnalyzer.total(of: days) }
+    /// 그날 예산의 10% 미만이라 부채로 전환되지 않은 초과일 수.
+    /// 이 날들은 음수 이월로만 남으므로 '초과한 날' 합계가 '아직 갚는 중'보다 클 수 있다.
+    private var smallOverspendCount: Int {
+        days.filter { $0.overspentAmount < DebtRepaymentPlan.threshold(dailyBudget: $0.baseBudget) }.count
+    }
     private var worst: OverspendDay? { OverspendAnalyzer.worst(of: days) }
     private var repaidTotal: Int { repayments.reduce(0) { $0 + $1.amount } }
 
@@ -82,6 +87,12 @@ struct OverspendHistoryView: View {
 
                 if let worst {
                     Text("가장 크게 넘긴 날은 \(dayLabel(worst.date))이에요 (\(FormatterUtils.currencyString(from: worst.overspentAmount)))")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let remainingDebt, remainingDebt > 0, smallOverspendCount > 0 {
+                    Text("작게 넘긴 \(smallOverspendCount)일은 빚으로 잡지 않고 다음 날 예산에서 빠져요")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -257,6 +268,12 @@ struct OverspendHistoryView: View {
 
             if day.wishSaving > 0 {
                 Text("🎁 위시 저금 \(FormatterUtils.currencyString(from: day.wishSaving))은 초과액에 넣지 않았어요")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.gagaeGood)
+            }
+
+            if day.debtAdjustment < 0 {
+                Text("💪 이날 빠져나간 초과분 상환 \(FormatterUtils.currencyString(from: -day.debtAdjustment))은 초과액에 넣지 않았어요")
                     .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(.gagaeGood)
             }

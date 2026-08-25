@@ -495,13 +495,8 @@ final class CoreDataManager {
         dailyBudget.date = model.date
 
         for source in model.carryOverSources {
-            let carryOverSource = CarryOverSource(context: context)
-            carryOverSource.amount = NSDecimalNumber(value: source.amount)
-            carryOverSource.date = source.date
-            carryOverSource.toDate = source.toDate
-            
-            carryOverSource.dailyBudget = dailyBudget
-            dailyBudget.addToCarryOverSources(carryOverSource)
+            addCarryOverSource(to: dailyBudget, amount: source.amount,
+                               date: source.date, toDate: source.toDate, reason: source.reason)
         }
         
         for record in model.spendingRecords {
@@ -651,13 +646,7 @@ final class CoreDataManager {
 
         let today = Calendar.current.startOfDay(for: Date())
         guard let budget = fetchOrCreateDailyBudgetEntity(date: today) else { return false }
-        let credit = CarryOverSource(context: context)
-        credit.id = UUID()
-        credit.amount = NSDecimalNumber(value: payback)
-        credit.date = today
-        credit.toDate = today
-        credit.dailyBudget = budget
-        budget.addToCarryOverSources(credit)
+        addCarryOverSource(to: budget, amount: payback, date: today, toDate: today, reason: .refund)
 
         return saveContext()
     }
@@ -794,16 +783,39 @@ final class CoreDataManager {
         guard let dailyBudget = fetchDailyBudgetEntity(date: model.date) else {
             return false
         }
-        
-        let newCarryOverSource = CarryOverSource(context: context)
-        newCarryOverSource.id = UUID()
-        newCarryOverSource.amount = NSDecimalNumber(value: model.amount)
-        newCarryOverSource.date = model.date
-        newCarryOverSource.toDate = model.toDate
-        newCarryOverSource.dailyBudget = dailyBudget
-        dailyBudget.addToCarryOverSources(newCarryOverSource)
-        
+
+        addCarryOverSource(to: dailyBudget, amount: model.amount,
+                           date: model.date, toDate: model.toDate, reason: model.reason)
         return saveContext()
+    }
+
+    /// 이월 항목 한 줄을 붙인다 (저장은 호출자가 한다).
+    /// 모든 생성 지점이 이 함수를 거쳐야 `reason`이 빠지는 항목이 생기지 않는다.
+    @discardableResult
+    private func addCarryOverSource(to budget: DailyBudget, amount: Int,
+                                    date: Date, toDate: Date,
+                                    reason: CarryOverReason) -> CarryOverSource {
+        let source = CarryOverSource(context: context)
+        source.id = UUID()
+        source.amount = NSDecimalNumber(value: amount)
+        source.date = date
+        source.toDate = toDate
+        source.reason = reason.rawValue
+        source.dailyBudget = budget
+        budget.addToCarryOverSources(source)
+        return source
+    }
+
+    /// `budget`에 달린 이월 항목 중 지정한 성격의 것만 (재계산·멱등성 판정용)
+    private func carryOverSources(of budget: DailyBudget,
+                                  reason: CarryOverReason) -> [CarryOverSource] {
+        let sources = budget.carryOverSources?.allObjects as? [CarryOverSource] ?? []
+        return sources.filter {
+            CarryOverReason.from($0.reason,
+                                 amount: Int(truncating: $0.amount ?? 0),
+                                 date: $0.date ?? Date(),
+                                 toDate: $0.toDate ?? Date()) == reason
+        }
     }
     
     func fetchCarryOverSourceEntity(id: UUID) -> CarryOverSource? {
@@ -834,7 +846,8 @@ final class CoreDataManager {
         carryOverSource.amount = NSDecimalNumber(value: model.amount)
         carryOverSource.date = model.date
         carryOverSource.toDate = model.toDate
-        
+        carryOverSource.reason = model.reason.rawValue
+
         return saveContext()
     }
     
@@ -907,6 +920,9 @@ final class CoreDataManager {
     /// 전날 잔액(todayAvailable, 음수 가능)을 다음날 이월금으로 누적 연결한다.
     /// - 멱등성: 이미 존재하는 날짜는 건너뛰므로 여러 번 호출해도 중복 이월되지 않는다.
     func processDailyBudgets(upTo date: Date) {
+        // 그날 처리가 끝난 뒤 부채 잔액을 원장과 맞춘다 (홈 진입마다 — 어긋난 채로 남지 않는다)
+        defer { reconcileDebtNow(now: date) }
+
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: date)
 
@@ -944,12 +960,13 @@ final class CoreDataManager {
             var debtAmount = 0
 
             if isNewDay {
-                prevBalance = fetchDailyBudgetModel(date: prevDay)?.todayAvailable ?? 0
+                let prevBudget = fetchDailyBudgetModel(date: prevDay)
+                prevBalance = prevBudget?.todayAvailable ?? 0
 
                 // 임계 판정에는 흡수 반영 전 예산을 쓴다 (흡수 여부와 무관하게 "큰 초과"인지 판단)
                 let provisionalBase = DailyBudgetCalculator.calculate(
                     from: config, installments: installments, for: cursor)
-                debtAmount = overspendToConvert(prevBalance: prevBalance,
+                debtAmount = overspendToConvert(prevBudget: prevBudget, prevBalance: prevBalance,
                                                 dailyBudget: provisionalBase, config: config)
 
                 // 흡수보다 먼저 합산해야, 이 날이 급여일일 때 전날 초과분까지 새 기간 예산으로 정산된다
@@ -966,13 +983,19 @@ final class CoreDataManager {
                 let base = DailyBudgetCalculator.calculate(from: config, installments: installments, for: cursor)
 
                 // 이월 방식: 전액 이월은 ±전액, 분리 모드는 음수(페널티)만 이월.
-                // 초과분을 부채로 뺐으면 음수 이월은 0이 된다.
-                let rawCarry = (config.carryOverMode == .separate) ? min(0, prevBalance) : prevBalance
-                let carry = debtAmount > 0 ? max(0, rawCarry) : rawCarry
+                let carry = (config.carryOverMode == .separate) ? min(0, prevBalance) : prevBalance
 
                 var sources: [CarryOverSourceModel] = []
                 if carry != 0 {
-                    sources.append(CarryOverSourceModel(amount: carry, date: prevDay, toDate: cursor))
+                    sources.append(CarryOverSourceModel(amount: carry, date: prevDay, toDate: cursor,
+                                                        reason: .carryOver))
+                }
+                // 부채로 옮긴 적자는 음수 이월을 '지우는' 대신 같은 금액의 상쇄 크레딧으로 덮는다.
+                // 지워버리면 이월 체인을 다시 계산할 때(과거 소비 수정·삭제) 같은 적자가
+                // 되살아나 부채와 이월에 이중으로 잡힌다.
+                if debtAmount > 0 {
+                    sources.append(CarryOverSourceModel(amount: debtAmount, date: cursor, toDate: cursor,
+                                                        reason: .debtTransfer))
                 }
 
                 let newModel = DailyBudgetModel(
@@ -1030,14 +1053,12 @@ final class CoreDataManager {
                 // 3) 현재 이월 방식으로 재생성
                 let carry = (config.carryOverMode == .separate) ? min(0, prevBalance) : prevBalance
                 if carry != 0 {
-                    let cos = CarryOverSource(context: context)
-                    cos.id = UUID()
-                    cos.amount = NSDecimalNumber(value: carry)
-                    cos.date = prevDay
-                    cos.toDate = cursor
-                    cos.dailyBudget = budget
-                    budget.addToCarryOverSources(cos)
+                    addCarryOverSource(to: budget, amount: carry, date: prevDay, toDate: cursor,
+                                       reason: .carryOver)
                 }
+                // 4) 이 날 부채로 옮긴 적자가 있었다면 새로 계산된 적자에 맞춰 크레딧·부채를 함께 조정한다
+                reconcileDebtTransfer(on: budget, newDeficit: max(0, -carry), day: cursor)
+
                 if config.carryOverMode == .separate {
                     let deposit = max(0, prevBalance)
                     if deposit > 0 {
@@ -1048,6 +1069,88 @@ final class CoreDataManager {
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }
         _ = saveContext()
+    }
+
+    /// 부채로 옮긴 적자의 상쇄 크레딧을 `newDeficit`에 맞추고, 차액만큼 활성 부채를 조정한다.
+    ///
+    /// 과거 소비를 고치면 그날 적자 규모 자체가 달라진다. 크레딧만 그대로 두면
+    /// "부채에 잡힌 금액"과 "실제로 넘긴 금액"이 어긋나므로 둘을 함께 움직인다.
+    /// - 이관 기록이 없는 날은 건드리지 않는다 (재계산이 새 부채를 만들지는 않는다).
+    /// - 이미 정산된(급여일 흡수·완납) 부채도 건드리지 않는다. 그 경우 크레딧을 남겨두면
+    ///   이미 받은 정산 혜택과 상계되어 총액은 맞는다.
+    private func reconcileDebtTransfer(on budget: DailyBudget, newDeficit: Int, day: Date) {
+        let credits = carryOverSources(of: budget, reason: .debtTransfer)
+        let previous = credits.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+        guard previous > 0, newDeficit != previous else { return }
+        guard let debt = fetchActiveDebtEntity() else { return }
+
+        for credit in credits {
+            budget.removeFromCarryOverSources(credit)
+            context.delete(credit)
+        }
+        if newDeficit > 0 {
+            addCarryOverSource(to: budget, amount: newDeficit, date: day, toDate: day,
+                               reason: .debtTransfer)
+        }
+
+        let delta = newDeficit - previous
+        let remaining = max(0, Int(truncating: debt.remainingAmount ?? 0) + delta)
+        debt.originalAmount = NSDecimalNumber(
+            value: max(0, Int(truncating: debt.originalAmount ?? 0) + delta))
+        debt.remainingAmount = NSDecimalNumber(value: remaining)
+        if remaining == 0 { debt.completedAt = day }
+    }
+
+    // MARK: - 부채 잔액 보정 (원장 기준 재계산)
+
+    /// 남은 부채를 일자별 기록에서 **다시 계산한** 값.
+    ///
+    /// `SpendingDebt.remainingAmount`는 한 번 적립되면 다시 계산되지 않는 누적값이라
+    /// 잘못 더해진 금액이 영원히 남는다. 반면 초과액과 상환 내역은 원장에 그대로 있어
+    /// 언제든 다시 구할 수 있다:
+    ///
+    ///     남은 부채 = Σ(부채 기간 중 임계값을 넘긴 날의 초과액) − Σ(그 부채에 갚은 금액)
+    ///
+    /// 부채는 "전날 초과분"이 다음 날 전환되어 생기므로, 합산 구간은
+    /// `startedAt` 하루 전부터 어제까지다 (오늘 초과분은 아직 전환되지 않았다).
+    /// - Returns: 활성 부채가 없거나, 부채를 만든 날의 기록이 없어 다시 계산할 근거가
+    ///   없으면 `nil` (상환 계획 기능이 없던 시절에 쌓인 적자가 여기 해당한다)
+    func reconciledDebt(now: Date = Date()) -> (original: Int, remaining: Int)? {
+        guard let debt = fetchActiveDebtEntity() else { return nil }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        let startedAt = calendar.startOfDay(for: debt.startedAt ?? today)
+        guard let from = calendar.date(byAdding: .day, value: -1, to: startedAt) else { return nil }
+        // 부채를 만든 날의 기록이 없으면 초과액을 역산할 수 없다 — 함부로 지우지 않는다
+        guard fetchDailyBudgetEntity(date: from) != nil else { return nil }
+
+        // [from, today) = 부채 시작 전날 ~ 어제
+        let converted = fetchDailyBudgetModels(from: from, to: today).reduce(0) { sum, budget in
+            let overspent = OverspendAnalyzer.evaluate(budget).overspent
+            let threshold = DebtRepaymentPlan.threshold(dailyBudget: budget.availableAmount)
+            return sum + (threshold > 0 && overspent >= threshold ? overspent : 0)
+        }
+
+        let entries = debt.repayments?.allObjects as? [DebtRepaymentEntry] ?? []
+        let repaid = entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+
+        return (original: max(converted, repaid), remaining: max(0, converted - repaid))
+    }
+
+    /// 부채 잔액을 원장 기준으로 즉시 맞춘다.
+    /// - Returns: 실제로 값이 바뀌었으면 `true`
+    @discardableResult
+    func reconcileDebtNow(now: Date = Date()) -> Bool {
+        guard let debt = fetchActiveDebtEntity(), let fixed = reconciledDebt(now: now) else { return false }
+        let before = Int(truncating: debt.remainingAmount ?? 0)
+        guard fixed.remaining != before else { return false }
+
+        DebugLogger.log("🧮 부채 잔액 보정: \(before) → \(fixed.remaining)")
+        debt.remainingAmount = NSDecimalNumber(value: fixed.remaining)
+        debt.originalAmount = NSDecimalNumber(value: fixed.original)
+        if fixed.remaining == 0 { debt.completedAt = Calendar.current.startOfDay(for: now) }
+        return saveContext()
     }
 
     // MARK: - 초과 소비 상환 계획 (부채)
@@ -1067,13 +1170,28 @@ final class CoreDataManager {
 
     /// 전날 잔액 중 부채로 전환할 초과 금액. 0이면 기존대로 음수 이월한다.
     /// - 기능이 꺼져 있거나 초과분이 임계값(기본 예산 10%) 미만이면 전환하지 않는다.
-    private func overspendToConvert(prevBalance: Int, dailyBudget: Int,
-                                    config: BudgetConfigModel) -> Int {
+    private func overspendToConvert(prevBudget: DailyBudgetModel?, prevBalance: Int,
+                                    dailyBudget: Int, config: BudgetConfigModel) -> Int {
         guard config.debtPlanEnabled, prevBalance < 0 else { return 0 }
         let threshold = DebtRepaymentPlan.threshold(dailyBudget: dailyBudget)
         guard threshold > 0 else { return 0 }
-        let overspend = -prevBalance
+        let overspend = convertibleOverspend(of: prevBudget, deficit: -prevBalance)
         return overspend >= threshold ? overspend : 0
+    }
+
+    /// 적자 중 **부채로 옮길 수 있는 금액** — 그날 소비가 배정을 넘긴 만큼만.
+    ///
+    /// 잔액(`todayAvailable`)은 저축·투자 이동과 위시 저금까지 빼고 계산된다.
+    /// 그 적자까지 부채로 옮기면 "500만원 투자한 날"이 갚아야 할 빚이 되고,
+    /// 그런 날은 '초과한 날' 목록에 뜨지 않으므로 '아직 갚는 중' 금액이 목록 합계와 어긋난다.
+    /// 초과 판정과 같은 기준(`OverspendAnalyzer`)을 쓰면 두 숫자가 항상 맞는다.
+    ///
+    /// 모은 돈이 만든 적자는 부채가 되지 않을 뿐, 음수 이월로는 그대로 남아 다음 날 예산을 줄인다.
+    /// - Parameter deficit: 전날 잔액의 적자분 (양수)
+    /// - Note: 전날 기록이 없으면(예전 버전에서 넘어온 적자) 판단 근거가 없어 적자 전액을 옮긴다.
+    private func convertibleOverspend(of budget: DailyBudgetModel?, deficit: Int) -> Int {
+        guard let budget else { return deficit }
+        return min(deficit, OverspendAnalyzer.evaluate(budget).overspent)
     }
 
     /// 초과분을 부채에 합산한다. 활성 부채가 없으면 계획 미확정 상태로 새로 만든다.
@@ -1167,13 +1285,7 @@ final class CoreDataManager {
         guard plan.perDay > 0 else { return }
         let amount = min(remaining, plan.perDay)
 
-        let cos = CarryOverSource(context: context)
-        cos.id = UUID()
-        cos.amount = NSDecimalNumber(value: -amount)
-        cos.date = day
-        cos.toDate = day
-        cos.dailyBudget = budget
-        budget.addToCarryOverSources(cos)
+        addCarryOverSource(to: budget, amount: -amount, date: day, toDate: day, reason: .debtRepay)
 
         recordRepayment(amount, on: day, source: .daily, debt: debt)
         _ = saveContext()
@@ -1192,24 +1304,28 @@ final class CoreDataManager {
         let day = calendar.startOfDay(for: date)
         guard let budget = fetchDailyBudgetEntity(date: day) else { return }
 
-        let sources = budget.carryOverSources?.allObjects as? [CarryOverSource] ?? []
-        let carried = sources.filter {
-            calendar.startOfDay(for: $0.date ?? day) < day && Int(truncating: $0.amount ?? 0) < 0
-        }
-        let deficit = carried.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }   // 음수
-        guard deficit < 0 else { return }
+        let deficit = carryOverSources(of: budget, reason: .carryOver)
+            .reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }              // 음수면 적자
+        // 이미 부채로 옮긴 만큼은 빼고 본다 — 여러 번 호출돼도 같은 적자를 다시 옮기지 않는다
+        let transferred = carryOverSources(of: budget, reason: .debtTransfer)
+            .reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+        let net = deficit + transferred
+        guard net < 0 else { return }
+
+        // 이 적자를 만든 건 전날이므로 전날 기준으로 "소비 초과분"만 옮긴다
+        let prevDay = calendar.date(byAdding: .day, value: -1, to: day)!
+        let convertible = convertibleOverspend(of: fetchDailyBudgetModel(date: prevDay), deficit: -net)
 
         let base = Int(truncating: budget.availableAmount ?? 0)
         let threshold = DebtRepaymentPlan.threshold(dailyBudget: base)
-        guard threshold > 0, -deficit >= threshold else { return }
+        guard threshold > 0, convertible >= threshold else { return }
 
-        for source in carried {
-            budget.removeFromCarryOverSources(source)
-            context.delete(source)
-        }
+        // 음수 이월을 지우는 대신 상쇄 크레딧을 남긴다 (이월 체인 재계산 시 이중 계상 방지)
+        addCarryOverSource(to: budget, amount: convertible, date: day, toDate: day,
+                           reason: .debtTransfer)
         _ = saveContext()
 
-        addToDebt(amount: -deficit, on: day)
+        addToDebt(amount: convertible, on: day)
     }
 
     /// `date`가 급여 기간 시작일(실효 급여일)이면, 남은 부채를 그 기간 예산으로 흡수하고 부채를 종료한다.
@@ -1357,13 +1473,8 @@ final class CoreDataManager {
         let today = Calendar.current.startOfDay(for: Date())
 
         if remaining > 0, let budget = fetchOrCreateDailyBudgetEntity(date: today) {
-            let cos = CarryOverSource(context: context)
-            cos.id = UUID()
-            cos.amount = NSDecimalNumber(value: -remaining)
-            cos.date = today
-            cos.toDate = today
-            cos.dailyBudget = budget
-            budget.addToCarryOverSources(cos)
+            addCarryOverSource(to: budget, amount: -remaining, date: today, toDate: today,
+                               reason: .debtRepay)
 
             recordRepayment(remaining, on: today, source: .settle, debt: debt)
         }
@@ -1479,13 +1590,8 @@ final class CoreDataManager {
         let today = Calendar.current.startOfDay(for: Date())
         guard let budget = fetchOrCreateDailyBudgetEntity(date: today) else { return false }
 
-        let cos = CarryOverSource(context: context)
-        cos.id = UUID()
-        cos.amount = NSDecimalNumber(value: amount)
-        cos.date = today
-        cos.toDate = today
-        cos.dailyBudget = budget
-        budget.addToCarryOverSources(cos)
+        addCarryOverSource(to: budget, amount: amount, date: today, toDate: today,
+                           reason: .poolWithdraw)
 
         addPoolEntry(amount: -amount, date: today, reason: reason)
         return saveContext()
