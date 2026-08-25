@@ -279,6 +279,16 @@ extension SettingsView {
                                rightText: debtPlanRightText)
                 }
                 .buttonStyle(.plain)
+
+                // 홈의 초과분 카드는 갚는 중일 때만 보인다. 다 갚은 뒤에도 되짚어볼 수 있게 여기에 둔다.
+                rowDivider
+                NavigationLink {
+                    OverspendHistoryView(remainingDebt: CoreDataManager.shared.fetchActiveDebt()?.remainingAmount)
+                } label: {
+                    settingRow(iconBg: Color(hex: "#D9534F"), iconContent: AnyView(Text("📉").font(.system(size: 15))),
+                               label: "초과분 되짚어보기")
+                }
+                .buttonStyle(.plain)
             }
             .background(Color.gagaeCardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))

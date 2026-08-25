@@ -193,6 +193,33 @@ final class OverspendHistoryTests: XCTestCase {
         XCTAssertEqual(days[0].overspentAmount, base / 2)
     }
 
+    // MARK: - 다 갚은 초과분 이력
+
+    /// 다 갚고 나면 활성 부채가 사라지므로, 지난 초과분은 따로 남아 있어야 한다.
+    func test_다_갚은_초과분은_이력으로_남는다() {
+        _ = sut.createBudgetConfig(from: BudgetConfigModel(salary: 3_000_000, payday: 25,
+                                                           fixedCosts: [], debtPlanEnabled: true))
+        _ = sut.createDailyBudget(DailyBudgetModel(availableAmount: 20_000, date: day(-2),
+                                                   carryOverSources: [], spendingRecords: []))
+        _ = sut.createSpendingRecord(SpendingRecordModel(title: "지출", amount: 50_000, date: day(-2)))
+        sut.processDailyBudgets(upTo: day(-1))       // 초과 30,000이 부채로 전환
+
+        XCTAssertNotNil(sut.fetchActiveDebt())
+        XCTAssertTrue(sut.fetchCompletedDebts().isEmpty, "아직 갚는 중이면 이력에 없다")
+
+        _ = sut.settleDebtImmediately()              // 한 번에 갚기
+
+        XCTAssertNil(sut.fetchActiveDebt(), "다 갚으면 활성 부채는 사라진다")
+        let history = sut.fetchCompletedDebts()
+        XCTAssertEqual(history.count, 1)
+        XCTAssertEqual(history[0].originalAmount, 30_000)
+        XCTAssertNotNil(history[0].completedAt)
+    }
+
+    func test_갚은_초과분이_없으면_이력은_비어있다() {
+        XCTAssertTrue(sut.fetchCompletedDebts().isEmpty)
+    }
+
     func test_조회_기간_밖의_초과는_제외된다() {
         _ = sut.createBudgetConfig(from: BudgetConfigModel(salary: 3_000_000, payday: 25, fixedCosts: []))
         let old = cal.date(byAdding: .month, value: -5, to: day(0))!

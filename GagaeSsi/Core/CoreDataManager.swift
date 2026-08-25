@@ -1236,6 +1236,16 @@ final class CoreDataManager {
         fetchActiveDebtEntity().map(SpendingDebtModel.init)
     }
 
+    /// 다 갚은 초과분 이력 (최근 완납순).
+    /// 갚고 나면 활성 부채가 사라져 "예전에 얼마나 넘겼는지"를 볼 방법이 없어진다.
+    func fetchCompletedDebts(limit: Int = 20) -> [SpendingDebtModel] {
+        let request: NSFetchRequest<SpendingDebt> = SpendingDebt.fetchRequest()
+        request.predicate = NSPredicate(format: "completedAt != nil")
+        request.sortDescriptors = [NSSortDescriptor(key: "completedAt", ascending: false)]
+        request.fetchLimit = limit
+        return ((try? context.fetch(request)) ?? []).map(SpendingDebtModel.init)
+    }
+
     /// 전날 잔액 중 부채로 전환할 초과 금액. 0이면 기존대로 음수 이월한다.
     /// - 기능이 꺼져 있거나 초과분이 임계값(기본 예산 10%) 미만이면 전환하지 않는다.
     private func overspendToConvert(prevBudget: DailyBudgetModel?, prevBalance: Int,

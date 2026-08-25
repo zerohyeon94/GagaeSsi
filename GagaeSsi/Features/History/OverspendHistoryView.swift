@@ -20,6 +20,8 @@ struct OverspendHistoryView: View {
     @State private var section: Section = .overspend
     @State private var days: [OverspendDay] = []
     @State private var repayments: [DebtRepaymentEntryModel] = []
+    /// 다 갚은 지난 초과분 — 활성 부채가 없어도 "예전에 얼마나 넘겼는지" 남는다
+    @State private var settledDebts: [SpendingDebtModel] = []
     @State private var expanded: Date?
     @State private var records: [Date: [SpendingRecordModel]] = [:]
 
@@ -50,6 +52,7 @@ struct OverspendHistoryView: View {
                     case .repayment:
                         repaymentSummaryCard
                         if repayments.isEmpty { emptyRepaymentCard } else { repaymentListCard }
+                        if !settledDebts.isEmpty { settledDebtCard }
                     }
                 }
                 .padding(.horizontal, GagaeSpacing.md)
@@ -185,6 +188,34 @@ struct OverspendHistoryView: View {
         .gagaeCardShadow()
     }
 
+    /// 다 갚은 지난 초과분 — 완납하면 활성 부채가 사라지므로 여기 남겨 되짚어볼 수 있게 한다
+    private var settledDebtCard: some View {
+        GagaeCard {
+            VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
+                Text("🎉 다 갚은 초과분")
+                    .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
+
+                ForEach(settledDebts) { debt in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(debt.completedAt.map { "\(dayLabel($0)) 완납" } ?? "완납")
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.gagaeText)
+                            Text("\(dayLabel(debt.startedAt))부터")
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundStyle(.gagaeTextSecondary)
+                        }
+                        Spacer()
+                        Text(FormatterUtils.currencyString(from: debt.originalAmount))
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.gagaeTextSecondary)
+                    }
+                    if debt.id != settledDebts.last?.id { GagaeDivider() }
+                }
+            }
+        }
+    }
+
     // MARK: - 초과한 날 목록
 
     private var overspendListCard: some View {
@@ -287,6 +318,7 @@ struct OverspendHistoryView: View {
     private func load() {
         days = CoreDataManager.shared.fetchOverspendDays(months: 3)
         repayments = CoreDataManager.shared.fetchDebtRepayments(months: 3)
+        settledDebts = CoreDataManager.shared.fetchCompletedDebts()
     }
 
     private func loadRecords(for date: Date) {
