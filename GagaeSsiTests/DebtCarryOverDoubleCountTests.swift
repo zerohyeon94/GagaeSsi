@@ -187,19 +187,19 @@ final class DebtCarryOverDoubleCountTests: XCTestCase {
     /// 부채 잔액이 원장과 어긋나면 보정이 원장 값으로 덮어쓴다.
     func test_보정이_부채잔액을_원장기준으로_맞춘다() {
         setup()
-        seedDay(day(-2), available: 20_000)
-        let record = SpendingRecordModel(title: "지출", amount: 50_000, date: day(-2))
-        _ = sut.createSpendingRecord(record)
+        seedDay(day(-3), available: 20_000)
+        addSpend(50_000, on: day(-3))               // -3일 초과 30,000
 
-        sut.processDailyBudgets(upTo: day(-1))
+        sut.processDailyBudgets(upTo: day(-2))      // 30,000이 부채로 전환됨
         XCTAssertEqual(remainingDebt(), 30_000)
 
-        // 이월 체인 재계산 없이 과거 소비만 고친다 → 부채가 원장과 어긋난 상태
-        var edited = record
-        edited.amount = 80_000
-        _ = sut.updateSpendingRecord(edited)
+        // -2일은 이미 부채 전환 판정을 지난 날이다. 그 날 초과를 뒤늦게 입력하면
+        // 원장의 초과 합계만 늘고 누적값인 부채는 그대로라 둘이 어긋난다.
+        let allowance = sut.fetchDailyBudgetModel(date: day(-2))?.availableAmount ?? 0
+        XCTAssertGreaterThan(allowance, 0)
+        addSpend(allowance + 30_000, on: day(-2))
 
-        XCTAssertEqual(overspendTotal(), 60_000, "초과한 날은 60,000으로 다시 계산된다")
+        XCTAssertEqual(overspendTotal(), 60_000, "초과한 날 합계는 60,000")
         XCTAssertEqual(remainingDebt(), 30_000, "부채는 예전 값 그대로")
 
         XCTAssertEqual(sut.reconciledDebt()?.remaining, 60_000)
@@ -219,7 +219,7 @@ final class DebtCarryOverDoubleCountTests: XCTestCase {
 
         var edited = record
         edited.amount = 80_000
-        _ = sut.updateSpendingRecord(edited)       // 체인 재계산 없이 과거 소비만 수정
+        _ = sut.updateSpendingRecord(edited)       // 과거 소비 수정 (체인은 여기서 함께 재계산된다)
 
         sut.processDailyBudgets(upTo: day(0))      // 홈 진입
 

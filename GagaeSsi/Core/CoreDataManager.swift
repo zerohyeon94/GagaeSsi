@@ -564,7 +564,9 @@ final class CoreDataManager {
         newSpendingRecord.dailyBudget = dailyBudget
         dailyBudget.addToSpendingRecords(newSpendingRecord)
 
-        return saveContext()
+        guard saveContext() else { return false }
+        recalculateCarryOverChain(from: model.date)
+        return true
     }
     
     func fetchSpendingRecordEntity(id: UUID) -> SpendingRecord? {
@@ -604,6 +606,9 @@ final class CoreDataManager {
 
         // 일 예산 귀속은 자정 기준(day)으로, 기록 자체는 전체 시각을 보존한다 (시간대 리포트용)
         let newDate = Calendar.current.startOfDay(for: model.date)
+        // 날짜를 옮기면 옛 날짜와 새 날짜 양쪽의 잔액이 달라지므로 이른 쪽부터 다시 계산한다
+        let oldDate = Calendar.current.startOfDay(
+            for: spendingRecord.dailyBudget?.date ?? spendingRecord.date ?? model.date)
 
         // 날짜가 바뀌면 해당 날짜의 DailyBudget에 재연결 (없으면 생성)
         if let currentBudget = spendingRecord.dailyBudget,
@@ -631,7 +636,9 @@ final class CoreDataManager {
         spendingRecord.expectedPayback = Int32(model.expectedPayback)
         spendingRecord.paybackReceived = model.paybackReceived
 
-        return saveContext()
+        guard saveContext() else { return false }
+        recalculateCarryOverChain(from: min(oldDate, newDate))
+        return true
     }
 
     /// 환급/페이백을 실제로 받음 처리 — 오늘 예산에 환급액을 되돌려준다(+이월).
@@ -769,13 +776,17 @@ final class CoreDataManager {
     
     func deleteSpendingRecord(id: UUID) -> Bool {
         guard let spendingRecord = fetchSpendingRecordEntity(id: id),
-              let _ = spendingRecord.dailyBudget else {
+              let budget = spendingRecord.dailyBudget else {
             return false
         }
 
+        let affectedDate = Calendar.current.startOfDay(
+            for: budget.date ?? spendingRecord.date ?? Date())
         context.delete(spendingRecord)
 
-        return saveContext()
+        guard saveContext() else { return false }
+        recalculateCarryOverChain(from: affectedDate)
+        return true
     }
     
     // MARK: - CarryOverSource CRUD
@@ -1022,8 +1033,12 @@ final class CoreDataManager {
         }
     }
 
-    /// 과거 소비 수정/삭제 후, `from`(변경된 소비 날짜)부터 오늘까지 일자 이월(및 분리 모드
-    /// 풀 적립)을 다시 계산한다. 인출·환급 크레딧(date==그날)과 위시 저금은 건드리지 않는다.
+    /// `from`(변경된 소비 날짜)부터 오늘까지 일자 이월(및 분리 모드 풀 적립)을 다시 계산한다.
+    /// 인출·환급 크레딧(date==그날)과 위시 저금은 건드리지 않는다.
+    ///
+    /// 소비 CRUD(`createSpendingRecord`/`updateSpendingRecord`/`deleteSpendingRecord`)가
+    /// 직접 호출하므로 화면에서 따로 부를 필요가 없다. 호출자에게 맡겼을 때 소비 입력 화면이
+    /// 이를 빠뜨려 과거 날짜 추가분이 이후 날 이월에 반영되지 않는 문제가 있었다.
     func recalculateCarryOverChain(from: Date) {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())

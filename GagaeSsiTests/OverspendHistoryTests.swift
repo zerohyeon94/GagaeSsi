@@ -188,7 +188,9 @@ final class OverspendHistoryTests: XCTestCase {
         let days = sut.fetchOverspendDays(months: 3)
 
         XCTAssertEqual(days.map(\.date), [day(-4)])
-        XCTAssertEqual(days[0].overspentAmount, base)
+        // -5일에 절반만 썼으므로 남은 절반이 -4일로 이월된다 (배정액 = base + base/2).
+        // 따라서 base*2를 쓴 -4일의 초과분은 base가 아니라 base/2다.
+        XCTAssertEqual(days[0].overspentAmount, base / 2)
     }
 
     func test_조회_기간_밖의_초과는_제외된다() {
