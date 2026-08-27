@@ -1171,17 +1171,20 @@ final class CoreDataManager {
 
     // MARK: - 부채 잔액 보정 (원장 기준 재계산)
 
-    /// 남은 부채를 일자별 기록에서 **다시 계산한** 값.
+    /// 남은 부채를 원장에서 **다시 계산한** 값.
     ///
     /// `SpendingDebt.remainingAmount`는 한 번 적립되면 다시 계산되지 않는 누적값이라
-    /// 잘못 더해진 금액이 영원히 남는다. 반면 초과액과 상환 내역은 원장에 그대로 있어
-    /// 언제든 다시 구할 수 있다:
+    /// 잘못 더해진 금액이 영원히 남는다. 반면 "부채로 옮긴 금액"과 상환 내역은 원장에
+    /// 그대로 있어 언제든 다시 구할 수 있다:
     ///
-    ///     남은 부채 = Σ(부채 기간 중 임계값을 넘긴 날의 초과액) − Σ(그 부채에 갚은 금액)
+    ///     남은 부채 = Σ(이 부채에 옮긴 전환 크레딧) − Σ(그 부채에 갚은 금액)
     ///
-    /// 부채는 "전날 초과분"이 다음 날 전환되어 생기므로, 합산 구간은
-    /// `startedAt` 하루 전부터 어제까지다 (오늘 초과분은 아직 전환되지 않았다).
-    /// - Returns: 활성 부채가 없거나, 부채를 만든 날의 기록이 없어 다시 계산할 근거가
+    /// 합산 근거는 **실제로 부채로 옮긴 날**(`debtTransfer` 크레딧이 붙은 날)이다.
+    /// 기간을 훑어 "초과한 날"을 다시 더하는 방식이 아니다 — 그러면 부채 시작일이
+    /// 과거로 잡히는 순간(과거 날짜 소급 입력) 그 사이의 무관한 초과일까지 빨아들여
+    /// 이중 계상된다. 크레딧은 과거 소비를 고칠 때 `reconcileDebtTransfer`가 최신
+    /// 초과액으로 유지하므로 "크레딧 합 = 전환된 초과 합"이 항상 성립한다.
+    /// - Returns: 활성 부채가 없거나, 전환 크레딧이 하나도 없어 다시 계산할 근거가
     ///   없으면 `nil` (상환 계획 기능이 없던 시절에 쌓인 적자가 여기 해당한다)
     func reconciledDebt(now: Date = Date()) -> (original: Int, remaining: Int)? {
         guard let debt = fetchActiveDebtEntity() else { return nil }
@@ -1189,21 +1192,28 @@ final class CoreDataManager {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: now)
         let startedAt = calendar.startOfDay(for: debt.startedAt ?? today)
-        guard let from = calendar.date(byAdding: .day, value: -1, to: startedAt) else { return nil }
-        // 부채를 만든 날의 기록이 없으면 초과액을 역산할 수 없다 — 함부로 지우지 않는다
-        guard fetchDailyBudgetEntity(date: from) != nil else { return nil }
+        guard let end = calendar.date(byAdding: .day, value: 1, to: today) else { return nil }
 
-        // [from, today) = 부채 시작 전날 ~ 어제
-        let converted = fetchDailyBudgetModels(from: from, to: today).reduce(0) { sum, budget in
-            let overspent = OverspendAnalyzer.evaluate(budget).overspent
-            let threshold = DebtRepaymentPlan.threshold(dailyBudget: budget.availableAmount)
-            return sum + (threshold > 0 && overspent >= threshold ? overspent : 0)
-        }
+        // 이전 부채는 이 부채가 시작되기 전에 완납됐으므로, startedAt 이후 크레딧만이 이 부채의 것이다
+        let credits = debtTransferCredits(from: startedAt, to: end)
+        guard !credits.isEmpty else { return nil }
+        let converted = credits.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
 
         let entries = debt.repayments?.allObjects as? [DebtRepaymentEntry] ?? []
         let repaid = entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
 
         return (original: max(converted, repaid), remaining: max(0, converted - repaid))
+    }
+
+    /// `[from, to)` 구간에 남아 있는 부채 전환 크레딧.
+    /// `debtTransfer`는 항상 명시적으로 저장되므로(추론 대상이 아니다) 문자열 조건으로 정확히 걸린다.
+    private func debtTransferCredits(from: Date, to: Date) -> [CarryOverSource] {
+        let request: NSFetchRequest<CarryOverSource> = CarryOverSource.fetchRequest()
+        request.predicate = NSPredicate(format: "reason == %@ AND date >= %@ AND date < %@",
+                                        CarryOverReason.debtTransfer.rawValue,
+                                        Calendar.current.startOfDay(for: from) as NSDate,
+                                        to as NSDate)
+        return (try? context.fetch(request)) ?? []
     }
 
     /// 부채 잔액을 원장 기준으로 즉시 맞춘다.

@@ -24,9 +24,17 @@ final class DebtCarryOverDoubleCountTests: XCTestCase {
     private func day(_ offset: Int) -> Date {
         cal.startOfDay(for: cal.date(byAdding: .day, value: offset, to: Date())!)
     }
+    /// 이 클래스가 쓰는 구간(day(-3) ~ day(0))에 급여일이 걸리지 않도록 오늘에서 13일 떨어뜨린다.
+    /// 급여일이 구간에 들어오면 남은 부채가 새 기간 예산으로 흡수돼(정상 동작) 부채 관련
+    /// 단정이 실행일에 따라 깨진다. 주말 보정(±2일)까지 감안해도 13일이면 안전하다.
+    private var safePayday: Int {
+        let todayDay = cal.component(.day, from: Date())
+        return ((todayDay + 13 - 1) % 28) + 1
+    }
+
     private func setup() {
         _ = sut.createBudgetConfig(from: BudgetConfigModel(
-            salary: 3_000_000, payday: 25, fixedCosts: [],
+            salary: 3_000_000, payday: safePayday, fixedCosts: [],
             carryOverMode: .full, debtPlanEnabled: true))
     }
     private func seedDay(_ date: Date, available: Int) {
@@ -185,7 +193,12 @@ final class DebtCarryOverDoubleCountTests: XCTestCase {
     // MARK: - 잔액 보정 (원장 기준 재계산)
 
     /// 부채 잔액이 원장과 어긋나면 보정이 원장 값으로 덮어쓴다.
-    func test_보정이_부채잔액을_원장기준으로_맞춘다() {
+    /// 부채에 잡히는 건 "실제로 옮긴 금액"이지 "초과한 날 합계"가 아니다.
+    ///
+    /// 아직 전환되지 않은 초과(다음 날이 만들어지지 않아 판정을 거치지 않은 날)까지
+    /// 기간으로 훑어 더하면, 부채 시작일이 과거로 잡히는 순간 무관한 초과일까지
+    /// 빨려 들어간다. 전환 크레딧만 세면 그런 일이 없다.
+    func test_전환되지_않은_초과는_부채에_넣지_않는다() {
         setup()
         seedDay(day(-3), available: 20_000)
         addSpend(50_000, on: day(-3))               // -3일 초과 30,000
@@ -193,18 +206,15 @@ final class DebtCarryOverDoubleCountTests: XCTestCase {
         sut.processDailyBudgets(upTo: day(-2))      // 30,000이 부채로 전환됨
         XCTAssertEqual(remainingDebt(), 30_000)
 
-        // -2일은 이미 부채 전환 판정을 지난 날이다. 그 날 초과를 뒤늦게 입력하면
-        // 원장의 초과 합계만 늘고 누적값인 부채는 그대로라 둘이 어긋난다.
+        // -2일 초과를 뒤늦게 넣는다. 다음 날(-1일)이 없어 전환 판정을 거치지 않는다.
         let allowance = sut.fetchDailyBudgetModel(date: day(-2))?.availableAmount ?? 0
         XCTAssertGreaterThan(allowance, 0)
         addSpend(allowance + 30_000, on: day(-2))
 
-        XCTAssertEqual(overspendTotal(), 60_000, "초과한 날 합계는 60,000")
-        XCTAssertEqual(remainingDebt(), 30_000, "부채는 예전 값 그대로")
-
-        XCTAssertEqual(sut.reconciledDebt()?.remaining, 60_000)
-        XCTAssertTrue(sut.reconcileDebtNow())
-        XCTAssertEqual(remainingDebt(), 60_000, "보정 후 두 숫자가 일치한다")
+        XCTAssertEqual(overspendTotal(), 60_000, "'초과한 날' 목록에는 60,000이 보인다")
+        XCTAssertEqual(sut.reconciledDebt()?.remaining, 30_000, "옮긴 건 30,000뿐")
+        XCTAssertFalse(sut.reconcileDebtNow(), "이미 맞으므로 바뀔 것이 없다")
+        XCTAssertEqual(remainingDebt(), 30_000)
     }
 
     /// 보정은 홈 진입(processDailyBudgets)마다 돌아 어긋난 채로 남지 않는다.
@@ -254,10 +264,31 @@ final class DebtCarryOverDoubleCountTests: XCTestCase {
             spendingRecords: []))
 
         sut.processDailyBudgets(upTo: day(0))       // 기존 적자가 부채로 전환된다
-
         XCTAssertEqual(remainingDebt(), 300_000)
-        XCTAssertNil(sut.reconciledDebt(), "전날 기록이 없어 역산 불가")
+
+        // 전환 크레딧을 지워 "상환 계획 기능 이전에 쌓인 부채"(근거 없음)를 재현한다
+        let credits = sut.fetchCarryOverSources(date: day(0)).filter { $0.reason == .debtTransfer }
+        XCTAssertEqual(credits.count, 1)
+        _ = sut.deleteCarryOverSource(id: credits[0].id)
+
+        XCTAssertNil(sut.reconciledDebt(), "옮긴 근거가 없으면 역산 불가")
+        XCTAssertFalse(sut.reconcileDebtNow())
         XCTAssertEqual(remainingDebt(), 300_000, "함부로 지우지 않는다")
+    }
+
+    /// 전환 크레딧이 있으면 그게 곧 역산 근거다 — 값이 이미 맞으므로 보정은 아무것도 하지 않는다.
+    func test_전환_크레딧이_역산_근거가_된다() {
+        setup()
+        let base = DailyBudgetCalculator.calculate(from: sut.fetchBudgetConfig()!, for: day(0))
+        _ = sut.createDailyBudget(DailyBudgetModel(
+            availableAmount: base, date: day(0),
+            carryOverSources: [CarryOverSourceModel(amount: -300_000, date: day(-1), toDate: day(0))],
+            spendingRecords: []))
+
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertEqual(sut.reconciledDebt()?.remaining, 300_000)
+        XCTAssertFalse(sut.reconcileDebtNow(), "이미 맞으므로 바뀔 것이 없다")
     }
 
     /// 이월금 인출·환급은 그날 더 쓸 수 있게 된 돈이므로 배정액에 그대로 반영된다.
