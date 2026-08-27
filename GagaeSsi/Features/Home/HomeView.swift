@@ -133,6 +133,7 @@ struct HomeView: View {
                     dailyBudget: viewModel.baseBudget,
                     initialRate: debt.repayRatePercent,
                     repayableFromPool: viewModel.maxRepayableFromPool,
+                    startedAt: debt.startedAt,
                     onConfirm: { viewModel.confirmDebtPlan(ratePercent: $0) },
                     onDefer: { viewModel.deferDebtPlan() },
                     onRepayFromPool: { viewModel.repayDebtFromPool(amount: $0) }
@@ -422,6 +423,23 @@ extension HomeView {
         .gagaeCardShadow()
     }
 
+    /// "8월 12일 시작 · 이대로면 9월 3일 완납" — 계획을 세우기 전이면 시작일만 보여준다
+    private func debtPeriodLabel(_ debt: SpendingDebtModel, plan: (perDay: Int, days: Int)) -> String {
+        let started = "\(shortDateLabel(debt.startedAt)) 시작"
+        guard debt.isPlanned, plan.days > 0,
+              let done = Calendar.current.date(byAdding: .day, value: plan.days, to: Date()) else {
+            return started
+        }
+        return "\(started) · 이대로면 \(shortDateLabel(done)) 완납"
+    }
+
+    private func shortDateLabel(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "M월 d일"
+        return f.string(from: date)
+    }
+
     /// 초과분 상환 진행 카드
     private func debtCard(_ debt: SpendingDebtModel) -> some View {
         let plan = DebtRepaymentPlan.calculate(debt: debt.remainingAmount,
@@ -441,6 +459,11 @@ extension HomeView {
                         .background(Color.gagaePinkDark).clipShape(Capsule())
                 }
             }
+
+            // 언제 시작해서 언제 끝나는지 — 남은 금액만으로는 여정이 보이지 않는다
+            Text(debtPeriodLabel(debt, plan: plan))
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(.gagaeTextTertiary)
 
             // "이 돈이 어디서 왔지?" → 초과한 날과 그날 소비로 바로 이동
             NavigationLink {

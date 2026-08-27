@@ -17,6 +17,9 @@ struct DebtPlanSheet: View {
     var initialRate: Int = DebtRepaymentPlan.defaultRate
     /// 모아둔 이월금으로 먼저 갚을 수 있는 금액 (0이면 제안하지 않음)
     var repayableFromPool: Int = 0
+    /// 부채가 시작된 날. 과거 소비를 뒤늦게 입력해 며칠치가 한꺼번에 잡히면
+    /// "어제 넘겼어요"가 사실과 달라지므로 안내 문구를 바꾼다.
+    var startedAt: Date?
     /// 확정 시 선택한 비율 전달
     let onConfirm: (Int) -> Void
     /// "나중에" — 오늘은 다시 띄우지 않는다
@@ -36,6 +39,17 @@ struct DebtPlanSheet: View {
         DebtRepaymentPlan.calculate(debt: effectiveDebt, dailyBudget: dailyBudget, ratePercent: rate)
     }
     private var isValid: Bool { effectiveDebt == 0 || plan.perDay > 0 }
+
+    /// 초과가 있었던 날부터 오늘까지의 일수. 부채는 "전날 초과"가 다음 날 전환되므로 +1.
+    private var spanDays: Int? {
+        guard let startedAt else { return nil }
+        let cal = Calendar.current
+        guard let days = cal.dateComponents([.day], from: cal.startOfDay(for: startedAt),
+                                            to: cal.startOfDay(for: Date())).day else { return nil }
+        return days + 1
+    }
+    /// 어제 넘긴 게 아니라 며칠치가 소급으로 모인 경우
+    private var isBackdated: Bool { (spanDays ?? 0) > 2 }
 
     var body: some View {
         NavigationStack {
@@ -70,10 +84,15 @@ struct DebtPlanSheet: View {
                 HStack(spacing: GagaeSpacing.sm) {
                     Text("💪").font(.system(size: 28))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("어제 예산을 넘겼어요")
+                        Text(isBackdated
+                             ? "지난 \(spanDays ?? 0)일 사이에 예산을 넘겼어요"
+                             : "어제 예산을 넘겼어요")
                             .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
-                        Text("한 번에 빼지 않고 나눠서 갚아요")
+                        Text(isBackdated
+                             ? "뒤늦게 입력한 소비까지 모아서 계산했어요"
+                             : "한 번에 빼지 않고 나눠서 갚아요")
                             .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
