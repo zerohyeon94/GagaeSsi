@@ -136,7 +136,8 @@ struct HomeView: View {
                     startedAt: debt.startedAt,
                     onConfirm: { viewModel.confirmDebtPlan(ratePercent: $0) },
                     onDefer: { viewModel.deferDebtPlan() },
-                    onRepayFromPool: { viewModel.repayDebtFromPool(amount: $0) }
+                    onRepayFromPool: { viewModel.repayDebtFromPool(amount: $0) },
+                    onConvertToInstallment: { viewModel.convertDebtToInstallment(months: $0) }
                 )
             }
         }

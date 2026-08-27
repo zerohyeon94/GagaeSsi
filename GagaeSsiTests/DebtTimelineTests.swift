@@ -122,3 +122,69 @@ final class DebtTimelineTests: XCTestCase {
         XCTAssertTrue(timeline.events.contains { $0.signedAmount == 20_000 })
     }
 }
+
+// MARK: - 할부로 나누기
+
+extension DebtTimelineTests {
+
+    // 남은 초과분이 할부로 바뀌고 부채는 완납 처리된다
+    func test_할부로_전환하면_부채가_완납된다() {
+        setup()
+        seedDays()
+        addSpend(allowance(day(-3)) + 60_000, on: day(-3))
+        XCTAssertEqual(sut.fetchActiveDebt()?.remainingAmount, 60_000)
+
+        XCTAssertTrue(sut.convertDebtToInstallment(months: 3))
+
+        XCTAssertNil(sut.fetchActiveDebt(), "부채는 끝난다")
+        let installments = sut.fetchInstallments()
+        XCTAssertEqual(installments.count, 1)
+        XCTAssertEqual(installments[0].totalAmount, 60_000)
+        XCTAssertEqual(installments[0].months, 3)
+        XCTAssertEqual(installments[0].monthlyAmount, 20_000)
+    }
+
+    // 조기 완납과 달리 오늘 예산에서 한 번에 빼지 않는다.
+    // 할부가 하루 기본 예산을 조금 낮출 뿐, 60,000이 통째로 빠지면 안 된다.
+    func test_할부_전환은_오늘_예산에서_한번에_빼지_않는다() {
+        setup()
+        seedDays()
+        addSpend(allowance(day(-3)) + 60_000, on: day(-3))
+        let before = sut.fetchDailyBudgetModel(date: day(0))?.todayAvailable ?? 0
+
+        _ = sut.convertDebtToInstallment(months: 3)
+
+        let repaid = sut.fetchCarryOverSources(date: day(0)).filter { $0.reason == .debtRepay }
+        XCTAssertTrue(repaid.isEmpty, "일시 차감 크레딧이 생기면 안 된다")
+
+        let after = sut.fetchDailyBudgetModel(date: day(0))?.todayAvailable ?? 0
+        XCTAssertLessThanOrEqual(after, before, "할부만큼 하루 예산이 조금 줄어든다")
+        XCTAssertGreaterThan(after, before - 60_000, "한 번에 빠지면 안 된다")
+    }
+
+    // 여정에 '할부로 나눔'이 마지막 사건으로 남는다
+    func test_할부_전환이_여정에_남는다() {
+        setup()
+        seedDays()
+        addSpend(allowance(day(-3)) + 60_000, on: day(-3))
+        _ = sut.convertDebtToInstallment(months: 6)
+
+        let settled = sut.fetchCompletedDebts()
+        XCTAssertEqual(settled.count, 1)
+        let timeline = sut.fetchDebtTimeline(for: settled[0])
+
+        guard case .repayment(let entry)? = timeline.events.last else {
+            return XCTFail("마지막 사건이 상환이어야 한다")
+        }
+        XCTAssertEqual(entry.source, .installment)
+        XCTAssertEqual(entry.amount, 60_000)
+    }
+
+    // 갚을 부채가 없으면 할부를 만들지 않는다
+    func test_부채가_없으면_할부로_전환하지_않는다() {
+        setup()
+        seedDays()
+        XCTAssertFalse(sut.convertDebtToInstallment(months: 3))
+        XCTAssertTrue(sut.fetchInstallments().isEmpty)
+    }
+}

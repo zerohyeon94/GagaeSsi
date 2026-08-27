@@ -1625,6 +1625,35 @@ final class CoreDataManager {
         return saveContext()
     }
 
+    /// 남은 초과분을 할부로 전환한다 — 여행처럼 "의도한 큰 지출"용 출구.
+    ///
+    /// 조기 완납(`settleDebtImmediately`)과 달리 **오늘 예산에서 빼지 않는다.** 대신 할부가
+    /// 앞으로 몇 달간 하루 예산을 조금씩 낮춘다. 하루 예산의 20%씩 갚는 것보다 부담이 낮고,
+    /// "잘못 썼으니 갚는다"가 아니라 "계획적으로 나눈다"는 성격에 맞는다.
+    /// - Returns: 활성 부채가 없거나 개월 수가 유효하지 않으면 `false`
+    @discardableResult
+    func convertDebtToInstallment(months: Int, title: String = "초과분 분할") -> Bool {
+        guard months > 0, let debt = fetchActiveDebtEntity() else { return false }
+        let remaining = Int(truncating: debt.remainingAmount ?? 0)
+        guard remaining > 0 else { return false }
+
+        let today = Calendar.current.startOfDay(for: Date())
+        let comps = Calendar.current.dateComponents([.year, .month], from: today)
+        guard let year = comps.year, let month = comps.month else { return false }
+
+        guard createInstallment(InstallmentModel(title: title, totalAmount: remaining,
+                                                 months: months,
+                                                 startYear: year, startMonth: month)) else {
+            return false
+        }
+
+        recordRepayment(remaining, on: today, source: .installment, debt: debt)
+        guard saveContext() else { return false }
+        // 할부가 오늘부터 하루 예산에 반영되도록 기본 예산을 다시 계산한다
+        _ = recalculateTodayBaseBudget()
+        return true
+    }
+
     /// 남은 부채를 오늘 예산에서 한 번에 차감하고 종료한다 (조기 완납 / 기능 OFF 전환).
     @discardableResult
     func settleDebtImmediately() -> Bool {

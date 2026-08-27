@@ -141,6 +141,12 @@ final class HomeViewModel {
         fetchTodayBudget()
     }
 
+    /// 남은 초과분을 할부로 전환 (여행 등 계획했던 큰 지출)
+    func convertDebtToInstallment(months: Int) {
+        CoreDataManager.shared.convertDebtToInstallment(months: months)
+        fetchTodayBudget()
+    }
+
     /// 상환 계획 설정을 오늘 미룸 (팝업 "나중에")
     func deferDebtPlan() {
         CoreDataManager.shared.deferDebtPlan()

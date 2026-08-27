@@ -26,10 +26,19 @@ struct DebtPlanSheet: View {
     var onDefer: (() -> Void)?
     /// 모아둔 이월금으로 먼저 갚기
     var onRepayFromPool: ((Int) -> Void)?
+    /// 할부로 나누기 (개월 수 전달)
+    var onConvertToInstallment: ((Int) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var rate: Int = DebtRepaymentPlan.defaultRate
     @State private var usePool = false
+    /// 나눠 갚기 대신 할부로 돌릴지 (여행 등 계획했던 큰 지출)
+    @State private var useInstallment = false
+    @State private var months = 3
+
+    private static let monthOptions = [2, 3, 6, 12]
+    /// 할부 월 납입액 (원 단위 내림)
+    private var monthlyAmount: Int { months > 0 ? effectiveDebt / months : 0 }
 
     /// 풀로 먼저 갚은 뒤 실제로 계획을 세울 금액
     private var effectiveDebt: Int {
@@ -38,7 +47,10 @@ struct DebtPlanSheet: View {
     private var plan: (perDay: Int, days: Int) {
         DebtRepaymentPlan.calculate(debt: effectiveDebt, dailyBudget: dailyBudget, ratePercent: rate)
     }
-    private var isValid: Bool { effectiveDebt == 0 || plan.perDay > 0 }
+    private var isValid: Bool {
+        if effectiveDebt == 0 { return true }
+        return useInstallment ? monthlyAmount > 0 : plan.perDay > 0
+    }
 
     /// 초과가 있었던 날부터 오늘까지의 일수. 부채는 "전날 초과"가 다음 날 전환되므로 +1.
     private var spanDays: Int? {
@@ -60,7 +72,10 @@ struct DebtPlanSheet: View {
                     VStack(spacing: GagaeSpacing.md) {
                         summaryCard
                         if repayableFromPool > 0 { poolCard }
-                        if effectiveDebt > 0 { rateCard }
+                        if effectiveDebt > 0 {
+                            methodCard
+                            if useInstallment { monthsCard } else { rateCard }
+                        }
                         resultCard
                         actionButtons
                     }
@@ -145,6 +160,66 @@ struct DebtPlanSheet: View {
         }
     }
 
+    // MARK: - 갚는 방식 선택
+
+    /// 나눠 갚기 vs 할부. 여행처럼 의도한 큰 지출은 "빚 갚기" 톤이 맞지 않는다.
+    private var methodCard: some View {
+        GagaeCard {
+            VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
+                Toggle(isOn: $useInstallment.animation(.easeInOut(duration: 0.15))) {
+                    HStack(spacing: 6) {
+                        Text("🧾").font(.system(size: 16))
+                        Text("할부처럼 여러 달로 나누기")
+                            .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
+                    }
+                }
+                .tint(.gagaePinkDark)
+
+                Text(useInstallment
+                     ? "매달 조금씩 하루 예산이 줄어요. 하루 예산에서 바로 빼는 것보다 부담이 적어요."
+                     : "여행처럼 계획했던 큰 지출이라면 이 편이 나아요.")
+                    .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: - 개월 선택 (할부)
+
+    private var monthsCard: some View {
+        GagaeCard {
+            VStack(alignment: .leading, spacing: GagaeSpacing.md) {
+                HStack {
+                    Text("몇 달에 나눠 낼까요?")
+                        .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
+                    Spacer()
+                    Text("\(months)개월")
+                        .font(.gagaeTitle3).foregroundStyle(.gagaePinkDark)
+                }
+                HStack(spacing: GagaeSpacing.sm) {
+                    ForEach(Self.monthOptions, id: \.self) { option in
+                        monthChip(option)
+                    }
+                }
+            }
+        }
+    }
+
+    private func monthChip(_ option: Int) -> some View {
+        let selected = option == months
+        return Button {
+            months = option
+        } label: {
+            Text("\(option)개월")
+                .font(.system(size: 14, weight: selected ? .heavy : .medium, design: .rounded))
+                .foregroundStyle(selected ? .white : Color.gagaeTextSecondary)
+                .frame(maxWidth: .infinity).padding(.vertical, 9)
+                .background(selected ? AnyShapeStyle(Color.gagaePinkDark) : AnyShapeStyle(Color.gagaeSurface))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - 비율 선택
 
     private var rateCard: some View {
@@ -221,6 +296,15 @@ struct DebtPlanSheet: View {
                         .foregroundStyle(.gagaePinkDark)
                     Text("따로 나눠 갚을 금액이 없어요")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                } else if useInstallment {
+                    Text("매달 \(FormatterUtils.currencyString(from: monthlyAmount))씩")
+                        .font(.system(size: 24, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                    Text("\(months)개월 동안 나눠 내요")
+                        .font(.gagaeCallout).foregroundStyle(.gagaeText)
+                    Text("초과분이 할부로 바뀌어 하루 예산이 조금씩 줄어요")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                        .multilineTextAlignment(.center)
                 } else if isValid {
                     Text("하루 \(FormatterUtils.currencyString(from: plan.perDay))씩")
                         .font(.system(size: 24, weight: .heavy, design: .rounded))
@@ -245,13 +329,19 @@ struct DebtPlanSheet: View {
 
     // MARK: - 버튼
 
+    private var primaryTitle: String {
+        if effectiveDebt == 0 { return "이월금으로 갚기" }
+        return useInstallment ? "할부로 나누기" : "이 계획으로 갚기"
+    }
+
     private var actionButtons: some View {
         VStack(spacing: GagaeSpacing.sm) {
-            GagaePrimaryButton(title: effectiveDebt == 0 ? "이월금으로 갚기" : "이 계획으로 갚기",
-                               isEnabled: isValid) {
+            GagaePrimaryButton(title: primaryTitle, isEnabled: isValid) {
                 // 풀 선상환을 먼저 반영해야 남은 금액 기준으로 계획이 세워진다
                 if usePool, repayableFromPool > 0 { onRepayFromPool?(repayableFromPool) }
-                if effectiveDebt > 0 { onConfirm(rate) }
+                if effectiveDebt > 0 {
+                    if useInstallment { onConvertToInstallment?(months) } else { onConfirm(rate) }
+                }
                 dismiss()
             }
             Button {

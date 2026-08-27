@@ -144,6 +144,8 @@ enum DebtRepaymentSource: String, Codable {
     case absorbed
     /// 조기 완납 / 기능 OFF 전환
     case settle
+    /// 할부로 전환 (여행 등 계획했던 큰 지출을 여러 달로 나눔)
+    case installment
 
     static func from(_ raw: String?) -> DebtRepaymentSource {
         DebtRepaymentSource(rawValue: raw ?? "") ?? .daily
@@ -155,6 +157,7 @@ enum DebtRepaymentSource: String, Codable {
         case .pool: return "모아둔 이월금에서"
         case .absorbed: return "급여일 정산"
         case .settle: return "한 번에 갚기"
+        case .installment: return "할부로 나눔"
         }
     }
 
@@ -164,6 +167,7 @@ enum DebtRepaymentSource: String, Codable {
         case .pool: return "🐷"
         case .absorbed: return "🎉"
         case .settle: return "✅"
+        case .installment: return "🧾"
         }
     }
 }
