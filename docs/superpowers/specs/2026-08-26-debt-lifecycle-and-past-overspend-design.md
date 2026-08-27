@@ -81,9 +81,13 @@ remaining = max(0, converted − repaid)
 ### 트리거
 
 소비 CRUD(`createSpendingRecord`/`updateSpendingRecord`/`deleteSpendingRecord`)가
-`recalculateCarryOverChain(from:)`을 마친 직후, 신규 메서드
-`convertPastOverspend(from:)`을 호출한다. 재계산과 마찬가지로 **데이터 계층 책임**
-(2189500과 같은 원칙 — 호출자에게 맡기면 빠뜨린다).
+이미 부르고 있는 `recalculateCarryOverChain(from:)`의 전진 패스 안에서 전환한다.
+재계산과 마찬가지로 **데이터 계층 책임**(2189500과 같은 원칙 — 호출자에게 맡기면 빠뜨린다).
+
+> **구현 중 변경 (19bc3aa)**: 원안은 재계산 뒤 별도 패스(`convertPastOverspend`)로
+> 돌리는 것이었으나, 그러면 크레딧이 붙는 순간 그 뒤 날들의 이월이 어긋난다
+> (전환 크레딧은 그날 잔액을 올리므로 다음 날 이월이 달라진다). 한 번의 전진 패스
+> 안에서 "이월 재계산 → 전환" 순으로 처리해야 체인이 맞는다.
 
 ### 규칙 (기존 전환 규칙을 과거 날짜에 그대로 적용)
 
@@ -107,10 +111,10 @@ remaining = max(0, converted − repaid)
 ### 기존 코드와의 관계
 
 - `processDailyBudgets`의 신규일 생성 경로(`overspendToConvert`)와 판정 기준이
-  동일해야 한다. 공통 판정 헬퍼로 추출해 두 경로가 어긋나지 않게 한다.
+  동일해야 한다 — 둘 다 `convertibleOverspend` + 하루 예산 10% 임계를 쓴다.
 - `recalculateCarryOverChain` 문서 주석의 "재계산이 새 부채를 만들지는 않는다"는
-  이 기능 도입으로 **의도적으로 폐기**된다. 단 새 부채 생성은 재계산 자체가 아니라
-  후속 단계(`convertPastOverspend`)의 책임으로 분리해, 재계산의 멱등성은 그대로 둔다.
+  이 기능 도입으로 **의도적으로 폐기**된다. 멱등성은 유지된다: 두 번째 실행부터는
+  크레딧이 이미 있으므로 `reconcileDebtTransfer` 경로로 들어가 같은 값으로 조정된다.
 
 ### 안내 (소급 입력 폭탄 대응)
 
