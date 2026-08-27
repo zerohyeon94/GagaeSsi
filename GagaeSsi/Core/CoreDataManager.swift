@@ -1286,6 +1286,38 @@ final class CoreDataManager {
         fetchActiveDebtEntity().map(SpendingDebtModel.init)
     }
 
+    /// 부채 하나의 갚기 여정 — 시작(첫 초과)부터 상환·완납까지를 시간순으로 조립한다.
+    ///
+    /// 새 저장소 없이 기존 원장에서 만든다: 전환 크레딧(`debtTransfer`)이 "부채가 늘어난 날",
+    /// `DebtRepaymentEntry`가 "갚은 날"이다. 구간은 `startedAt` ~ `completedAt`(없으면 오늘).
+    func fetchDebtTimeline(for debt: SpendingDebtModel, now: Date = Date()) -> DebtTimeline {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: debt.startedAt)
+        let last = calendar.startOfDay(for: debt.completedAt ?? now)
+        let end = calendar.date(byAdding: .day, value: 1, to: last) ?? last
+
+        var events: [DebtTimelineEvent] = debtTransferCredits(from: start, to: end).map {
+            .overspend(id: $0.id ?? UUID(),
+                       date: calendar.startOfDay(for: $0.date ?? start),
+                       amount: Int(truncating: $0.amount ?? 0))
+        }
+        events += repaymentEntries(of: debt.id).map { .repayment($0) }
+
+        // 같은 날이면 "넘긴 것"을 먼저 — 그날 부채가 늘고 나서 갚은 순서가 자연스럽다
+        events.sort {
+            $0.date == $1.date ? $0.signedAmount > $1.signedAmount : $0.date < $1.date
+        }
+        return DebtTimeline(debt: debt, events: events)
+    }
+
+    /// 특정 부채에 달린 상환 원장 (오래된 순)
+    private func repaymentEntries(of debtId: UUID) -> [DebtRepaymentEntryModel] {
+        let request: NSFetchRequest<DebtRepaymentEntry> = DebtRepaymentEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "debt.id == %@", debtId as CVarArg)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: true)]
+        return ((try? context.fetch(request)) ?? []).map(DebtRepaymentEntryModel.init)
+    }
+
     /// 다 갚은 초과분 이력 (최근 완납순).
     /// 갚고 나면 활성 부채가 사라져 "예전에 얼마나 넘겼는지"를 볼 방법이 없어진다.
     func fetchCompletedDebts(limit: Int = 20) -> [SpendingDebtModel] {

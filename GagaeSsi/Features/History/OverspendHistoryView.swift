@@ -13,16 +13,18 @@ struct OverspendHistoryView: View {
 
     private enum Section: String, CaseIterable {
         case overspend = "초과한 날"
-        case repayment = "갚은 내역"
+        case repayment = "갚기 여정"
     }
 
     @Environment(\.dismiss) private var dismiss
     @State private var section: Section = .overspend
     @State private var days: [OverspendDay] = []
-    @State private var repayments: [DebtRepaymentEntryModel] = []
-    /// 다 갚은 지난 초과분 — 활성 부채가 없어도 "예전에 얼마나 넘겼는지" 남는다
-    @State private var settledDebts: [SpendingDebtModel] = []
+    /// 갚는 중인 부채의 여정 (없으면 nil)
+    @State private var activeTimeline: DebtTimeline?
+    /// 다 갚은 부채들의 여정 — 완납하면 활성 부채가 사라져 이력이 없어진다
+    @State private var settledTimelines: [DebtTimeline] = []
     @State private var expanded: Date?
+    @State private var expandedDebt: UUID?
     @State private var records: [Date: [SpendingRecordModel]] = [:]
 
     private var total: Int { OverspendAnalyzer.total(of: days) }
@@ -32,7 +34,12 @@ struct OverspendHistoryView: View {
         days.filter { $0.overspentAmount < DebtRepaymentPlan.threshold(dailyBudget: $0.baseBudget) }.count
     }
     private var worst: OverspendDay? { OverspendAnalyzer.worst(of: days) }
-    private var repaidTotal: Int { repayments.reduce(0) { $0 + $1.amount } }
+    /// 여정에 남은 상환 이벤트의 합 (갚은 금액은 음수로 들어 있다)
+    private var repaidTotal: Int {
+        let timelines = [activeTimeline].compactMap { $0 } + settledTimelines
+        return timelines.flatMap(\.events).reduce(0) { $0 + max(0, -$1.signedAmount) }
+    }
+    private var hasJourney: Bool { activeTimeline != nil || !settledTimelines.isEmpty }
 
     var body: some View {
         ZStack {
@@ -50,9 +57,13 @@ struct OverspendHistoryView: View {
                         summaryCard
                         if days.isEmpty { emptyOverspendCard } else { overspendListCard }
                     case .repayment:
-                        repaymentSummaryCard
-                        if repayments.isEmpty { emptyRepaymentCard } else { repaymentListCard }
-                        if !settledDebts.isEmpty { settledDebtCard }
+                        if hasJourney {
+                            journeySummaryCard
+                            if let activeTimeline { activeJourneyCard(activeTimeline) }
+                            if !settledTimelines.isEmpty { settledJourneyList }
+                        } else {
+                            emptyRepaymentCard
+                        }
                     }
                 }
                 .padding(.horizontal, GagaeSpacing.md)
@@ -109,8 +120,8 @@ struct OverspendHistoryView: View {
     }
 
     private var emptyRepaymentCard: some View {
-        emptyCard(emoji: "🧾", title: "아직 갚은 내역이 없어요",
-                  message: "상환 계획을 세우면 매일 조금씩 갚은 기록이 쌓여요.")
+        emptyCard(emoji: "🧾", title: "아직 갚을 초과분이 없어요",
+                  message: "크게 넘긴 날이 생기면 여기에 갚아온 여정이 쌓여요.")
     }
 
     private func emptyCard(emoji: String, title: String, message: String) -> some View {
@@ -127,9 +138,9 @@ struct OverspendHistoryView: View {
         }
     }
 
-    // MARK: - 갚은 내역
+    // MARK: - 갚기 여정
 
-    private var repaymentSummaryCard: some View {
+    private var journeySummaryCard: some View {
         GagaeCard {
             VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
                 HStack {
@@ -149,71 +160,127 @@ struct OverspendHistoryView: View {
                             .font(.gagaeCalloutMedium).foregroundStyle(.gagaePinkDark)
                     }
                 }
-                Text("최근 3개월 · \(repayments.count)건")
-                    .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
             }
         }
     }
 
-    private var repaymentListCard: some View {
+    /// 갚는 중인 부채 — 시작부터 지금까지를 펼쳐서 보여준다
+    private func activeJourneyCard(_ timeline: DebtTimeline) -> some View {
+        GagaeCard {
+            VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
+                HStack {
+                    Text("💪 갚는 중")
+                        .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
+                    Spacer()
+                    Text("\(timeline.elapsedDays())일째")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                }
+                Text("\(dayLabel(timeline.debt.startedAt))에 시작했어요")
+                    .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+
+                GagaeDivider()
+                journeyEvents(timeline)
+            }
+        }
+    }
+
+    /// 다 갚은 부채 — 접어두고, 펼치면 그때의 여정을 보여준다
+    private var settledJourneyList: some View {
+        VStack(spacing: GagaeSpacing.sm) {
+            ForEach(settledTimelines) { timeline in
+                GagaeCard {
+                    VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                expandedDebt = expandedDebt == timeline.id ? nil : timeline.id
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Text("🎉").font(.system(size: 18))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(settledSpanLabel(timeline))
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(.gagaeText)
+                                    Text("\(timeline.elapsedDays())일 걸려 갚았어요")
+                                        .font(.system(size: 11, design: .rounded))
+                                        .foregroundStyle(.gagaeTextSecondary)
+                                }
+                                Spacer()
+                                Text(FormatterUtils.currencyString(from: timeline.debt.originalAmount))
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.gagaeTextSecondary)
+                                Image(systemName: expandedDebt == timeline.id ? "chevron.up" : "chevron.down")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.gagaeTextTertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        if expandedDebt == timeline.id {
+                            GagaeDivider()
+                            journeyEvents(timeline)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func settledSpanLabel(_ timeline: DebtTimeline) -> String {
+        let start = dayLabel(timeline.debt.startedAt)
+        guard let completed = timeline.debt.completedAt else { return start }
+        return "\(start) → \(dayLabel(completed))"
+    }
+
+    /// 여정의 사건들 — 넘어온 초과는 빨강(+), 갚은 금액은 초록(−)
+    private func journeyEvents(_ timeline: DebtTimeline) -> some View {
         VStack(spacing: 0) {
-            ForEach(repayments) { entry in
+            ForEach(timeline.events) { event in
                 HStack(spacing: 12) {
                     ZStack {
-                        Circle().fill(Color.gagaePinkLight).frame(width: 32, height: 32)
-                        Text(entry.source.emoji).font(.system(size: 15))
+                        Circle().fill(Color.gagaePinkLight).frame(width: 30, height: 30)
+                        Text(eventEmoji(event)).font(.system(size: 14))
                     }
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(dayLabel(entry.date))
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        Text(dayLabel(event.date))
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .foregroundStyle(.gagaeText)
-                        Text(entry.source.label)
+                        Text(eventLabel(event))
                             .font(.system(size: 11, design: .rounded))
                             .foregroundStyle(.gagaeTextSecondary)
                     }
                     Spacer()
-                    Text("-" + FormatterUtils.currencyString(from: entry.amount))
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.gagaeGood)
+                    Text(signedAmountLabel(event))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(event.signedAmount > 0 ? .gagaeDanger : .gagaeGood)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 11)
+                .padding(.vertical, 7)
 
-                if entry.id != repayments.last?.id {
-                    Rectangle().fill(Color.gagaeDivider).frame(height: 0.5).padding(.leading, 58)
+                if event.id != timeline.events.last?.id {
+                    Rectangle().fill(Color.gagaeDivider).frame(height: 0.5).padding(.leading, 42)
                 }
             }
         }
-        .background(Color.gagaeCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .gagaeCardShadow()
     }
 
-    /// 다 갚은 지난 초과분 — 완납하면 활성 부채가 사라지므로 여기 남겨 되짚어볼 수 있게 한다
-    private var settledDebtCard: some View {
-        GagaeCard {
-            VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
-                Text("🎉 다 갚은 초과분")
-                    .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
-
-                ForEach(settledDebts) { debt in
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(debt.completedAt.map { "\(dayLabel($0)) 완납" } ?? "완납")
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.gagaeText)
-                            Text("\(dayLabel(debt.startedAt))부터")
-                                .font(.system(size: 11, design: .rounded))
-                                .foregroundStyle(.gagaeTextSecondary)
-                        }
-                        Spacer()
-                        Text(FormatterUtils.currencyString(from: debt.originalAmount))
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.gagaeTextSecondary)
-                    }
-                    if debt.id != settledDebts.last?.id { GagaeDivider() }
-                }
-            }
+    private func eventEmoji(_ event: DebtTimelineEvent) -> String {
+        switch event {
+        case .overspend: return "📉"
+        case .repayment(let entry): return entry.source.emoji
         }
+    }
+
+    private func eventLabel(_ event: DebtTimelineEvent) -> String {
+        switch event {
+        case .overspend: return "초과분이 넘어왔어요"
+        case .repayment(let entry): return entry.source.label
+        }
+    }
+
+    private func signedAmountLabel(_ event: DebtTimelineEvent) -> String {
+        let sign = event.signedAmount > 0 ? "+" : "-"
+        return sign + FormatterUtils.currencyString(from: abs(event.signedAmount))
     }
 
     // MARK: - 초과한 날 목록
@@ -317,8 +384,10 @@ struct OverspendHistoryView: View {
 
     private func load() {
         days = CoreDataManager.shared.fetchOverspendDays(months: 3)
-        repayments = CoreDataManager.shared.fetchDebtRepayments(months: 3)
-        settledDebts = CoreDataManager.shared.fetchCompletedDebts()
+        activeTimeline = CoreDataManager.shared.fetchActiveDebt()
+            .map { CoreDataManager.shared.fetchDebtTimeline(for: $0) }
+        settledTimelines = CoreDataManager.shared.fetchCompletedDebts()
+            .map { CoreDataManager.shared.fetchDebtTimeline(for: $0) }
     }
 
     private func loadRecords(for date: Date) {

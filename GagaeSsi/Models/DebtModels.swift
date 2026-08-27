@@ -191,3 +191,53 @@ struct DebtRepaymentEntryModel: Identifiable, Equatable {
         self.source = DebtRepaymentSource.from(entity.source)
     }
 }
+
+// MARK: - 갚기 여정 (타임라인)
+
+/// 부채 하나의 수명주기를 이루는 사건. 시작 → 초과 합산·상환 → 완납 순으로 늘어놓는다.
+///
+/// 남은 금액과 진행바만으로는 "언제 시작해서 어떻게 갚아왔는지"가 보이지 않는다.
+/// 새 저장소 없이 기존 원장(전환 크레딧 + 상환 기록)에서 조립한다.
+enum DebtTimelineEvent: Identifiable, Equatable {
+    /// 초과분이 부채로 넘어온 날 (전환 크레딧)
+    case overspend(id: UUID, date: Date, amount: Int)
+    /// 갚은 날
+    case repayment(DebtRepaymentEntryModel)
+
+    var id: UUID {
+        switch self {
+        case .overspend(let id, _, _): return id
+        case .repayment(let entry): return entry.id
+        }
+    }
+
+    var date: Date {
+        switch self {
+        case .overspend(_, let date, _): return date
+        case .repayment(let entry): return entry.date
+        }
+    }
+
+    /// 부채를 늘린 금액은 양수, 갚은 금액은 음수로 본다
+    var signedAmount: Int {
+        switch self {
+        case .overspend(_, _, let amount): return amount
+        case .repayment(let entry): return -entry.amount
+        }
+    }
+}
+
+/// 부채 하나의 갚기 여정 전체.
+struct DebtTimeline: Identifiable {
+    var id: UUID { debt.id }
+    var debt: SpendingDebtModel
+    /// 오래된 순 (시작 → 현재)
+    var events: [DebtTimelineEvent]
+
+    /// 시작부터 완납(또는 오늘)까지 걸린 일수. 같은 날 끝났으면 1일.
+    func elapsedDays(now: Date = Date(), calendar: Calendar = .current) -> Int {
+        let end = calendar.startOfDay(for: debt.completedAt ?? now)
+        let start = calendar.startOfDay(for: debt.startedAt)
+        return max(1, (calendar.dateComponents([.day], from: start, to: end).day ?? 0) + 1)
+    }
+}
