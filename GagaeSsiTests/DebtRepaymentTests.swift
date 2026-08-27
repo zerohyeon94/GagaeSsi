@@ -24,9 +24,16 @@ final class DebtRepaymentTests: XCTestCase {
         cal.startOfDay(for: cal.date(byAdding: .day, value: offset, to: Date())!)
     }
 
+    /// 이 클래스가 쓰는 구간(day(-4) ~ day(0))에 급여일이 걸리지 않도록 오늘에서 13일 떨어뜨린다.
+    /// 급여일이 구간에 들어오면 남은 부채가 새 기간 예산으로 흡수돼(정상 동작) 상환 단정이
+    /// 실행일에 따라 깨진다. 급여일 흡수 자체를 검증하는 테스트는 각자 config를 따로 만든다.
+    private var safePayday: Int {
+        ((cal.component(.day, from: Date()) + 13 - 1) % 28) + 1
+    }
+
     private func setup(debtPlanEnabled: Bool = true, carryOverMode: CarryOverMode = .full) {
         _ = sut.createBudgetConfig(from: BudgetConfigModel(
-            salary: 3_000_000, payday: 25, fixedCosts: [],
+            salary: 3_000_000, payday: safePayday, fixedCosts: [],
             carryOverMode: carryOverMode, debtPlanEnabled: debtPlanEnabled))
     }
 

@@ -1087,12 +1087,18 @@ final class CoreDataManager {
     /// 소비 CRUD(`createSpendingRecord`/`updateSpendingRecord`/`deleteSpendingRecord`)가
     /// 직접 호출하므로 화면에서 따로 부를 필요가 없다. 호출자에게 맡겼을 때 소비 입력 화면이
     /// 이를 빠뜨려 과거 날짜 추가분이 이후 날 이월에 반영되지 않는 문제가 있었다.
+    ///
+    /// 아직 부채로 옮긴 적 없는 날에 초과가 생기면(여행 뒤 소급 입력 등) 이 패스에서 전환한다.
+    /// 전환을 별도 패스로 빼면 크레딧이 붙는 순간 그 뒤 날들의 이월이 어긋나므로, 한 번의
+    /// 전진 패스 안에서 처리해야 체인이 맞는다.
     func recalculateCarryOverChain(from: Date) {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let startDay = calendar.startOfDay(for: from)
         guard startDay < today else { return }          // 오늘 이후 영향 없음
         guard let config = fetchBudgetConfig() else { return }
+        let installments = fetchInstallments()
+        let periodStart = currentPeriodStart(config: config, today: today)
 
         var cursor = calendar.date(byAdding: .day, value: 1, to: startDay)!
         while cursor <= today {
@@ -1125,7 +1131,14 @@ final class CoreDataManager {
                 //    적자까지 넣으면 재계산할 때마다 저축이 빚으로 둔갑한다
                 //    (`overspendToConvert`와 같은 기준).
                 let convertible = convertibleOverspend(of: prevBudget, deficit: max(0, -carry))
-                reconcileDebtTransfer(on: budget, newDeficit: convertible, day: cursor)
+                if carryOverSources(of: budget, reason: .debtTransfer).isEmpty {
+                    // 아직 옮긴 적 없는 날 — 과거 날짜에 초과를 뒤늦게 넣은 경우가 여기다
+                    convertOverspendIfEligible(on: budget, day: cursor, amount: convertible,
+                                               config: config, installments: installments,
+                                               periodStart: periodStart)
+                } else {
+                    reconcileDebtTransfer(on: budget, newDeficit: convertible, day: cursor)
+                }
 
                 if config.carryOverMode == .separate {
                     let deposit = max(0, prevBalance)
@@ -1137,6 +1150,33 @@ final class CoreDataManager {
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }
         _ = saveContext()
+    }
+
+    /// 아직 부채로 옮긴 적 없는 날의 초과를 전환한다 (과거 날짜 소급 입력 경로).
+    ///
+    /// 판정 기준은 일자 생성 시점(`overspendToConvert`)과 같다 — 소비가 배정을 넘긴 만큼만,
+    /// 하루 예산의 10% 이상일 때. 다만 **이전 급여 기간은 건드리지 않는다**: 급여일에 남은
+    /// 부채를 새 기간 예산으로 흡수해 이미 정산했기 때문에, 그 기간의 초과를 뒤늦게 넣어
+    /// 다시 빚으로 만들면 이중 부과가 된다.
+    private func convertOverspendIfEligible(on budget: DailyBudget, day: Date, amount: Int,
+                                            config: BudgetConfigModel,
+                                            installments: [InstallmentModel],
+                                            periodStart: Date?) {
+        guard config.debtPlanEnabled, amount > 0 else { return }
+        if let periodStart, day < periodStart { return }
+
+        let base = DailyBudgetCalculator.calculate(from: config, installments: installments, for: day)
+        let threshold = DebtRepaymentPlan.threshold(dailyBudget: base)
+        guard threshold > 0, amount >= threshold else { return }
+
+        addCarryOverSource(to: budget, amount: amount, date: day, toDate: day, reason: .debtTransfer)
+        addToDebt(amount: amount, on: day)
+    }
+
+    /// 오늘이 속한 급여 기간의 시작일. 기간 개념이 없는 모드는 `nil` (컷오프 없음).
+    private func currentPeriodStart(config: BudgetConfigModel, today: Date) -> Date? {
+        guard config.budgetMode.hasPayPeriod else { return nil }
+        return DailyBudgetCalculator.payPeriod(payday: config.payday, containing: today).start
     }
 
     /// 부채로 옮긴 적자의 상쇄 크레딧을 `newDeficit`에 맞추고, 차액만큼 활성 부채를 조정한다.
