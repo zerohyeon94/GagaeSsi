@@ -187,6 +187,12 @@ private extension HistoryView {
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(record.paybackReceived ? .gagaeGood : .gagaePinkDark)
                 }
+                // 모아둔 지갑에서 나간 소비는 그날 예산을 줄이지 않았다 — 구분해서 보여준다
+                if record.wishItemId != nil {
+                    Text("🎁 모아둔 위시에서 씀")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.gagaeGood)
+                }
             }
             Spacer()
             Text("-" + FormatterUtils.currencyString(from: record.amount))

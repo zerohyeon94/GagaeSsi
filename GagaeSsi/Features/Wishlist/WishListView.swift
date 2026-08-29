@@ -155,8 +155,28 @@ private extension WishListView {
                     Text("목표 달성 🎉").font(.gagaeCaptionMedium).foregroundStyle(.gagaeGood)
                 }
                 gauge(item)
-                Text("모은 금액 \(FormatterUtils.currencyString(from: item.savedAmount))")
-                    .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+
+                if item.hasSpending {
+                    // 지갑으로 쓰기 시작했으면 게이지보다 남은 돈이 중요하다
+                    HStack {
+                        Text("남은 돈")
+                            .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                        Spacer()
+                        Text(FormatterUtils.currencyString(from: item.balance))
+                            .font(.system(size: 15, weight: .heavy, design: .rounded))
+                            .foregroundStyle(.gagaePinkDark)
+                    }
+                    Text("모은 \(FormatterUtils.currencyString(from: item.savedAmount)) 중 \(FormatterUtils.currencyString(from: item.spentAmount)) 썼어요")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                } else {
+                    Text("모은 금액 \(FormatterUtils.currencyString(from: item.savedAmount))")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                    Text("기록 탭에서 소비를 적을 때 이 위시를 고르면 여기서 빠져요")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 GagaePrimaryButton(title: "구매 완료", isEnabled: true) {
                     viewModel.complete(id: item.id, eventBus: eventBus)
                 }
