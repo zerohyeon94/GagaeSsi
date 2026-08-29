@@ -106,7 +106,10 @@ enum OverspendAnalyzer {
 
         // 위시리스트 저금은 쓴 돈이 아니라 모은 돈이라 초과액에 넣지 않는다.
         // (잔액 계산에는 반영되지만, 되짚어보기에서 저금을 과소비로 치면 안 된다)
-        let outgoing = budget.spendingRecords.map(\.amount).reduce(0, +)
+        //
+        // 위시 지갑에서 쓴 소비도 뺀다 — 모아둔 돈에서 나간 것이라 그날 과소비가 아니다.
+        // 넣으면 여행 기간이 통째로 '초과한 날'이 되고 부채로까지 전환된다.
+        let outgoing = budget.budgetedSpending
         return DayEvaluation(allowance: allowance, outgoing: outgoing)
     }
 
@@ -128,7 +131,7 @@ enum OverspendAnalyzer {
                     savedCarryOver: max(0, parts.savedCarryOver),
                     sameDayAdjustment: parts.sameDayAdjustment,
                     debtAdjustment: parts.debtAdjustment,
-                    spent: budget.spendingRecords.map(\.amount).reduce(0, +),
+                    spent: budget.budgetedSpending,
                     wishSaving: budget.wishSavingAmount
                 )
             }

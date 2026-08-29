@@ -640,6 +640,15 @@ final class CoreDataManager {
         spendingRecord.expectedPayback = Int32(model.expectedPayback)
         spendingRecord.paybackReceived = model.paybackReceived
 
+        // 금액을 올려 지갑 잔액을 넘기면 연결을 끊는다. 일부만 지갑에서 빼는 방식은
+        // 같은 날 소비 순서에 따라 결과가 달라지므로 "전부 아니면 전무"로 유지한다.
+        if let wishId = spendingRecord.wishItem?.id {
+            let others = wishSpentAmount(for: wishId) - Int(truncating: spendingRecord.amount ?? 0)
+            if others + model.amount > savedAmount(for: wishId) {
+                spendingRecord.wishItem = nil
+            }
+        }
+
         guard saveContext() else { return false }
         recalculateCarryOverChain(from: min(oldDate, newDate))
         return true
@@ -1891,6 +1900,58 @@ final class CoreDataManager {
         return entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
     }
 
+    // MARK: - 위시 지갑 (모은 돈으로 쓰기)
+
+    /// 이 위시 지갑에서 쓴 소비 합계
+    func wishSpentAmount(for wishItemId: UUID) -> Int {
+        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        request.predicate = NSPredicate(format: "wishItem.id == %@", wishItemId as CVarArg)
+        let records = (try? context.fetch(request)) ?? []
+        return records.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+    }
+
+    /// 지갑에 남은 돈 = 모은 돈 − 이 위시에서 쓴 소비
+    func wishBalance(for wishItemId: UUID) -> Int {
+        max(0, savedAmount(for: wishItemId) - wishSpentAmount(for: wishItemId))
+    }
+
+    /// 잔액이 남아 소비를 붙일 수 있는 위시들 (최근 만든 순)
+    func fetchSpendableWishItems() -> [WishItemModel] {
+        fetchWishItems().filter { $0.balance > 0 && $0.status != .completed }
+    }
+
+    /// 소비를 위시 지갑에 연결한다 — 그날 예산에서 빠지지 않게 된다.
+    ///
+    /// 잔액을 넘는 금액은 받지 않는다. 일부만 지갑에서 빼고 나머지를 예산에서 빼면
+    /// 같은 날 소비 순서에 따라 결과가 달라져 이월 재계산이 불안정해진다.
+    /// - Returns: 잔액 부족이거나 대상이 없으면 `false`
+    @discardableResult
+    func linkSpendingToWish(recordId: UUID, wishItemId: UUID) -> Bool {
+        guard let record = fetchSpendingRecordEntity(id: recordId),
+              let wish = fetchWishItemEntity(id: wishItemId) else { return false }
+        // 이미 다른 위시에 붙어 있으면 그만큼은 잔액에 되돌려 계산해야 한다
+        let alreadyLinked = record.wishItem?.id == wishItemId
+        let amount = Int(truncating: record.amount ?? 0)
+        guard alreadyLinked || amount <= wishBalance(for: wishItemId) else { return false }
+
+        record.wishItem = wish
+        guard saveContext() else { return false }
+        // 예산 차감 대상에서 빠졌으므로 그날부터 이월을 다시 잇는다
+        recalculateCarryOverChain(from: record.date ?? Date())
+        return true
+    }
+
+    /// 연결을 끊는다 — 다시 그날 예산에서 빠지는 평소 소비가 된다.
+    @discardableResult
+    func unlinkSpendingFromWish(recordId: UUID) -> Bool {
+        guard let record = fetchSpendingRecordEntity(id: recordId),
+              record.wishItem != nil else { return false }
+        record.wishItem = nil
+        guard saveContext() else { return false }
+        recalculateCarryOverChain(from: record.date ?? Date())
+        return true
+    }
+
     /// 활성 위시가 있으면 해당 날짜에 저금 엔트리를 생성한다.
     /// - 멱등: 이미 이 아이템의 이 날짜 저금이 있으면 skip
     /// - 목표 도달 시 남은 금액만 저금하고 상태를 구매가능으로 전환
@@ -1951,12 +2012,17 @@ final class CoreDataManager {
         let request: NSFetchRequest<WishItem> = WishItem.fetchRequest()
         request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
         let entities = (try? context.fetch(request)) ?? []
-        return entities.map { WishItemModel(entity: $0, savedAmount: savedAmount(for: $0.id ?? UUID())) }
+        return entities.map {
+            let id = $0.id ?? UUID()
+            return WishItemModel(entity: $0, savedAmount: savedAmount(for: id),
+                                 spentAmount: wishSpentAmount(for: id))
+        }
     }
 
     func fetchActiveWishItem() -> WishItemModel? {
         guard let entity = fetchActiveWishItemEntity(), let id = entity.id else { return nil }
-        return WishItemModel(entity: entity, savedAmount: savedAmount(for: id))
+        return WishItemModel(entity: entity, savedAmount: savedAmount(for: id),
+                             spentAmount: wishSpentAmount(for: id))
     }
 
     private func fetchWishItemEntity(id: UUID) -> WishItem? {
@@ -2019,8 +2085,14 @@ final class CoreDataManager {
         if WishStatus.from(entity.status) == .saving {
             refundWishSaving(entity)
         }
+        // 지갑에서 쓴 소비들은 연결만 끊기고 남는다(Nullify) → 다시 예산 차감 대상이 되므로
+        // 가장 이른 소비 날짜부터 이월을 다시 계산해야 한다
+        let linkedDates = (entity.spendingRecords?.allObjects as? [SpendingRecord] ?? [])
+            .compactMap { $0.date }
         context.delete(entity)   // savingEntries는 Cascade 삭제
-        return saveContext()
+        guard saveContext() else { return false }
+        if let earliest = linkedDates.min() { recalculateCarryOverChain(from: earliest) }
+        return true
     }
 
     /// 과거 일자에 이미 이월로 반영된 저금분을 오늘 잔액으로 환급한다.

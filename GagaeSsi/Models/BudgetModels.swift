@@ -334,11 +334,16 @@ struct DailyBudgetModel: Identifiable {
     /// 예산에서는 빠지지만 소비가 아니라 '이동'이라 소비 통계·초과 판정에는 잡히지 않는다.
     var transferAmount: Int
 
+    /// 예산에서 실제로 빠지는 소비 합. 위시 지갑에서 쓴 소비는 저금 시점에 이미
+    /// 빠진 돈이라 제외한다 (넣으면 모아둔 돈으로 쓴 여행이 이중 차감돼 빚이 된다).
+    var budgetedSpending: Int {
+        spendingRecords.filter { $0.wishItemId == nil }.map(\.amount).reduce(0, +)
+    }
+
     // 실제 오늘 쓸 수 있는 총 금액
     var todayAvailable: Int {
         let carry = carryOverSources.map { $0.amount }.reduce(0, +)
-        let spent = spendingRecords.map { $0.amount }.reduce(0, +)
-        return availableAmount + carry - spent - wishSavingAmount - transferAmount
+        return availableAmount + carry - budgetedSpending - wishSavingAmount - transferAmount
     }
 
     // MARK: - Initializer
@@ -455,13 +460,17 @@ struct SpendingRecordModel: Identifiable {
     var expectedPayback: Int
     /// 환급을 실제로 받았는지 여부
     var paybackReceived: Bool
+    /// 모아둔 위시 지갑에서 쓴 소비면 그 위시 id. nil이면 평소 소비.
+    /// 연결된 소비는 이미 저금으로 예산에서 빠진 돈이라 하루 예산에서 다시 빼지 않는다.
+    var wishItemId: UUID?
 
     /// 순 지출 (실지출 − 환급 예정)
     var netAmount: Int { amount - expectedPayback }
 
     init(id: UUID = UUID(), title: String, amount: Int, date: Date,
          category: SpendingCategory = .other,
-         expectedPayback: Int = 0, paybackReceived: Bool = false) {
+         expectedPayback: Int = 0, paybackReceived: Bool = false,
+         wishItemId: UUID? = nil) {
         self.id = id
         self.title = title
         self.amount = amount
@@ -469,6 +478,7 @@ struct SpendingRecordModel: Identifiable {
         self.category = category
         self.expectedPayback = expectedPayback
         self.paybackReceived = paybackReceived
+        self.wishItemId = wishItemId
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -480,5 +490,6 @@ struct SpendingRecordModel: Identifiable {
         self.category = SpendingCategory.from(rawValue: entity.category)
         self.expectedPayback = Int(entity.expectedPayback)
         self.paybackReceived = entity.paybackReceived
+        self.wishItemId = entity.wishItem?.id
     }
 }

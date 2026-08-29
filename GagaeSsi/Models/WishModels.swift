@@ -45,9 +45,16 @@ struct WishItemModel: Identifiable {
     var activatedAt: Date?
     var completedAt: Date?
     /// 누적 저금액 (저금 엔트리 합계). fetch 시 매니저가 채운다.
+    /// 모은 돈 (저금 엔트리 합계)
     var savedAmount: Int
+    /// 이 위시 지갑에서 쓴 소비 합계
+    var spentAmount: Int
 
     // MARK: - Computed
+    /// 지갑에 남은 돈. 목표를 채운 뒤 여행 등에 쓰면 여기서 빠진다.
+    var balance: Int { max(0, savedAmount - spentAmount) }
+    /// 지갑에서 쓴 적이 있는지 (있으면 목록에서 게이지 대신 잔액을 보여준다)
+    var hasSpending: Bool { spentAmount > 0 }
     /// 목표 대비 저금 진행률 (0~1)
     var progress: Double {
         guard targetAmount > 0 else { return 0 }
@@ -68,7 +75,7 @@ struct WishItemModel: Identifiable {
     init(id: UUID = UUID(), title: String, targetAmount: Int, dailySaving: Int = 0,
          status: WishStatus = .waiting, kind: WishKind = .want,
          createdAt: Date = Date(), activatedAt: Date? = nil, completedAt: Date? = nil,
-         savedAmount: Int = 0) {
+         savedAmount: Int = 0, spentAmount: Int = 0) {
         self.id = id
         self.title = title
         self.targetAmount = targetAmount
@@ -79,10 +86,11 @@ struct WishItemModel: Identifiable {
         self.activatedAt = activatedAt
         self.completedAt = completedAt
         self.savedAmount = savedAmount
+        self.spentAmount = spentAmount
     }
 
-    /// CoreData Entity -> Model 변환 생성자 (savedAmount는 별도 주입)
-    init(entity: WishItem, savedAmount: Int = 0) {
+    /// CoreData Entity -> Model 변환 생성자 (savedAmount·spentAmount는 별도 주입)
+    init(entity: WishItem, savedAmount: Int = 0, spentAmount: Int = 0) {
         self.id = entity.id ?? UUID()
         self.title = entity.title ?? ""
         self.targetAmount = Int(truncating: entity.targetAmount ?? 0)
@@ -93,6 +101,7 @@ struct WishItemModel: Identifiable {
         self.activatedAt = entity.activatedAt
         self.completedAt = entity.completedAt
         self.savedAmount = savedAmount
+        self.spentAmount = spentAmount
     }
 }
 

@@ -171,7 +171,10 @@ final class CoreDataMigrationTests: XCTestCase {
     }
 
     /// GagaeSsi 4는 이미 사용자 기기에 설치된 버전이라 in-place 수정이 불가능하다.
-    func test_GagaeSsi4에서_5로_마이그레이션되고_기존_기록이_보존된다() throws {
+    /// 저축·투자(AssetTransfer)가 들어온 5로 올라가도 기존 기록이 보존되는지.
+    /// `DailyBudgetModel(entity:)`가 최신 속성을 모두 읽으므로 최신 모델로 연다
+    /// (구버전 모델로 열면 이후 버전에서 추가된 관계를 읽다 예외가 난다).
+    func test_GagaeSsi4에서_최신으로_마이그레이션되고_기존_기록이_보존된다() throws {
         let oldContainer = try container(with: try model(named: "GagaeSsi 4"))
         let oldContext = oldContainer.viewContext
 
@@ -189,7 +192,7 @@ final class CoreDataMigrationTests: XCTestCase {
         try oldContext.save()
         try unload(oldContainer)
 
-        let newContainer = try container(with: try model(named: "GagaeSsi 5"))
+        let newContainer = try container(with: try currentModel())
         let newContext = newContainer.viewContext
 
         let budgets = try newContext.fetch(NSFetchRequest<DailyBudget>(entityName: "DailyBudget"))
