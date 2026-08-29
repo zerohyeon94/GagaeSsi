@@ -64,6 +64,7 @@ struct SpendView: View {
             let today = Calendar.current.startOfDay(for: Date())
             viewModel.fetchSpending(on: today)
             viewModel.loadSuggestions()
+            viewModel.loadSpendableWishes()
         }
         .alert("오류", isPresented: $viewModel.showErrorAlert) {
             Button("확인", role: .cancel) { }
@@ -134,6 +135,7 @@ extension SpendView {
                 amountField
                 paybackField
                 dateField
+                if !viewModel.spendableWishes.isEmpty { wishWalletField }
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -333,6 +335,70 @@ extension SpendView {
                 }
             }
         }
+    }
+
+    /// ⑤ 모아둔 위시 지갑에서 쓰기 — 고르면 그날 예산에서 빠지지 않는다
+    private var wishWalletField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel("🎁", "모아둔 위시에서 쓰기")
+
+            VStack(spacing: 0) {
+                walletRow(title: "예산에서 쓰기", detail: "평소처럼 오늘 예산에서 빠져요",
+                          selected: viewModel.tempWishItemId == nil) {
+                    viewModel.tempWishItemId = nil
+                }
+                ForEach(viewModel.spendableWishes) { wish in
+                    Rectangle().fill(Color.gagaeDivider).frame(height: 0.5).padding(.leading, 14)
+                    walletRow(title: wish.title,
+                              detail: "남은 \(FormatterUtils.currencyString(from: wish.balance))",
+                              selected: viewModel.tempWishItemId == wish.id) {
+                        viewModel.tempWishItemId = wish.id
+                    }
+                }
+            }
+            .background(Color.gagaeSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.gagaeDivider, lineWidth: 1.5)
+            )
+
+            if viewModel.tempWishItemId != nil {
+                if viewModel.wishCoversAmount {
+                    Text("모아둔 돈에서 빠져요. 오늘 쓸 수 있는 금액은 그대로예요.")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeGood)
+                } else {
+                    Text("지갑에 \(FormatterUtils.currencyString(from: viewModel.selectedWishLimit))만 남았어요. 금액을 줄이거나 예산에서 쓰기를 골라주세요.")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeDanger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func walletRow(title: String, detail: String, selected: Bool,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 16))
+                    .foregroundStyle(selected ? Color.gagaePinkDark : Color.gagaeDivider)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 14, weight: selected ? .bold : .medium, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                    Text(detail)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeTextSecondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// ④ 날짜

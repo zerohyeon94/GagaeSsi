@@ -27,6 +27,26 @@ final class SpendViewModel {
     /// 편집 시 기존 환급 수령 여부 보존용
     private var editingPaybackReceived: Bool = false
 
+    /// 모아둔 위시 지갑에서 쓸지 — 선택하면 그날 예산에서 빠지지 않는다
+    var tempWishItemId: UUID?
+    /// 잔액이 남아 고를 수 있는 지갑들
+    var spendableWishes: [WishItemModel] = []
+
+    var selectedWish: WishItemModel? {
+        spendableWishes.first { $0.id == tempWishItemId }
+    }
+    /// 고른 지갑으로 이 금액을 감당할 수 있는지
+    var wishCoversAmount: Bool {
+        guard let wishId = tempWishItemId else { return true }
+        return tempAmount <= CoreDataManager.shared.wishSpendableLimit(for: wishId,
+                                                                      excluding: editingRecordId)
+    }
+    /// 고른 지갑에서 이 소비에 쓸 수 있는 금액 (안내 문구용)
+    var selectedWishLimit: Int {
+        guard let wishId = tempWishItemId else { return 0 }
+        return CoreDataManager.shared.wishSpendableLimit(for: wishId, excluding: editingRecordId)
+    }
+
     /// 편집 중인 지출 기록 id (nil이면 추가 모드)
     var editingRecordId: UUID?
 
@@ -44,9 +64,10 @@ final class SpendViewModel {
     var errorMessage: String = ""
     
     // MARK: - Computed
-    /// 금액만 있으면 저장 가능 (내용은 선택, 비우면 카테고리명 사용)
+    /// 금액만 있으면 저장 가능 (내용은 선택, 비우면 카테고리명 사용).
+    /// 지갑에서 쓰기로 했다면 잔액을 넘지 않아야 한다.
     var isValid: Bool {
-        return tempAmount > 0
+        return tempAmount > 0 && wishCoversAmount
     }
 
     /// 편집 모드 여부
@@ -117,8 +138,16 @@ final class SpendViewModel {
             return
         }
 
+        // 지갑 연결은 저장 뒤에 붙인다 — 잔액 검사가 데이터 계층 한 곳에만 있게 된다
+        if let wishId = tempWishItemId {
+            CoreDataManager.shared.linkSpendingToWish(recordId: model.id, wishItemId: wishId)
+        } else {
+            CoreDataManager.shared.unlinkSpendingFromWish(recordId: model.id)
+        }
+
         editingRecordId = nil
         fetchSpending(on: model.date)
+        loadSpendableWishes()      // 지갑 잔액이 줄었으므로 다시 읽는다
         eventBus.notifySpendingAdded()
         showSuccessAlert = true
         completion(true)
@@ -136,6 +165,19 @@ final class SpendViewModel {
         tempExpectedPaybackText = record.expectedPayback > 0 ? FormatterUtils.inputAmountString(from: record.expectedPayback) : ""
         tempHasPayback = record.expectedPayback > 0
         editingPaybackReceived = record.paybackReceived
+        tempWishItemId = record.wishItemId
+        loadSpendableWishes()
+    }
+
+    /// 잔액이 남은 지갑 목록을 불러온다 (화면 진입·편집 시작 시)
+    func loadSpendableWishes() {
+        var wishes = CoreDataManager.shared.fetchSpendableWishItems()
+        // 편집 중인 기록이 붙어 있던 지갑은 잔액이 0이 됐어도 후보로 남겨야 한다
+        if let id = tempWishItemId, !wishes.contains(where: { $0.id == id }),
+           let linked = CoreDataManager.shared.fetchWishItems().first(where: { $0.id == id }) {
+            wishes.append(linked)
+        }
+        spendableWishes = wishes
     }
 
     /// 저장 직후, 오늘 예산이 음수이고 모아둔 이월금이 있으면 충당 가능액을 반환한다.
@@ -187,6 +229,7 @@ final class SpendViewModel {
         tempExpectedPayback = 0
         tempExpectedPaybackText = ""
         editingPaybackReceived = false
+        tempWishItemId = nil
         editingRecordId = nil
         model = SpendingRecordModel(id: UUID(), title: "", amount: 0, date: Date())
     }

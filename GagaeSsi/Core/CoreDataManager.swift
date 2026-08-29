@@ -1915,6 +1915,17 @@ final class CoreDataManager {
         max(0, savedAmount(for: wishItemId) - wishSpentAmount(for: wishItemId))
     }
 
+    /// 이 소비를 지갑에 붙일 수 있는 최대 금액.
+    /// 편집 중이면 그 기록이 이미 쓰고 있던 금액은 되돌려 계산한다 (자기 자신과 경쟁하지 않게).
+    func wishSpendableLimit(for wishItemId: UUID, excluding recordId: UUID? = nil) -> Int {
+        var limit = wishBalance(for: wishItemId)
+        if let recordId, let record = fetchSpendingRecordEntity(id: recordId),
+           record.wishItem?.id == wishItemId {
+            limit += Int(truncating: record.amount ?? 0)
+        }
+        return limit
+    }
+
     /// 잔액이 남아 소비를 붙일 수 있는 위시들 (최근 만든 순)
     func fetchSpendableWishItems() -> [WishItemModel] {
         fetchWishItems().filter { $0.balance > 0 && $0.status != .completed }
