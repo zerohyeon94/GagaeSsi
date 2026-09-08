@@ -336,8 +336,9 @@ struct DailyBudgetModel: Identifiable {
 
     /// 예산에서 실제로 빠지는 소비 합. 위시 지갑에서 쓴 소비는 저금 시점에 이미
     /// 빠진 돈이라 제외한다 (넣으면 모아둔 돈으로 쓴 여행이 이중 차감돼 빚이 된다).
+    /// 여행에서 친구가 낸 소비는 내 몫만 — `budgetAmount`가 그 판단을 한다.
     var budgetedSpending: Int {
-        spendingRecords.filter { $0.wishItemId == nil }.map(\.amount).reduce(0, +)
+        spendingRecords.filter { $0.wishItemId == nil }.map(\.budgetAmount).reduce(0, +)
     }
 
     // 실제 오늘 쓸 수 있는 총 금액

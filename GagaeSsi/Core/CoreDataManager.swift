@@ -635,6 +635,9 @@ final class CoreDataManager {
             targetBudget.addToSpendingRecords(spendingRecord)
         }
 
+        // 지갑 잔액 검사용 — 바꾸기 전 이 기록이 지갑에서 차지하던 금액
+        let previousBudgetAmount = SpendingRecordModel(entity: spendingRecord).budgetAmount
+
         spendingRecord.title = model.title
         spendingRecord.amount = NSDecimalNumber(value: model.amount)
         spendingRecord.date = model.date   // 전체 타임스탬프 보존 (시간대 리포트용)
@@ -644,11 +647,11 @@ final class CoreDataManager {
         spendingRecord.participants = Int16(clamping: model.participants)
         spendingRecord.paidByMe = model.paidByMe
 
-        // 금액을 올려 지갑 잔액을 넘기면 연결을 끊는다. 일부만 지갑에서 빼는 방식은
+        // 부담액을 올려 지갑 잔액을 넘기면 연결을 끊는다. 일부만 지갑에서 빼는 방식은
         // 같은 날 소비 순서에 따라 결과가 달라지므로 "전부 아니면 전무"로 유지한다.
         if let wishId = spendingRecord.wishItem?.id {
-            let others = wishSpentAmount(for: wishId) - Int(truncating: spendingRecord.amount ?? 0)
-            if others + model.amount > savedAmount(for: wishId) {
+            let others = wishSpentAmount(for: wishId) - previousBudgetAmount
+            if others + model.budgetAmount > savedAmount(for: wishId) {
                 spendingRecord.wishItem = nil
             }
         }
@@ -1906,12 +1909,13 @@ final class CoreDataManager {
 
     // MARK: - 위시 지갑 (모은 돈으로 쓰기)
 
-    /// 이 위시 지갑에서 쓴 소비 합계
+    /// 이 위시 지갑에서 쓴 소비 합 — 예산에서 빠졌을 금액(`budgetAmount`) 기준.
+    /// 친구가 낸 여행 소비는 내 몫만 지갑에서 빠진다.
     func wishSpentAmount(for wishItemId: UUID) -> Int {
         let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
         request.predicate = NSPredicate(format: "wishItem.id == %@", wishItemId as CVarArg)
         let records = (try? context.fetch(request)) ?? []
-        return records.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+        return records.reduce(0) { $0 + SpendingRecordModel(entity: $1).budgetAmount }
     }
 
     /// 지갑에 남은 돈 = 모은 돈 − 이 위시에서 쓴 소비
@@ -1925,7 +1929,7 @@ final class CoreDataManager {
         var limit = wishBalance(for: wishItemId)
         if let recordId, let record = fetchSpendingRecordEntity(id: recordId),
            record.wishItem?.id == wishItemId {
-            limit += Int(truncating: record.amount ?? 0)
+            limit += SpendingRecordModel(entity: record).budgetAmount
         }
         return limit
     }
@@ -1946,7 +1950,7 @@ final class CoreDataManager {
               let wish = fetchWishItemEntity(id: wishItemId) else { return false }
         // 이미 다른 위시에 붙어 있으면 그만큼은 잔액에 되돌려 계산해야 한다
         let alreadyLinked = record.wishItem?.id == wishItemId
-        let amount = Int(truncating: record.amount ?? 0)
+        let amount = SpendingRecordModel(entity: record).budgetAmount
         guard alreadyLinked || amount <= wishBalance(for: wishItemId) else { return false }
 
         record.wishItem = wish
