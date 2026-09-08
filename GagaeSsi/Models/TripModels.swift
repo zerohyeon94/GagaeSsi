@@ -102,44 +102,31 @@ struct TripSettlementModel: Equatable {
         return sharedTotal / n
     }
 
+    /// 항목별로 계산해 더한다 — 합계를 한 번에 나누지 않는다.
+    ///
+    /// 통계·내역도 소비 건마다 `myShare`를 더하므로, 여기서 합계를 나누면 같은 소비가
+    /// 화면마다 다른 금액으로 보인다. 항목별 합산이라야 `Σ budgetAmount − receivable`이
+    /// 통계와 정확히 맞아떨어진다 (나머지 원은 돈을 돌려줄 친구 쪽에 붙는다).
     static func compute(records: [SpendingRecordModel]) -> TripSettlementModel {
-        var totalPaid = 0, sharedTotal = 0, paidByMeTotal = 0
-        var fromWallet = 0, fromBudget = 0
-        var nonSharedMyShare = 0
+        var totalPaid = 0, sharedTotal = 0, myShareTotal = 0, paidByMeTotal = 0
+        var receivable = 0, fromWallet = 0, fromBudget = 0
         var participantSet = Set<Int>()
-        var paidByMeSharedTotal = 0
 
         for r in records {
             totalPaid += r.amount
+            myShareTotal += r.myShare
+            receivable += r.receivable
             if r.isShared {
                 sharedTotal += r.amount
                 participantSet.insert(r.participants)
-                if r.paidByMe { paidByMeSharedTotal += r.amount }
-            } else {
-                nonSharedMyShare += r.myShare
             }
             if r.paidByMe { paidByMeTotal += r.amount }
             if r.wishItemId != nil { fromWallet += r.budgetAmount } else { fromBudget += r.budgetAmount }
         }
 
-        let uniformParticipants = participantSet.count == 1 ? participantSet.first : nil
-
-        // 정산 단위는 소비 건이 아니라 여행이다: 인원이 항목마다 같으면(예: 3명이서 다닌 여행)
-        // 항목별로 나눠 내림한 뒤 합치지 않고, 합계를 한 번에 나눈다 — 그래야 "인당 15만원"처럼
-        // 실제 정산에서 쓰는 금액과 일치한다. 항목마다 인원이 다르면 공통 인원이 없어 항목별로 계산한다.
-        let myShareTotal: Int
-        let receivable: Int
-        if let n = uniformParticipants, n > 0 {
-            myShareTotal = nonSharedMyShare + sharedTotal / n
-            receivable = paidByMeSharedTotal - paidByMeSharedTotal / n
-        } else {
-            myShareTotal = records.reduce(0) { $0 + $1.myShare }
-            receivable = records.reduce(0) { $0 + $1.receivable }
-        }
-
         return TripSettlementModel(totalPaid: totalPaid, sharedTotal: sharedTotal,
                                    myShareTotal: myShareTotal, paidByMeTotal: paidByMeTotal,
                                    receivable: receivable, fromWallet: fromWallet, fromBudget: fromBudget,
-                                   uniformParticipants: uniformParticipants)
+                                   uniformParticipants: participantSet.count == 1 ? participantSet.first : nil)
     }
 }

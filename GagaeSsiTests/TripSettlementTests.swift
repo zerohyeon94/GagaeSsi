@@ -143,17 +143,19 @@ final class TripSettlementTests: XCTestCase {
 
     // MARK: - 정산 집계
 
-    /// 3명, 내가 점심 10만·저녁 20만·아침 15만을 다 냈다 → 인당 15만, 30만 돌려받는다
+    /// 3명, 내가 점심 10만·저녁 20만·아침 15만을 다 냈다.
+    /// 10만·20만은 3으로 나누어떨어지지 않아 내 몫 합계가 15만에서 1원 모자란다 —
+    /// 항목별로 버림하기 때문이고, 그 나머지는 돌려받을 돈에 붙는다.
     func test_내가_다_낸_여행은_인당_금액과_받을_돈이_나온다() {
         let s = TripSettlementModel.compute(records: [
             record(100_000, participants: 3), record(200_000, participants: 3), record(150_000, participants: 3),
         ])
         XCTAssertEqual(s.totalPaid, 450_000)
         XCTAssertEqual(s.sharedTotal, 450_000)
-        XCTAssertEqual(s.myShareTotal, 150_000)
+        XCTAssertEqual(s.myShareTotal, 149_999)
         XCTAssertEqual(s.paidByMeTotal, 450_000)
-        XCTAssertEqual(s.receivable, 300_000)
-        XCTAssertEqual(s.perPerson, 150_000)
+        XCTAssertEqual(s.receivable, 300_001)
+        XCTAssertEqual(s.perPerson, 150_000)   // 표시용 인당 금액은 합계를 나눈 값이라 15만이 맞다
     }
 
     func test_친구가_낸_숙소는_내_몫만_집계되고_받을_돈은_없다() {
@@ -192,6 +194,21 @@ final class TripSettlementTests: XCTestCase {
         XCTAssertEqual(s, TripSettlementModel(totalPaid: 0, sharedTotal: 0, myShareTotal: 0,
                                               paidByMeTotal: 0, receivable: 0,
                                               fromWallet: 0, fromBudget: 0, uniformParticipants: nil))
+    }
+
+    /// 정산이 끝나면 "예산에서 빠진 돈 − 돌려받은 돈"이 통계가 보여줄 내 소비와 정확히 같아야 한다.
+    /// 합계를 한 번에 나누면 여기서 1원이 어긋난다.
+    func test_예산_차감에서_정산액을_빼면_내_몫_합계와_정확히_같다() {
+        let records = [
+            record(100_000, participants: 3), record(200_000, participants: 3),
+            record(150_000, participants: 3), record(70_000, participants: 4, paidByMe: false),
+            record(3_000, participants: 1),
+        ]
+        let s = TripSettlementModel.compute(records: records)
+        let budgetDeducted = records.reduce(0) { $0 + $1.budgetAmount }
+        XCTAssertEqual(budgetDeducted - s.receivable, s.myShareTotal)
+        XCTAssertEqual(s.myShareTotal, records.reduce(0) { $0 + $1.myShare },
+                       "통계가 더하는 방식과 같아야 한다")
     }
 
     // MARK: - TripModel

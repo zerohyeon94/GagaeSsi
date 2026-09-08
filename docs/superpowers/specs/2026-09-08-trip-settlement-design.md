@@ -116,7 +116,7 @@ struct TripSettlementModel {
 }
 ```
 
-사용자 예시(3명, 내가 10+20+15 = 45만 결제)로 검산: `sharedTotal 45만 · myShareTotal 15만 · paidByMeTotal 45만 · receivable 30만`.
+사용자 예시(3명, 내가 10+20+15 = 45만 결제)로 검산: `sharedTotal 45만 · myShareTotal 149,999 · paidByMeTotal 45만 · receivable 300,001`. 항목별로 버림해 더하기 때문이며, 그래야 통계·예산·정산이 정확히 맞아떨어진다.
 
 **예산 흐름 요약**
 
@@ -249,7 +249,7 @@ func reopenTrip(id: UUID) -> Bool
 ## 10. 테스트 계획
 
 **`TripSettlementTests`** (순수 계산, CoreData 없음)
-- 3명·내가 45만 결제 → `myShareTotal 15만 · receivable 30만`
+- 3명·내가 45만 결제(10+20+15) → 항목별로 버림해 더하므로 `myShareTotal 149,999 · receivable 300,001` (표시용 `perPerson`은 15만)
 - 친구가 낸 30만 숙소 3명 → `myShare 10만 · budgetAmount 10만 · receivable 0`
 - 항목별 인원 혼재(3명 숙소 + 2명 저녁) → 합산이 항목별 몫의 합
 - `participants = 1` → 셋 다 `amount`, `receivable 0`
