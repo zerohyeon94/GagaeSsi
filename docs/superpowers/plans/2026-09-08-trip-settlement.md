@@ -1,0 +1,2773 @@
+# 여행 정산 구현 계획
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 여행 중 같이 쓴 돈을 "여행"으로 묶고, 내 몫만 예산에서 빼고, 정산 때 남의 몫을 지갑(또는 예산)으로 되돌린다.
+
+**Architecture:** `Trip` 엔티티를 새로 만들고 `SpendingRecord`에 `trip` 관계 + `participants` + `paidByMe`를 붙인다. 내 몫(`myShare`)·예산 반영액(`budgetAmount`)·정산액(`receivable`)은 전부 `SpendingRecordModel`의 파생값이며 저장하지 않는다. 예산 엔진은 `DailyBudgetModel.budgetedSpending` 한 줄만 `budgetAmount` 기준으로 바뀌고, 내역·통계는 `myShare` 기준으로 합친다. 정산은 여행당 한 번이며 페이백 수령과 같은 통로(`CarryOverSource`)를 쓰되, 지갑이 연결돼 있으면 `WishSavingEntry(source: tripSettlement)`로 지갑 잔액을 회복한다.
+
+**Tech Stack:** SwiftUI, CoreData (lightweight migration, `GagaeSsi 12`), `@Observable` MVVM, XCTest (인메모리 `CoreDataManager`)
+
+**Spec:** [docs/superpowers/specs/2026-09-08-trip-settlement-design.md](../specs/2026-09-08-trip-settlement-design.md)
+
+---
+
+## 작업 전 알아둘 것
+
+- 프로젝트는 Xcode **file-system synchronized group**을 쓴다. `GagaeSsi/` 아래에 파일을 만들면 자동으로 타겟에 포함된다. `.pbxproj`를 손대지 않는다.
+- 빌드: `xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 16' build -quiet`
+- 테스트 한 클래스: `xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/<클래스> -quiet`
+- 테스트는 `CoreDataManager(inMemory: true)` + `setUp`에서 `resetAllData()`. 급여일이 테스트 구간에 걸리면 부채 흡수가 끼어드니 `WishWalletTests.safePayday` 패턴을 쓴다.
+- 주석·문서는 한국어. 색은 `Color.gagaeXxx` 토큰만, hex 직접 사용 금지(설정 아이콘 배경은 예외적으로 기존 코드가 hex를 씀).
+- 커밋 메시지는 `feat:`/`docs:` 접두 + 한국어 한 줄, 끝에 `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+
+## 파일 구조
+
+| 파일 | 책임 |
+|---|---|
+| `GagaeSsi/Resources/GagaeSsi.xcdatamodeld/GagaeSsi 12.xcdatamodel/contents` (신규) | `Trip` 엔티티, `SpendingRecord`·`WishSavingEntry`·`WishItem` 확장 |
+| `GagaeSsi/Models/TripModels.swift` (신규) | `TripStatus`, `TripModel`, `TripSettlementModel` (순수 계산) |
+| `GagaeSsi/Models/BudgetModels.swift` | `SpendingRecordModel` 파생값, `budgetedSpending`, `CarryOverReason.tripSettlement` |
+| `GagaeSsi/Models/WishModels.swift` | `WishSavingSource`, `WishSavingEntryModel.source`, `WishItemModel.returnedAmount` |
+| `GagaeSsi/Core/CoreDataManager.swift` | 소비 CRUD에 여행 필드 저장, 지갑 잔액을 `budgetAmount` 기준으로, 여행 섹션(CRUD·정산) |
+| `GagaeSsi/Core/Utils/FormatterUtils.swift` | `shortDateRange` |
+| `GagaeSsi/Features/Spend/SpendViewModel.swift`, `SpendView.swift` | 여행 필드·인원·결제자·지갑 자동 선택 |
+| `GagaeSsi/Features/History/HistorySpendEditView.swift`, `HistoryView.swift`, `HistoryViewModel.swift` | 편집 시 여행 필드, 내역 배지·내 몫 |
+| `GagaeSsi/Features/Trip/TripListView.swift`, `TripEditView.swift`, `TripDetailView.swift`, `TripSettleSheet.swift` (신규) | 여행 목록·편집·상세·정산 |
+| `GagaeSsi/Features/Settings/SettingsView.swift` | 진입점 |
+| `GagaeSsi/Features/Stats/StatsViewModel.swift`, `Models/CategorySpendingModels.swift`, `Models/TimeSlot.swift`, `Models/SpendingCSVExporter.swift`, `Features/Home/HomeViewModel.swift` | 합산을 `myShare`로 |
+| `GagaeSsi/Features/Wishlist/WishListView.swift` | 정산 회수 표시 |
+| `GagaeSsiTests/TripSettlementTests.swift`, `TripTests.swift` (신규), `CoreDataMigrationTests.swift`, `DataExportTests.swift`, `CategorySpendingTests.swift` | 테스트 |
+
+---
+
+### Task 1: CoreData `GagaeSsi 12` + `SpendingRecordModel` 파생값
+
+**Files:**
+- Create: `GagaeSsi/Resources/GagaeSsi.xcdatamodeld/GagaeSsi 12.xcdatamodel/contents`
+- Modify: `GagaeSsi/Resources/GagaeSsi.xcdatamodeld/.xccurrentversion`
+- Modify: `GagaeSsi/Models/BudgetModels.swift` (`SpendingRecordModel`, 453~495행)
+- Modify: `GagaeSsi/Core/CoreDataManager.swift` (`createSpendingRecord` 555행, `updateSpendingRecord` 606행, `resetAllData` 902행)
+- Test: `GagaeSsiTests/TripSettlementTests.swift` (신규), `GagaeSsiTests/CoreDataMigrationTests.swift`
+
+- [ ] **Step 1: 모델 버전 12 복제**
+
+```bash
+cd "GagaeSsi/Resources/GagaeSsi.xcdatamodeld" && cp -R "GagaeSsi 11.xcdatamodel" "GagaeSsi 12.xcdatamodel"
+```
+
+- [ ] **Step 2: `GagaeSsi 12.xcdatamodel/contents` 편집**
+
+`SpendingRecord` 엔티티의 `<relationship name="wishItem" .../>` 줄 **뒤**에 다음을 넣는다 (기존 attribute들 사이 위치는 무관):
+
+```xml
+        <attribute name="paidByMe" optional="YES" attributeType="Boolean" defaultValueString="YES" usesScalarValueType="YES"/>
+        <attribute name="participants" optional="YES" attributeType="Integer 16" defaultValueString="1" usesScalarValueType="YES"/>
+        <relationship name="trip" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Trip" inverseName="spendingRecords" inverseEntity="Trip"/>
+```
+
+`WishSavingEntry` 엔티티의 `<attribute name="id" .../>` 줄 뒤에:
+
+```xml
+        <attribute name="source" optional="YES" attributeType="String"/>
+```
+
+`WishItem` 엔티티의 `<relationship name="spendingRecords" .../>` 줄 뒤에:
+
+```xml
+        <relationship name="trips" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="Trip" inverseName="wishItem" inverseEntity="WishItem"/>
+```
+
+`</model>` 바로 앞에 새 엔티티:
+
+```xml
+    <entity name="Trip" representedClassName="Trip" syncable="YES" codeGenerationType="class">
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="defaultParticipants" optional="YES" attributeType="Integer 16" defaultValueString="2" usesScalarValueType="YES"/>
+        <attribute name="endDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="settledAmount" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="settledAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="settlementEntryId" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="startDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="status" optional="YES" attributeType="String" defaultValueString="진행중"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <relationship name="spendingRecords" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SpendingRecord" inverseName="trip" inverseEntity="SpendingRecord"/>
+        <relationship name="wishItem" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="WishItem" inverseName="trips" inverseEntity="WishItem"/>
+    </entity>
+```
+
+`settlementEntryId`는 스펙 7절의 "source·date로 식별"을 대체한다 — 같은 날 두 여행을 예산으로 정산하면 date만으로는 구분이 안 되므로 정산 때 만든 엔트리 id를 여행이 직접 들고 있는다. (Step 8에서 스펙에도 반영)
+
+- [ ] **Step 3: 현재 버전 포인터 갱신**
+
+`GagaeSsi/Resources/GagaeSsi.xcdatamodeld/.xccurrentversion`의 `<string>GagaeSsi 11.xcdatamodel</string>`을 `<string>GagaeSsi 12.xcdatamodel</string>`으로.
+
+- [ ] **Step 4: `SpendingRecordModel`에 필드·파생값 추가**
+
+`GagaeSsi/Models/BudgetModels.swift`의 `SpendingRecordModel`을 다음으로 교체한다 (struct 전체):
+
+```swift
+struct SpendingRecordModel: Identifiable {
+    var id: UUID
+    var title: String
+    var amount: Int
+    var date: Date
+    var category: SpendingCategory
+    /// 나중에 돌려받을 환급/페이백 예정 금액 (0이면 없음)
+    var expectedPayback: Int
+    /// 환급을 실제로 받았는지 여부
+    var paybackReceived: Bool
+    /// 모아둔 위시 지갑에서 쓴 소비면 그 위시 id. nil이면 평소 소비.
+    /// 연결된 소비는 이미 저금으로 예산에서 빠진 돈이라 하루 예산에서 다시 빼지 않는다.
+    var wishItemId: UUID?
+    /// 여행에 묶인 소비면 그 여행 id. nil이면 평소 소비.
+    var tripId: UUID?
+    /// 이 소비를 나누는 인원. 1이면 공용이 아닌 내 소비.
+    var participants: Int
+    /// 내가 결제했는지. false면 다른 사람이 냈고 내 몫만 예산에서 빠진다.
+    var paidByMe: Bool
+
+    /// 순 지출 (실지출 − 환급 예정)
+    var netAmount: Int { amount - expectedPayback }
+
+    // MARK: 여행 파생값 — 저장하지 않는다. 여행이 아닌 소비는 셋 다 amount와 같다.
+
+    /// 공용 소비인지 (N빵 대상)
+    var isShared: Bool { participants > 1 }
+    /// 내가 소비한 몫. 공용이면 인원으로 나눈다 (원 단위 내림). 내역·통계는 이 값을 합친다.
+    var myShare: Int { participants > 1 ? amount / participants : amount }
+    /// 그날 예산(또는 지갑)에서 빠지는 돈. 내가 냈으면 전액, 남이 냈으면 내 몫.
+    var budgetAmount: Int { paidByMe ? amount : myShare }
+    /// 정산 때 돌아오는 남의 몫. 남이 낸 소비는 0.
+    var receivable: Int { paidByMe ? amount - myShare : 0 }
+
+    init(id: UUID = UUID(), title: String, amount: Int, date: Date,
+         category: SpendingCategory = .other,
+         expectedPayback: Int = 0, paybackReceived: Bool = false,
+         wishItemId: UUID? = nil,
+         tripId: UUID? = nil, participants: Int = 1, paidByMe: Bool = true) {
+        self.id = id
+        self.title = title
+        self.amount = amount
+        self.date = date
+        self.category = category
+        self.expectedPayback = expectedPayback
+        self.paybackReceived = paybackReceived
+        self.wishItemId = wishItemId
+        self.tripId = tripId
+        self.participants = max(1, participants)
+        self.paidByMe = paidByMe
+    }
+
+    /// CoreData Entity -> Model 변환 생성자
+    init(entity: SpendingRecord) {
+        self.id = entity.id ?? UUID()
+        self.title = entity.title ?? ""
+        self.amount = Int(truncating: entity.amount ?? 0)
+        self.date = entity.date ?? Date()
+        self.category = SpendingCategory.from(rawValue: entity.category)
+        self.expectedPayback = Int(entity.expectedPayback)
+        self.paybackReceived = entity.paybackReceived
+        self.wishItemId = entity.wishItem?.id
+        self.tripId = entity.trip?.id
+        self.participants = max(1, Int(entity.participants))
+        self.paidByMe = entity.paidByMe
+    }
+}
+```
+
+- [ ] **Step 5: 소비 CRUD가 새 필드를 저장하게**
+
+`CoreDataManager.createSpendingRecord`에서 `newSpendingRecord.paybackReceived = model.paybackReceived` 줄 뒤에:
+
+```swift
+        newSpendingRecord.participants = Int16(model.participants)
+        newSpendingRecord.paidByMe = model.paidByMe
+```
+
+`updateSpendingRecord`에서 `spendingRecord.paybackReceived = model.paybackReceived` 줄 뒤에:
+
+```swift
+        spendingRecord.participants = Int16(model.participants)
+        spendingRecord.paidByMe = model.paidByMe
+```
+
+`resetAllData`의 `entityNames` 배열 끝에 `"Trip"` 추가:
+
+```swift
+        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "Payback", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry", "SpendingDebt", "DebtRepaymentEntry", "AssetTransfer", "Trip"]
+```
+
+- [ ] **Step 6: 파생값 테스트 작성**
+
+`GagaeSsiTests/TripSettlementTests.swift` 신규:
+
+```swift
+//
+//  TripSettlementTests.swift
+//  GagaeSsi
+//
+//  여행 소비의 내 몫·예산 반영액·정산액은 저장하지 않고 계산한다.
+//  여행이 아닌 소비는 셋 다 금액과 같아야 기존 동작이 바뀌지 않는다.
+//
+
+import XCTest
+@testable import GagaeSsi
+
+final class TripSettlementTests: XCTestCase {
+
+    private func record(_ amount: Int, participants: Int = 1, paidByMe: Bool = true,
+                        wishItemId: UUID? = nil) -> SpendingRecordModel {
+        SpendingRecordModel(title: "지출", amount: amount, date: Date(),
+                            wishItemId: wishItemId, tripId: UUID(),
+                            participants: participants, paidByMe: paidByMe)
+    }
+
+    // MARK: - 파생값
+
+    func test_여행이_아닌_소비는_내몫_예산반영_모두_금액과_같고_정산액은_0이다() {
+        let r = SpendingRecordModel(title: "커피", amount: 4_500, date: Date())
+        XCTAssertFalse(r.isShared)
+        XCTAssertEqual(r.myShare, 4_500)
+        XCTAssertEqual(r.budgetAmount, 4_500)
+        XCTAssertEqual(r.receivable, 0)
+    }
+
+    func test_내가_낸_공용_소비는_전액이_예산에서_빠지고_남의_몫이_정산액이다() {
+        let r = record(90_000, participants: 3, paidByMe: true)
+        XCTAssertEqual(r.myShare, 30_000)
+        XCTAssertEqual(r.budgetAmount, 90_000)
+        XCTAssertEqual(r.receivable, 60_000)
+    }
+
+    func test_친구가_낸_공용_소비는_내_몫만_예산에서_빠지고_정산액은_0이다() {
+        let r = record(300_000, participants: 3, paidByMe: false)
+        XCTAssertEqual(r.myShare, 100_000)
+        XCTAssertEqual(r.budgetAmount, 100_000)
+        XCTAssertEqual(r.receivable, 0)
+    }
+
+    func test_나눗셈은_내림이고_나머지는_남의_몫에_붙는다() {
+        let r = record(100_000, participants: 3, paidByMe: true)
+        XCTAssertEqual(r.myShare, 33_333)
+        XCTAssertEqual(r.receivable, 66_667)
+    }
+
+    func test_인원을_1로_내리면_공용이_아니다() {
+        let r = record(50_000, participants: 1, paidByMe: false)
+        XCTAssertFalse(r.isShared)
+        XCTAssertEqual(r.myShare, 50_000)
+        XCTAssertEqual(r.receivable, 0)
+    }
+
+    func test_인원_0은_1로_보정된다() {
+        let r = SpendingRecordModel(title: "지출", amount: 10_000, date: Date(), participants: 0)
+        XCTAssertEqual(r.participants, 1)
+        XCTAssertEqual(r.myShare, 10_000)
+    }
+}
+```
+
+- [ ] **Step 7: 마이그레이션 테스트 추가**
+
+`GagaeSsiTests/CoreDataMigrationTests.swift`의 마지막 테스트 뒤(클래스 닫는 `}` 앞)에:
+
+```swift
+    /// 여행 필드가 추가된 12로 올라와도 기존 소비는 "내 개인 소비"로 남아 숫자가 하나도 바뀌지 않아야 한다
+    func test_GagaeSsi11에서_12로_마이그레이션되고_기존_소비는_내_몫이_전액이다() throws {
+        let oldContainer = try container(with: try model(named: "GagaeSsi 11"))
+        let oldContext = oldContainer.viewContext
+
+        let budget = NSEntityDescription.insertNewObject(forEntityName: "DailyBudget", into: oldContext)
+        budget.setValue(NSDecimalNumber(value: 50_000), forKey: "availableAmount")
+        budget.setValue(Date(), forKey: "date")
+
+        let record = NSEntityDescription.insertNewObject(forEntityName: "SpendingRecord", into: oldContext)
+        record.setValue(UUID(), forKey: "id")
+        record.setValue("점심", forKey: "title")
+        record.setValue(NSDecimalNumber(value: 9_000), forKey: "amount")
+        record.setValue(Date(), forKey: "date")
+        record.setValue(budget, forKey: "dailyBudget")
+
+        try oldContext.save()
+        try unload(oldContainer)
+
+        let newContainer = try container(with: try currentModel())
+        let newContext = newContainer.viewContext
+
+        let records = try newContext.fetch(NSFetchRequest<SpendingRecord>(entityName: "SpendingRecord"))
+        XCTAssertEqual(records.count, 1)
+        let migrated = SpendingRecordModel(entity: records[0])
+        XCTAssertNil(migrated.tripId)
+        XCTAssertEqual(migrated.participants, 1)
+        XCTAssertTrue(migrated.paidByMe)
+        XCTAssertEqual(migrated.myShare, 9_000)
+        XCTAssertEqual(migrated.budgetAmount, 9_000)
+        XCTAssertEqual(migrated.receivable, 0)
+
+        // 신규 Trip 엔티티가 사용 가능한지
+        let trip = NSEntityDescription.insertNewObject(forEntityName: "Trip", into: newContext)
+        trip.setValue(UUID(), forKey: "id")
+        trip.setValue("제주", forKey: "title")
+        trip.setValue(Date(), forKey: "startDate")
+        trip.setValue(Date(), forKey: "endDate")
+        trip.setValue(Int16(3), forKey: "defaultParticipants")
+        trip.setValue("진행중", forKey: "status")
+        trip.setValue(Date(), forKey: "createdAt")
+        records[0].setValue(trip, forKey: "trip")
+
+        XCTAssertNoThrow(try newContext.save())
+        try unload(newContainer)
+    }
+```
+
+- [ ] **Step 8: 스펙에 `settlementEntryId` 반영**
+
+`docs/superpowers/specs/2026-09-08-trip-settlement-design.md` 4절 `Trip (신규)` 블록의 `settledAt Date? · settledAmount Int32 · createdAt Date` 줄을 다음으로:
+
+```
+  settledAt Date? · settledAmount Int32 · settlementEntryId UUID? · createdAt Date
+```
+
+7절 `reopenTrip(id:)` 1번 항목을 다음으로:
+
+```
+1. 정산 때 만든 엔트리를 `settlementEntryId`로 찾아 삭제 — 지갑이면 `WishSavingEntry`, 예산이면 `CarryOverSource`. (같은 날 두 여행을 정산해도 섞이지 않게 id로 찾는다)
+```
+
+- [ ] **Step 9: 테스트 실행**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripSettlementTests -only-testing:GagaeSsiTests/CoreDataMigrationTests -quiet
+```
+
+Expected: `** TEST SUCCEEDED **`. 실패하면 `contents` XML의 inverse 이름(`trips`↔`wishItem`, `spendingRecords`↔`trip`)이 맞는지 먼저 본다.
+
+- [ ] **Step 10: 커밋**
+
+```bash
+git add "GagaeSsi/Resources/GagaeSsi.xcdatamodeld" GagaeSsi/Models/BudgetModels.swift GagaeSsi/Core/CoreDataManager.swift GagaeSsiTests/TripSettlementTests.swift GagaeSsiTests/CoreDataMigrationTests.swift docs/superpowers/specs/2026-09-08-trip-settlement-design.md
+git commit -m "feat: CoreData 12 — 여행 엔티티와 소비의 인원·결제자, 내 몫은 계산으로
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 2: `TripModel` · `TripSettlementModel` (순수 계산)
+
+**Files:**
+- Create: `GagaeSsi/Models/TripModels.swift`
+- Test: `GagaeSsiTests/TripSettlementTests.swift`
+
+- [ ] **Step 1: 정산 집계 테스트 추가**
+
+`TripSettlementTests`에 다음 섹션을 추가한다:
+
+```swift
+    // MARK: - 정산 집계
+
+    /// 3명, 내가 점심 10만·저녁 20만·아침 15만을 다 냈다 → 인당 15만, 30만 돌려받는다
+    func test_내가_다_낸_여행은_인당_금액과_받을_돈이_나온다() {
+        let s = TripSettlementModel.compute(records: [
+            record(100_000, participants: 3), record(200_000, participants: 3), record(150_000, participants: 3),
+        ])
+        XCTAssertEqual(s.totalPaid, 450_000)
+        XCTAssertEqual(s.sharedTotal, 450_000)
+        XCTAssertEqual(s.myShareTotal, 150_000)
+        XCTAssertEqual(s.paidByMeTotal, 450_000)
+        XCTAssertEqual(s.receivable, 300_000)
+        XCTAssertEqual(s.perPerson, 150_000)
+    }
+
+    func test_친구가_낸_숙소는_내_몫만_집계되고_받을_돈은_없다() {
+        let s = TripSettlementModel.compute(records: [record(300_000, participants: 3, paidByMe: false)])
+        XCTAssertEqual(s.totalPaid, 300_000)
+        XCTAssertEqual(s.myShareTotal, 100_000)
+        XCTAssertEqual(s.paidByMeTotal, 0)
+        XCTAssertEqual(s.receivable, 0)
+    }
+
+    func test_항목별_인원이_섞이면_항목별_몫의_합이고_인당_금액은_없다() {
+        let s = TripSettlementModel.compute(records: [
+            record(300_000, participants: 3, paidByMe: false),   // 숙소 3명 → 내 몫 10만
+            record(80_000, participants: 2, paidByMe: true),     // 저녁 2명 → 내 몫 4만, 4만 돌아옴
+            record(3_000, participants: 1),                      // 기념품 → 내 몫 3천
+        ])
+        XCTAssertEqual(s.myShareTotal, 143_000)
+        XCTAssertEqual(s.sharedTotal, 380_000)
+        XCTAssertEqual(s.receivable, 40_000)
+        XCTAssertNil(s.perPerson)
+    }
+
+    func test_지갑에서_빠진_돈과_예산에서_빠진_돈이_갈린다() {
+        let wallet = UUID()
+        let s = TripSettlementModel.compute(records: [
+            record(90_000, participants: 3, paidByMe: true, wishItemId: wallet),   // 지갑에서 9만
+            record(60_000, participants: 3, paidByMe: false, wishItemId: wallet),  // 지갑에서 내 몫 2만
+            record(30_000, participants: 3, paidByMe: true),                       // 예산에서 3만
+        ])
+        XCTAssertEqual(s.fromWallet, 110_000)
+        XCTAssertEqual(s.fromBudget, 30_000)
+    }
+
+    func test_소비가_없으면_전부_0이다() {
+        let s = TripSettlementModel.compute(records: [])
+        XCTAssertEqual(s, TripSettlementModel(totalPaid: 0, sharedTotal: 0, myShareTotal: 0,
+                                              paidByMeTotal: 0, receivable: 0,
+                                              fromWallet: 0, fromBudget: 0, uniformParticipants: nil))
+    }
+
+    // MARK: - TripModel
+
+    func test_여행_기간_포함_판정은_시작일과_종료일을_포함한다() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let end = cal.date(byAdding: .day, value: 2, to: start)!
+        let trip = TripModel(title: "제주", startDate: start, endDate: end, defaultParticipants: 3)
+        XCTAssertTrue(trip.contains(start))
+        XCTAssertTrue(trip.contains(cal.date(byAdding: .hour, value: 30, to: start)!))
+        XCTAssertTrue(trip.contains(end))
+        XCTAssertFalse(trip.contains(cal.date(byAdding: .day, value: -1, to: start)!))
+        XCTAssertFalse(trip.contains(cal.date(byAdding: .day, value: 3, to: start)!))
+    }
+```
+
+- [ ] **Step 2: 실패 확인**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripSettlementTests -quiet
+```
+
+Expected: 컴파일 에러 `cannot find 'TripSettlementModel' in scope`.
+
+- [ ] **Step 3: `TripModels.swift` 작성**
+
+```swift
+//
+//  TripModels.swift
+//  GagaeSsi
+//
+//  여행 — 같이 쓴 돈을 묶고, 내 몫만 예산에서 빼고, 나중에 정산한다.
+//  정산 단위는 소비 건이 아니라 여행이다. 소비에는 인원·결제자만 표시하고 나머지는 여기서 계산한다.
+//
+
+import Foundation
+
+// MARK: - 여행 상태
+enum TripStatus: String, Codable {
+    case active = "진행중"
+    case settled = "정산완료"
+
+    static func from(_ raw: String?) -> TripStatus { TripStatus(rawValue: raw ?? "") ?? .active }
+}
+
+// MARK: - 여행 모델
+struct TripModel: Identifiable {
+    var id: UUID
+    var title: String
+    var startDate: Date
+    var endDate: Date
+    /// 소비 입력 시 인원 기본값. 항목마다 바꿀 수 있다.
+    var defaultParticipants: Int
+    var status: TripStatus
+    var settledAt: Date?
+    /// 정산 때 실제로 돌려받은(되돌린) 금액
+    var settledAmount: Int
+    /// 정산 때 만든 크레딧(지갑 저금 엔트리 또는 이월 항목)의 id. 다시 열 때 이걸로 찾아 지운다.
+    var settlementEntryId: UUID?
+    var createdAt: Date
+    /// 연결된 위시 지갑. 있으면 내가 내는 소비는 여기서 먼저 빠지고 정산 회수도 여기로 돌아온다.
+    var wishItemId: UUID?
+
+    var isSettled: Bool { status == .settled }
+
+    /// 소비 날짜가 여행 기간(시작일·종료일 포함) 안인지. 자동 선택 판단에만 쓴다 — 기간 밖 소비도 묶을 수 있다.
+    func contains(_ date: Date, calendar: Calendar = .current) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        return calendar.startOfDay(for: startDate) <= day && day <= calendar.startOfDay(for: endDate)
+    }
+
+    init(id: UUID = UUID(), title: String, startDate: Date, endDate: Date,
+         defaultParticipants: Int = 2, status: TripStatus = .active,
+         settledAt: Date? = nil, settledAmount: Int = 0, settlementEntryId: UUID? = nil,
+         createdAt: Date = Date(), wishItemId: UUID? = nil) {
+        self.id = id
+        self.title = title
+        self.startDate = startDate
+        self.endDate = endDate
+        self.defaultParticipants = max(1, defaultParticipants)
+        self.status = status
+        self.settledAt = settledAt
+        self.settledAmount = settledAmount
+        self.settlementEntryId = settlementEntryId
+        self.createdAt = createdAt
+        self.wishItemId = wishItemId
+    }
+
+    /// CoreData Entity -> Model 변환 생성자
+    init(entity: Trip) {
+        self.id = entity.id ?? UUID()
+        self.title = entity.title ?? ""
+        self.startDate = entity.startDate ?? Date()
+        self.endDate = entity.endDate ?? self.startDate
+        self.defaultParticipants = max(1, Int(entity.defaultParticipants))
+        self.status = TripStatus.from(entity.status)
+        self.settledAt = entity.settledAt
+        self.settledAmount = Int(entity.settledAmount)
+        self.settlementEntryId = entity.settlementEntryId
+        self.createdAt = entity.createdAt ?? Date()
+        self.wishItemId = entity.wishItem?.id
+    }
+}
+
+// MARK: - 정산 집계 (순수 계산)
+
+/// 여행에 묶인 소비들을 한 번에 집계한다. 정산 화면·목록 요약이 이 값을 그대로 보여준다.
+struct TripSettlementModel: Equatable {
+    /// 여행 소비 전액 합 (내가 낸 것 + 남이 낸 것)
+    let totalPaid: Int
+    /// 공용(인원 > 1) 소비의 전액 합
+    let sharedTotal: Int
+    /// Σ myShare — 내가 소비한 돈. 통계와 같은 값.
+    let myShareTotal: Int
+    /// 내가 실제로 낸 돈
+    let paidByMeTotal: Int
+    /// Σ receivable — 정산 때 돌아올 남의 몫
+    let receivable: Int
+    /// 지갑에 연결된 소비의 예산 반영액 합
+    let fromWallet: Int
+    /// 예산에서 빠진 소비의 예산 반영액 합
+    let fromBudget: Int
+    /// 공용 소비의 인원이 전부 같으면 그 값. 섞여 있으면 nil ("인당" 줄을 보여줄지 판단)
+    let uniformParticipants: Int?
+
+    /// 인원이 하나로 통일돼 있을 때의 인당 금액 (공용 합 ÷ 인원, 내림)
+    var perPerson: Int? {
+        guard let n = uniformParticipants, n > 0 else { return nil }
+        return sharedTotal / n
+    }
+
+    static func compute(records: [SpendingRecordModel]) -> TripSettlementModel {
+        var totalPaid = 0, sharedTotal = 0, myShareTotal = 0, paidByMeTotal = 0
+        var receivable = 0, fromWallet = 0, fromBudget = 0
+        var participantSet = Set<Int>()
+
+        for r in records {
+            totalPaid += r.amount
+            myShareTotal += r.myShare
+            receivable += r.receivable
+            if r.isShared {
+                sharedTotal += r.amount
+                participantSet.insert(r.participants)
+            }
+            if r.paidByMe { paidByMeTotal += r.amount }
+            if r.wishItemId != nil { fromWallet += r.budgetAmount } else { fromBudget += r.budgetAmount }
+        }
+
+        return TripSettlementModel(totalPaid: totalPaid, sharedTotal: sharedTotal,
+                                   myShareTotal: myShareTotal, paidByMeTotal: paidByMeTotal,
+                                   receivable: receivable, fromWallet: fromWallet, fromBudget: fromBudget,
+                                   uniformParticipants: participantSet.count == 1 ? participantSet.first : nil)
+    }
+}
+```
+
+- [ ] **Step 4: 테스트 통과 확인**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripSettlementTests -quiet
+```
+
+Expected: `** TEST SUCCEEDED **`
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add GagaeSsi/Models/TripModels.swift GagaeSsiTests/TripSettlementTests.swift
+git commit -m "feat: 여행 모델과 정산 집계 — 인당 금액·받을 돈은 여행이 계산한다
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 3: 예산 엔진·지갑 잔액을 `budgetAmount` 기준으로
+
+**Files:**
+- Modify: `GagaeSsi/Models/BudgetModels.swift` (`budgetedSpending`, 339행)
+- Modify: `GagaeSsi/Core/CoreDataManager.swift` (`updateSpendingRecord` 지갑 검사, `wishSpentAmount` 1906행, `wishSpendableLimit` 1920행, `linkSpendingToWish` 1940행)
+- Test: `GagaeSsiTests/TripTests.swift` (신규)
+
+- [ ] **Step 1: 테스트 파일 작성 (예산 차감)**
+
+`GagaeSsiTests/TripTests.swift` 신규:
+
+```swift
+//
+//  TripTests.swift
+//  GagaeSsi
+//
+//  여행 소비는 내 몫만 예산에서 빠지고, 정산 때 남의 몫이 지갑(또는 예산)으로 돌아온다.
+//
+
+import XCTest
+@testable import GagaeSsi
+
+final class TripTests: XCTestCase {
+    var sut: CoreDataManager!
+    private let cal = Calendar.current
+
+    override func setUpWithError() throws {
+        sut = CoreDataManager(inMemory: true)
+        sut.resetAllData()
+        setupConfig()
+        makeDay(0)
+    }
+    override func tearDownWithError() throws { sut = nil }
+
+    // MARK: - Helpers
+
+    func day(_ offset: Int) -> Date {
+        cal.startOfDay(for: cal.date(byAdding: .day, value: offset, to: Date())!)
+    }
+    /// 테스트 구간에 급여일이 걸리면 부채 흡수가 끼어들어 실행일에 따라 단정이 깨진다
+    private var safePayday: Int {
+        ((cal.component(.day, from: Date()) + 13 - 1) % 28) + 1
+    }
+    private func setupConfig() {
+        _ = sut.createBudgetConfig(from: BudgetConfigModel(
+            salary: 3_000_000, payday: safePayday, fixedCosts: [],
+            carryOverMode: .full, debtPlanEnabled: true))
+    }
+    /// 이월 없이 그날 예산만 만든다 (before/after 차이로만 단정하므로 배정액은 임의)
+    func makeDay(_ offset: Int, available: Int = 100_000) {
+        guard sut.fetchDailyBudgetModel(date: day(offset)) == nil else { return }
+        _ = sut.createDailyBudget(DailyBudgetModel(availableAmount: available, date: day(offset),
+                                                   carryOverSources: [], spendingRecords: []))
+    }
+    /// 목표를 이미 채운 지갑을 만든다 (WishWalletTests와 같은 방식)
+    @discardableResult
+    func seedWallet(_ amount: Int, title: String = "제주 여행") -> UUID {
+        makeDay(-5)
+        let wish = WishItemModel(title: title, targetAmount: amount, dailySaving: amount,
+                                 status: .saving, activatedAt: day(-5))
+        _ = sut.createWishItem(wish)
+        _ = sut.activateWish(id: wish.id, dailySaving: amount)
+        sut.processDailyBudgets(upTo: day(0))
+        return wish.id
+    }
+    @discardableResult
+    func spend(_ amount: Int, on offset: Int = 0, participants: Int = 1, paidByMe: Bool = true,
+               tripId: UUID? = nil, title: String = "지출") -> UUID {
+        makeDay(offset)
+        let record = SpendingRecordModel(title: title, amount: amount, date: day(offset),
+                                         tripId: tripId, participants: participants, paidByMe: paidByMe)
+        XCTAssertTrue(sut.createSpendingRecord(record))
+        return record.id
+    }
+    func available(_ offset: Int = 0) -> Int {
+        sut.fetchDailyBudgetModel(date: day(offset))?.todayAvailable ?? 0
+    }
+    func outgoing(_ offset: Int = 0) -> Int {
+        guard let budget = sut.fetchDailyBudgetModel(date: day(offset)) else { return 0 }
+        return OverspendAnalyzer.evaluate(budget).outgoing
+    }
+
+    // MARK: - 예산 차감
+
+    func test_내가_낸_공용_소비는_그날_예산에서_전액_빠진다() {
+        let before = available()
+        spend(90_000, participants: 3, paidByMe: true)
+        XCTAssertEqual(available(), before - 90_000)
+    }
+
+    func test_친구가_낸_공용_소비는_내_몫만_빠진다() {
+        let before = available()
+        spend(90_000, participants: 3, paidByMe: false)
+        XCTAssertEqual(available(), before - 30_000)
+    }
+
+    func test_초과_판정도_내_몫_기준이다() {
+        spend(120_000, participants: 3, paidByMe: false)
+        XCTAssertEqual(outgoing(), 40_000, "친구가 낸 소비는 내 몫만 그날 지출로 잡힌다")
+        spend(120_000, participants: 3, paidByMe: true)
+        XCTAssertEqual(outgoing(), 160_000, "내가 낸 소비는 전액")
+    }
+
+    func test_인원을_바꾸면_그날부터_다시_계산된다() {
+        let id = spend(90_000, participants: 3, paidByMe: false)
+        let before = available()
+        var edited = sut.fetchSpendingRecords(date: day(0)).first { $0.id == id }!
+        edited.participants = 2
+        XCTAssertTrue(sut.updateSpendingRecord(edited))
+        XCTAssertEqual(available(), before - 15_000, "내 몫이 3만 → 4.5만으로 늘어난 만큼 더 빠진다")
+    }
+
+    // MARK: - 지갑
+
+    func test_지갑에_연결한_친구_결제_소비는_내_몫만_지갑에서_빠진다() {
+        let wallet = seedWallet(100_000)
+        let id = spend(90_000, participants: 3, paidByMe: false)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+        XCTAssertEqual(sut.wishBalance(for: wallet), 70_000)
+    }
+
+    func test_지갑_잔액_비교는_내_부담액_기준이다() {
+        let wallet = seedWallet(50_000)
+        let friendPaid = spend(120_000, participants: 3, paidByMe: false)   // 내 부담 4만
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: friendPaid, wishItemId: wallet))
+        XCTAssertEqual(sut.wishBalance(for: wallet), 10_000)
+
+        let iPaid = spend(120_000, participants: 3, paidByMe: true)         // 내 부담 12만
+        XCTAssertFalse(sut.linkSpendingToWish(recordId: iPaid, wishItemId: wallet), "잔액을 넘으면 연결 안 됨")
+    }
+
+    func test_지갑_소비의_금액을_올려_잔액을_넘기면_연결이_끊긴다() {
+        let wallet = seedWallet(50_000)
+        let id = spend(90_000, participants: 3, paidByMe: false)            // 내 부담 3만
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+
+        var edited = sut.fetchSpendingRecords(date: day(0)).first { $0.id == id }!
+        edited.paidByMe = true                                              // 내 부담 9만 > 5만
+        XCTAssertTrue(sut.updateSpendingRecord(edited))
+        XCTAssertNil(sut.fetchSpendingRecords(date: day(0)).first { $0.id == id }?.wishItemId)
+        XCTAssertEqual(sut.wishBalance(for: wallet), 50_000)
+    }
+}
+```
+
+- [ ] **Step 2: 실패 확인**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripTests -quiet
+```
+
+Expected: `test_친구가_낸_공용_소비는_내_몫만_빠진다` 등 4~5개 FAIL (전액이 빠짐).
+
+- [ ] **Step 3: `budgetedSpending` 한 줄 변경**
+
+`GagaeSsi/Models/BudgetModels.swift`:
+
+```swift
+    /// 예산에서 실제로 빠지는 소비 합. 위시 지갑에서 쓴 소비는 저금 시점에 이미
+    /// 빠진 돈이라 제외한다 (넣으면 모아둔 돈으로 쓴 여행이 이중 차감돼 빚이 된다).
+    /// 여행에서 친구가 낸 소비는 내 몫만 — `budgetAmount`가 그 판단을 한다.
+    var budgetedSpending: Int {
+        spendingRecords.filter { $0.wishItemId == nil }.map(\.budgetAmount).reduce(0, +)
+    }
+```
+
+- [ ] **Step 4: 지갑 잔액·연결을 `budgetAmount` 기준으로**
+
+`CoreDataManager.wishSpentAmount`:
+
+```swift
+    /// 이 위시 지갑에서 쓴 소비 합 — 예산에서 빠졌을 금액(`budgetAmount`) 기준.
+    /// 친구가 낸 여행 소비는 내 몫만 지갑에서 빠진다.
+    func wishSpentAmount(for wishItemId: UUID) -> Int {
+        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        request.predicate = NSPredicate(format: "wishItem.id == %@", wishItemId as CVarArg)
+        let records = (try? context.fetch(request)) ?? []
+        return records.reduce(0) { $0 + SpendingRecordModel(entity: $1).budgetAmount }
+    }
+```
+
+`wishSpendableLimit`의 `limit += Int(truncating: record.amount ?? 0)` → `limit += SpendingRecordModel(entity: record).budgetAmount`.
+
+`linkSpendingToWish`의 `let amount = Int(truncating: record.amount ?? 0)` → `let amount = SpendingRecordModel(entity: record).budgetAmount`.
+
+- [ ] **Step 5: `updateSpendingRecord`의 지갑 검사를 부담액 기준으로**
+
+`updateSpendingRecord`에서 `spendingRecord.title = model.title` **앞**에 한 줄 추가:
+
+```swift
+        // 지갑 잔액 검사용 — 바꾸기 전 이 기록이 지갑에서 차지하던 금액
+        let previousBudgetAmount = SpendingRecordModel(entity: spendingRecord).budgetAmount
+```
+
+그리고 기존 지갑 검사 블록을 다음으로 교체:
+
+```swift
+        // 부담액을 올려 지갑 잔액을 넘기면 연결을 끊는다. 일부만 지갑에서 빼는 방식은
+        // 같은 날 소비 순서에 따라 결과가 달라지므로 "전부 아니면 전무"로 유지한다.
+        if let wishId = spendingRecord.wishItem?.id {
+            let others = wishSpentAmount(for: wishId) - previousBudgetAmount
+            if others + model.budgetAmount > savedAmount(for: wishId) {
+                spendingRecord.wishItem = nil
+            }
+        }
+```
+
+(`wishSpentAmount`는 컨텍스트의 미저장 변경도 읽으므로 이미 바뀐 `participants`/`paidByMe`가 반영된 값에서 이전 부담액을 빼야 "다른 기록들의 합"이 된다. 그래서 `previousBudgetAmount`를 필드 대입 **전에** 잡는다.)
+
+- [ ] **Step 6: 테스트 통과 + 회귀 확인**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripTests -only-testing:GagaeSsiTests/WishWalletTests -only-testing:GagaeSsiTests/CarryOverChainTests -only-testing:GagaeSsiTests/OverspendHistoryTests -quiet
+```
+
+Expected: `** TEST SUCCEEDED **`. 여행이 아닌 소비는 `budgetAmount == amount`라 기존 테스트가 그대로 통과해야 한다.
+
+- [ ] **Step 7: 커밋**
+
+```bash
+git add GagaeSsi/Models/BudgetModels.swift GagaeSsi/Core/CoreDataManager.swift GagaeSsiTests/TripTests.swift
+git commit -m "feat: 예산과 지갑은 실제로 내 돈이 나간 만큼만 — 친구가 낸 여행 소비는 내 몫만
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 4: 내역·통계·CSV·홈 합산을 `myShare`로
+
+**Files:**
+- Modify: `GagaeSsi/Features/History/HistoryViewModel.swift` (`load()` 안 `monthTotal`·`totals`)
+- Modify: `GagaeSsi/Features/Stats/StatsViewModel.swift` (`loadCategoryStats`·`loadDailyStats`·`loadMonthlyComparison`)
+- Modify: `GagaeSsi/Models/CategorySpendingModels.swift` (`itemSummaries`)
+- Modify: `GagaeSsi/Models/TimeSlot.swift` (71행 `bySlot[slot, default: 0] += record.amount`)
+- Modify: `GagaeSsi/Models/SpendingCSVExporter.swift` (`header`, `makeCSV`)
+- Modify: `GagaeSsi/Features/Home/HomeViewModel.swift` (195행)
+- Modify: `GagaeSsi/Features/Spend/SpendView.swift` (`totalSpentToday`)
+- Test: `GagaeSsiTests/CategorySpendingTests.swift`, `GagaeSsiTests/DataExportTests.swift`
+
+- [ ] **Step 1: 실패하는 테스트 추가**
+
+`CategorySpendingTests`에 추가:
+
+```swift
+    /// 8만을 결제했어도 4명이 나눴으면 내가 쓴 건 2만이다
+    func test_공용_소비는_내_몫으로_묶인다() {
+        let shared = SpendingRecordModel(title: "저녁", amount: 80_000, date: Date(),
+                                         tripId: UUID(), participants: 4, paidByMe: true)
+        let items = CategorySpendingAnalyzer.itemSummaries(from: [shared])
+        XCTAssertEqual(items.first?.total, 20_000)
+    }
+```
+
+`DataExportTests`에서 헤더 단정을 바꾸고 테스트 하나를 추가:
+
+```swift
+        XCTAssertTrue(lines[0].hasSuffix("날짜,시각,카테고리,항목,금액,내 몫,환급 예정,환급 받음"))
+```
+
+```swift
+    func test_공용_소비는_금액과_내_몫이_따로_들어간다() {
+        let shared = SpendingRecordModel(title: "저녁", amount: 80_000, date: date(2026, 8, 7),
+                                         tripId: UUID(), participants: 4, paidByMe: true)
+        let csv = SpendingCSVExporter.makeCSV(from: [shared])
+        XCTAssertTrue(csv.contains("80000,20000,,"))
+    }
+```
+
+`test_환급_정보는_있을_때만_채워진다`의 두 단정도 열이 하나 늘어난 형태로:
+
+```swift
+        XCTAssertTrue(withPayback.contains("21000,21000,5000,Y"))
+        ...
+        XCTAssertTrue(without.contains("4000,4000,,"), "환급이 없으면 두 칸은 빈 값")
+```
+
+- [ ] **Step 2: 실패 확인**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/CategorySpendingTests -only-testing:GagaeSsiTests/DataExportTests -quiet
+```
+
+Expected: 새 테스트 2개 + 헤더/환급 단정 FAIL.
+
+- [ ] **Step 3: 합산 치환**
+
+`HistoryViewModel.load()`:
+
+```swift
+        monthTotal = records.reduce(0) { $0 + $1.myShare }
+        var totals: [Date: Int] = [:]
+        for r in records {
+            let d = cal.startOfDay(for: r.date)
+            totals[d, default: 0] += r.myShare
+        }
+```
+
+`StatsViewModel`:
+- `loadCategoryStats`: `monthlyTotal = records.reduce(0) { $0 + $1.myShare }` · `dict[record.category, default: 0] += record.myShare`
+- `loadDailyStats`: `.reduce(0) { $0 + $1.myShare }`
+- `loadMonthlyComparison`: `prevMonthTotal = records.reduce(0) { $0 + $1.myShare }`
+
+`CategorySpendingAnalyzer.itemSummaries`: `accumulator.total += record.myShare` · `Accumulator(title: display, total: record.myShare, ...)`
+
+`TimeSlot.swift` 71행: `bySlot[slot, default: 0] += record.myShare`
+
+`HomeViewModel` 195행: `let spent = model.spendingRecords.map { $0.myShare }.reduce(0, +)`
+
+`SpendView` 맨 아래 extension:
+
+```swift
+extension SpendViewModel {
+    /// 오늘 내가 쓴 돈 — 공용 소비는 내 몫만
+    var totalSpentToday: Int {
+        spendingRecords.reduce(0) { $0 + $1.myShare }
+    }
+}
+```
+
+`SpendingCSVExporter`:
+
+```swift
+    static let header = ["날짜", "시각", "카테고리", "항목", "금액", "내 몫", "환급 예정", "환급 받음"]
+```
+
+`makeCSV`의 `fields` 배열에서 `String(record.amount),` 뒤에 `String(record.myShare),` 추가.
+
+- [ ] **Step 4: 테스트 통과 확인**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/CategorySpendingTests -only-testing:GagaeSsiTests/DataExportTests -only-testing:GagaeSsiTests/TimeSlotTests -quiet
+```
+
+Expected: `** TEST SUCCEEDED **`
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add GagaeSsi/Features/History/HistoryViewModel.swift GagaeSsi/Features/Stats/StatsViewModel.swift GagaeSsi/Models/CategorySpendingModels.swift GagaeSsi/Models/TimeSlot.swift GagaeSsi/Models/SpendingCSVExporter.swift GagaeSsi/Features/Home/HomeViewModel.swift GagaeSsi/Features/Spend/SpendView.swift GagaeSsiTests/CategorySpendingTests.swift GagaeSsiTests/DataExportTests.swift
+git commit -m "feat: 내역·통계는 내가 소비한 몫으로 — 결제 대행분은 소비가 아니다
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 5: `CoreDataManager` 여행 섹션 (CRUD · 소비 연결 · 집계)
+
+**Files:**
+- Modify: `GagaeSsi/Core/CoreDataManager.swift` (파일 끝에 여행 섹션 추가, `createSpendingRecord`·`updateSpendingRecord`에 `trip` 연결)
+- Test: `GagaeSsiTests/TripTests.swift`
+
+- [ ] **Step 1: 테스트 추가**
+
+`TripTests`에 헬퍼와 섹션 추가:
+
+```swift
+    @discardableResult
+    func makeTrip(_ title: String = "제주", from: Int = 0, to: Int = 2, participants: Int = 3,
+                  wishItemId: UUID? = nil) -> TripModel {
+        let trip = TripModel(title: title, startDate: day(from), endDate: day(to),
+                             defaultParticipants: participants, wishItemId: wishItemId)
+        XCTAssertTrue(sut.createTrip(trip))
+        return trip
+    }
+
+    // MARK: - 여행 CRUD
+
+    func test_여행을_만들고_읽고_고치고_지운다() {
+        let trip = makeTrip()
+        XCTAssertEqual(sut.fetchTrips().map(\.id), [trip.id])
+
+        var edited = trip
+        edited.title = "부산"; edited.defaultParticipants = 4
+        XCTAssertTrue(sut.updateTrip(edited))
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.title, "부산")
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.defaultParticipants, 4)
+
+        XCTAssertTrue(sut.deleteTrip(id: trip.id))
+        XCTAssertTrue(sut.fetchTrips().isEmpty)
+    }
+
+    func test_목록은_진행_중이_먼저_그다음_정산_완료다() {
+        let old = makeTrip("작년", from: -400, to: -398)
+        let settled = makeTrip("정산됨", from: -30, to: -28)
+        XCTAssertTrue(sut.settleTrip(id: settled.id, actualAmount: 0))
+        let recent = makeTrip("최근", from: -3, to: -1)
+
+        XCTAssertEqual(sut.fetchTrips().map(\.id), [recent.id, old.id, settled.id])
+    }
+
+    func test_소비에_여행을_묶고_여행별로_읽는다() {
+        let trip = makeTrip()
+        let a = spend(90_000, participants: 3, tripId: trip.id)
+        let b = spend(30_000, on: 1, participants: 3, paidByMe: false, tripId: trip.id)
+        spend(5_000)   // 여행 아님
+
+        let records = sut.fetchSpendingRecords(tripId: trip.id)
+        XCTAssertEqual(Set(records.map(\.id)), [a, b])
+        XCTAssertEqual(records.first { $0.id == a }?.participants, 3)
+        XCTAssertEqual(records.first { $0.id == b }?.paidByMe, false)
+    }
+
+    func test_수정으로_여행_연결을_바꿀_수_있다() {
+        let trip = makeTrip()
+        let id = spend(50_000)
+        var edited = sut.fetchSpendingRecords(date: day(0)).first { $0.id == id }!
+        edited.tripId = trip.id; edited.participants = 2
+        XCTAssertTrue(sut.updateSpendingRecord(edited))
+        XCTAssertEqual(sut.fetchSpendingRecords(tripId: trip.id).map(\.id), [id])
+
+        edited.tripId = nil
+        XCTAssertTrue(sut.updateSpendingRecord(edited))
+        XCTAssertTrue(sut.fetchSpendingRecords(tripId: trip.id).isEmpty)
+    }
+
+    func test_여행을_지워도_소비와_예산_영향은_남는다() {
+        let trip = makeTrip()
+        let id = spend(90_000, participants: 3, paidByMe: false, tripId: trip.id)
+        let before = available()
+
+        XCTAssertTrue(sut.deleteTrip(id: trip.id))
+        let record = sut.fetchSpendingRecords(date: day(0)).first { $0.id == id }
+        XCTAssertNotNil(record)
+        XCTAssertNil(record?.tripId)
+        XCTAssertEqual(record?.participants, 3, "인원·결제자는 그대로")
+        XCTAssertEqual(available(), before, "예산 영향 불변")
+    }
+
+    // MARK: - 날짜로 여행 찾기
+
+    func test_기간에_드는_진행_중_여행이_하나면_그걸_준다() {
+        let trip = makeTrip(from: 0, to: 2)
+        XCTAssertEqual(sut.trip(containing: day(1))?.id, trip.id)
+        XCTAssertNil(sut.trip(containing: day(3)))
+    }
+
+    func test_기간이_겹치는_여행이_둘이면_고르지_않는다() {
+        makeTrip("A", from: 0, to: 2)
+        makeTrip("B", from: 1, to: 3)
+        XCTAssertNil(sut.trip(containing: day(1)))
+    }
+
+    func test_정산_완료_여행은_자동_선택_대상이_아니다() {
+        let trip = makeTrip(from: 0, to: 2)
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 0))
+        XCTAssertNil(sut.trip(containing: day(1)))
+        XCTAssertTrue(sut.fetchActiveTrips().isEmpty)
+    }
+
+    // MARK: - 집계
+
+    func test_여행_집계는_사용자_예시와_같다() {
+        let trip = makeTrip(participants: 3)
+        spend(100_000, participants: 3, tripId: trip.id)
+        spend(200_000, participants: 3, tripId: trip.id)
+        spend(150_000, on: 1, participants: 3, tripId: trip.id)
+
+        let s = sut.tripSettlement(for: trip.id)
+        XCTAssertEqual(s.perPerson, 150_000)
+        XCTAssertEqual(s.paidByMeTotal, 450_000)
+        XCTAssertEqual(s.receivable, 300_000)
+    }
+```
+
+`settleTrip`은 Task 6에서 만든다. 이 단계에서는 컴파일이 안 되므로 Task 6 Step 1까지 이어서 진행한 뒤 함께 돌린다. (실패 확인 단계는 Task 6에 있다.)
+
+- [ ] **Step 2: 소비 CRUD에 `trip` 연결**
+
+`createSpendingRecord`에서 `newSpendingRecord.paidByMe = model.paidByMe` 뒤에:
+
+```swift
+        newSpendingRecord.trip = model.tripId.flatMap { fetchTripEntity(id: $0) }
+```
+
+`updateSpendingRecord`에서 `spendingRecord.paidByMe = model.paidByMe` 뒤에:
+
+```swift
+        spendingRecord.trip = model.tripId.flatMap { fetchTripEntity(id: $0) }
+```
+
+- [ ] **Step 3: 여행 섹션 작성**
+
+`CoreDataManager.swift` 클래스 닫는 `}` 앞(파일 맨 끝, `refundWishSaving` 뒤)에:
+
+```swift
+    // MARK: - 여행 (같이 쓴 돈 묶기 · 정산)
+
+    /// 진행 중이 먼저, 그다음 정산 완료. 각각 시작일 최근순.
+    func fetchTrips() -> [TripModel] {
+        let request: NSFetchRequest<Trip> = Trip.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "startDate", ascending: false)]
+        let models = ((try? context.fetch(request)) ?? []).map(TripModel.init)
+        return models.filter { !$0.isSettled } + models.filter { $0.isSettled }
+    }
+
+    /// 소비 입력에서 고를 수 있는 여행들 (정산 완료는 제외)
+    func fetchActiveTrips() -> [TripModel] {
+        fetchTrips().filter { !$0.isSettled }
+    }
+
+    func fetchTrip(id: UUID) -> TripModel? {
+        fetchTripEntity(id: id).map(TripModel.init)
+    }
+
+    private func fetchTripEntity(id: UUID) -> Trip? {
+        let request: NSFetchRequest<Trip> = Trip.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+
+    @discardableResult
+    func createTrip(_ model: TripModel) -> Bool {
+        let trip = Trip(context: context)
+        trip.id = model.id
+        applyTripFields(model, to: trip)
+        return saveContext()
+    }
+
+    @discardableResult
+    func updateTrip(_ model: TripModel) -> Bool {
+        guard let trip = fetchTripEntity(id: model.id) else { return false }
+        applyTripFields(model, to: trip)
+        return saveContext()
+    }
+
+    private func applyTripFields(_ model: TripModel, to trip: Trip) {
+        trip.title = model.title
+        trip.startDate = Calendar.current.startOfDay(for: model.startDate)
+        trip.endDate = Calendar.current.startOfDay(for: model.endDate)
+        trip.defaultParticipants = Int16(model.defaultParticipants)
+        trip.status = model.status.rawValue
+        trip.settledAt = model.settledAt
+        trip.settledAmount = Int32(model.settledAmount)
+        trip.settlementEntryId = model.settlementEntryId
+        trip.createdAt = model.createdAt
+        trip.wishItem = model.wishItemId.flatMap { fetchWishItemEntity(id: $0) }
+    }
+
+    /// 여행을 지운다. 소비는 연결만 끊기고(Nullify) 인원·결제자도 그대로라 예산 영향은 사실상 없지만,
+    /// 위시 삭제와 같은 규칙으로 가장 이른 소비 날짜부터 한 번 다시 계산한다.
+    @discardableResult
+    func deleteTrip(id: UUID) -> Bool {
+        guard let trip = fetchTripEntity(id: id) else { return false }
+        let linkedDates = (trip.spendingRecords?.allObjects as? [SpendingRecord] ?? [])
+            .compactMap { $0.date }
+        context.delete(trip)
+        guard saveContext() else { return false }
+        if let earliest = linkedDates.min() { recalculateCarryOverChain(from: earliest) }
+        return true
+    }
+
+    /// 소비 날짜가 기간 안인 진행 중 여행. 둘 이상 겹치면 고르지 않는다(nil) — 사용자가 직접 고르게.
+    func trip(containing date: Date) -> TripModel? {
+        let matches = fetchActiveTrips().filter { $0.contains(date) }
+        return matches.count == 1 ? matches.first : nil
+    }
+
+    /// 여행에 묶인 소비 (날짜 오름차순)
+    func fetchSpendingRecords(tripId: UUID) -> [SpendingRecordModel] {
+        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        request.predicate = NSPredicate(format: "trip.id == %@", tripId as CVarArg)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: true)]
+        return ((try? context.fetch(request)) ?? []).map(SpendingRecordModel.init)
+    }
+
+    func tripSettlement(for tripId: UUID) -> TripSettlementModel {
+        TripSettlementModel.compute(records: fetchSpendingRecords(tripId: tripId))
+    }
+```
+
+- [ ] **Step 4: 빌드만 확인 (테스트는 Task 6에서)**
+
+```bash
+xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 16' build -quiet
+```
+
+Expected: 경고 없이 `** BUILD SUCCEEDED **`.
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add GagaeSsi/Core/CoreDataManager.swift GagaeSsiTests/TripTests.swift
+git commit -m "feat: 여행 CRUD와 소비 묶기 — 날짜로 진행 중 여행 찾기, 여행별 집계
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 6: 정산 — `settleTrip` · `reopenTrip` · 지갑 회수
+
+**Files:**
+- Modify: `GagaeSsi/Models/BudgetModels.swift` (`CarryOverReason`)
+- Modify: `GagaeSsi/Models/WishModels.swift` (`WishSavingSource`, `WishSavingEntryModel`, `WishItemModel.returnedAmount`)
+- Modify: `GagaeSsi/Core/CoreDataManager.swift` (여행 섹션에 정산 추가, `fetchWishItems`·`fetchActiveWishItem`에 `returnedAmount`)
+- Test: `GagaeSsiTests/TripTests.swift`
+
+- [ ] **Step 1: 정산 테스트 추가**
+
+`TripTests`에:
+
+```swift
+    // MARK: - 정산
+
+    func test_정산하면_남의_몫이_오늘_예산으로_돌아온다() {
+        let trip = makeTrip(participants: 3)
+        spend(450_000, participants: 3, tripId: trip.id)
+        let before = available()
+
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: sut.tripSettlement(for: trip.id).receivable))
+        XCTAssertEqual(available(), before + 300_000)
+        let settled = sut.fetchTrip(id: trip.id)
+        XCTAssertEqual(settled?.status, .settled)
+        XCTAssertEqual(settled?.settledAmount, 300_000)
+        XCTAssertNotNil(settled?.settledAt)
+    }
+
+    func test_실제_수령액을_덮어쓰면_그_금액이_반영된다() {
+        let trip = makeTrip(participants: 3)
+        spend(450_000, participants: 3, tripId: trip.id)
+        let before = available()
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 290_000))
+        XCTAssertEqual(available(), before + 290_000)
+    }
+
+    func test_받을_돈이_없으면_크레딧_없이_상태만_바뀐다() {
+        let trip = makeTrip(participants: 3)
+        spend(90_000, participants: 3, paidByMe: false, tripId: trip.id)
+        let before = available()
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 0))
+        XCTAssertEqual(available(), before)
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.status, .settled)
+        XCTAssertNil(sut.fetchTrip(id: trip.id)?.settlementEntryId)
+    }
+
+    func test_이미_정산된_여행은_다시_정산되지_않는다() {
+        let trip = makeTrip()
+        spend(90_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 60_000))
+        let before = available()
+        XCTAssertFalse(sut.settleTrip(id: trip.id, actualAmount: 60_000))
+        XCTAssertEqual(available(), before)
+    }
+
+    func test_지갑_연결_여행은_정산금이_지갑으로_돌아온다() {
+        let wallet = seedWallet(500_000)
+        let trip = makeTrip(participants: 3, wishItemId: wallet)
+        let id = spend(450_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+        XCTAssertEqual(sut.wishBalance(for: wallet), 50_000)
+        let budgetBefore = available()
+
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 300_000))
+        XCTAssertEqual(sut.wishBalance(for: wallet), 350_000, "지갑 잔액이 회복된다")
+        XCTAssertEqual(available(), budgetBefore, "예산에는 아무 변화 없다")
+        XCTAssertEqual(sut.fetchWishItems().first { $0.id == wallet }?.returnedAmount, 300_000)
+    }
+
+    func test_지갑을_먼저_지운_여행은_정산금이_예산으로_온다() {
+        let wallet = seedWallet(100_000)
+        let trip = makeTrip(participants: 3, wishItemId: wallet)
+        spend(90_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.deleteWishItem(id: wallet))
+        let before = available()
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 60_000))
+        XCTAssertEqual(available(), before + 60_000)
+    }
+
+    // MARK: - 정산 다시 열기
+
+    func test_예산으로_정산한_여행을_다시_열면_크레딧이_사라진다() {
+        let trip = makeTrip()
+        spend(90_000, participants: 3, tripId: trip.id)
+        let before = available()
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 60_000))
+        XCTAssertTrue(sut.reopenTrip(id: trip.id))
+        XCTAssertEqual(available(), before)
+        let reopened = sut.fetchTrip(id: trip.id)
+        XCTAssertEqual(reopened?.status, .active)
+        XCTAssertNil(reopened?.settledAt)
+        XCTAssertEqual(reopened?.settledAmount, 0)
+    }
+
+    func test_지갑으로_정산한_여행을_다시_열면_지갑_잔액이_줄어든다() {
+        let wallet = seedWallet(500_000)
+        let trip = makeTrip(wishItemId: wallet)
+        let id = spend(450_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 300_000))
+
+        XCTAssertTrue(sut.reopenTrip(id: trip.id))
+        XCTAssertEqual(sut.wishBalance(for: wallet), 50_000)
+        XCTAssertEqual(sut.fetchWishItems().first { $0.id == wallet }?.returnedAmount, 0)
+    }
+
+    func test_지갑_크레딧을_이미_써버렸으면_다시_열_수_없다() {
+        let wallet = seedWallet(500_000)
+        let trip = makeTrip(wishItemId: wallet)
+        let id = spend(450_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 300_000))   // 잔액 35만
+
+        let later = spend(320_000, on: 1)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: later, wishItemId: wallet))   // 잔액 3만
+
+        XCTAssertFalse(sut.reopenTrip(id: trip.id))
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.status, .settled, "아무것도 바뀌지 않는다")
+        XCTAssertEqual(sut.wishBalance(for: wallet), 30_000)
+    }
+
+    func test_진행_중_여행은_다시_열_수_없다() {
+        let trip = makeTrip()
+        XCTAssertFalse(sut.reopenTrip(id: trip.id))
+    }
+```
+
+- [ ] **Step 2: 실패 확인**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripTests -quiet
+```
+
+Expected: 컴파일 에러 `has no member 'settleTrip'`.
+
+- [ ] **Step 3: `CarryOverReason.tripSettlement`**
+
+`GagaeSsi/Models/BudgetModels.swift`의 `CarryOverReason`에 케이스 추가 (`.refund` 뒤):
+
+```swift
+    /// 여행 정산으로 돌아온 남의 몫 (내가 대신 낸 돈이 실제로 돌아온 날)
+    case tripSettlement
+```
+
+`countsTowardAllowance`:
+
+```swift
+        case .carryOver, .poolWithdraw, .refund, .tripSettlement: return true
+```
+
+- [ ] **Step 4: `WishModels.swift` — 저금 엔트리 출처와 회수액**
+
+`WishSavingEntryModel` 위에 enum 추가하고 모델을 교체:
+
+```swift
+// MARK: - 저금 엔트리 출처
+/// nil이면 매일 저금. 여행 정산으로 돌아온 돈은 저금이 아니라 회수라 구분해서 보여준다.
+enum WishSavingSource: String, Codable {
+    case tripSettlement
+
+    static func from(_ raw: String?) -> WishSavingSource? {
+        raw.flatMap(WishSavingSource.init(rawValue:))
+    }
+}
+
+// MARK: - 위시 저금 엔트리 모델 (일자별)
+struct WishSavingEntryModel: Identifiable {
+    var id: UUID
+    var date: Date
+    var amount: Int
+    var source: WishSavingSource?
+
+    init(id: UUID = UUID(), date: Date, amount: Int, source: WishSavingSource? = nil) {
+        self.id = id
+        self.date = date
+        self.amount = amount
+        self.source = source
+    }
+
+    init(entity: WishSavingEntry) {
+        self.id = entity.id ?? UUID()
+        self.date = entity.date ?? Date()
+        self.amount = Int(truncating: entity.amount ?? 0)
+        self.source = WishSavingSource.from(entity.source)
+    }
+}
+```
+
+`WishItemModel`에 필드 추가 (`spentAmount` 선언 뒤):
+
+```swift
+    /// 여행 정산으로 이 지갑에 돌아온 돈 합계 (`savedAmount`에 포함돼 있다 — 표시용 구분값)
+    var returnedAmount: Int
+```
+
+두 init에 `returnedAmount: Int = 0` 파라미터를 추가하고 `self.returnedAmount = returnedAmount` 대입:
+
+```swift
+    init(id: UUID = UUID(), title: String, targetAmount: Int, dailySaving: Int = 0,
+         status: WishStatus = .waiting, kind: WishKind = .want,
+         createdAt: Date = Date(), activatedAt: Date? = nil, completedAt: Date? = nil,
+         savedAmount: Int = 0, spentAmount: Int = 0, returnedAmount: Int = 0) {
+```
+
+```swift
+    init(entity: WishItem, savedAmount: Int = 0, spentAmount: Int = 0, returnedAmount: Int = 0) {
+```
+
+- [ ] **Step 5: `fetchWishItems`·`fetchActiveWishItem`에 회수액 채우기**
+
+`CoreDataManager` 위시 지갑 섹션(`wishBalance` 근처)에 추가:
+
+```swift
+    /// 여행 정산으로 이 지갑에 돌아온 돈 합계
+    func wishReturnedAmount(for wishItemId: UUID) -> Int {
+        let request: NSFetchRequest<WishSavingEntry> = WishSavingEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "wishItem.id == %@ AND source == %@",
+                                        wishItemId as CVarArg, WishSavingSource.tripSettlement.rawValue)
+        let entries = (try? context.fetch(request)) ?? []
+        return entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+    }
+
+    private func fetchWishSavingEntryEntity(id: UUID) -> WishSavingEntry? {
+        let request: NSFetchRequest<WishSavingEntry> = WishSavingEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+```
+
+`fetchWishItems`와 `fetchActiveWishItem`의 `WishItemModel(entity:savedAmount:spentAmount:)` 호출에 `returnedAmount: wishReturnedAmount(for: id)`를 덧붙인다:
+
+```swift
+            return WishItemModel(entity: $0, savedAmount: savedAmount(for: id),
+                                 spentAmount: wishSpentAmount(for: id),
+                                 returnedAmount: wishReturnedAmount(for: id))
+```
+
+- [ ] **Step 6: `settleTrip` · `reopenTrip`**
+
+여행 섹션의 `tripSettlement(for:)` 뒤에:
+
+```swift
+    /// 여행을 정산한다 — 내가 대신 낸 남의 몫(`actualAmount`)을 되돌린다.
+    ///
+    /// 지갑이 연결돼 있으면 지갑으로(저금 엔트리, `source = tripSettlement`), 아니면 오늘 예산으로
+    /// (`CarryOverSource`, 페이백 수령과 같은 통로). 지갑 엔트리는 `DailyBudget`에 달지 않는다 —
+    /// 달면 오늘 예산에서 저금으로 빠져버린다.
+    /// - Parameter actualAmount: 실제 받은 금액. 계산값과 달라도 막지 않는다.
+    /// - Returns: 이미 정산됐거나 음수면 `false`
+    @discardableResult
+    func settleTrip(id: UUID, actualAmount: Int) -> Bool {
+        guard let trip = fetchTripEntity(id: id),
+              TripStatus.from(trip.status) == .active, actualAmount >= 0 else { return false }
+        let today = Calendar.current.startOfDay(for: Date())
+
+        var entryId: UUID?
+        if actualAmount > 0 {
+            if let wish = trip.wishItem {
+                let entry = WishSavingEntry(context: context)
+                entry.id = UUID()
+                entry.date = today
+                entry.amount = NSDecimalNumber(value: actualAmount)
+                entry.source = WishSavingSource.tripSettlement.rawValue
+                entry.wishItem = wish
+                wish.addToSavingEntries(entry)
+                entryId = entry.id
+            } else {
+                guard let budget = fetchOrCreateDailyBudgetEntity(date: today) else { return false }
+                let source = addCarryOverSource(to: budget, amount: actualAmount,
+                                                date: today, toDate: today, reason: .tripSettlement)
+                entryId = source.id
+            }
+        }
+
+        trip.status = TripStatus.settled.rawValue
+        trip.settledAt = today
+        trip.settledAmount = Int32(actualAmount)
+        trip.settlementEntryId = entryId
+        return saveContext()
+    }
+
+    /// 정산을 되돌린다 — 정산 때 만든 크레딧을 지우고 진행 중으로.
+    ///
+    /// 지갑으로 돌아간 돈을 이미 다른 소비가 써서 잔액이 부족하면 거부한다 (지갑 "잔액 한도" 규칙).
+    /// 크레딧을 `settlementEntryId`로 찾으므로 정산 뒤 지갑을 붙이거나 뗐어도 제자리를 찾는다.
+    @discardableResult
+    func reopenTrip(id: UUID) -> Bool {
+        guard let trip = fetchTripEntity(id: id),
+              TripStatus.from(trip.status) == .settled else { return false }
+        let settledAmount = Int(trip.settledAmount)
+        var recalcFrom: Date?
+
+        if let entryId = trip.settlementEntryId, settledAmount > 0 {
+            if let entry = fetchWishSavingEntryEntity(id: entryId), let wishId = entry.wishItem?.id {
+                guard wishBalance(for: wishId) >= settledAmount else { return false }
+                context.delete(entry)
+            } else if let source = fetchCarryOverSourceEntity(id: entryId) {
+                recalcFrom = source.date
+                context.delete(source)
+            }
+            // 둘 다 없으면(지갑이 지워져 Cascade로 사라진 경우) 되돌릴 크레딧이 없다 — 상태만 되돌린다
+        }
+
+        trip.status = TripStatus.active.rawValue
+        trip.settledAt = nil
+        trip.settledAmount = 0
+        trip.settlementEntryId = nil
+        guard saveContext() else { return false }
+        if let from = recalcFrom { recalculateCarryOverChain(from: from) }
+        return true
+    }
+```
+
+- [ ] **Step 7: 전체 여행 테스트 + 위시 회귀**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripTests -only-testing:GagaeSsiTests/TripSettlementTests -only-testing:GagaeSsiTests/WishWalletTests -only-testing:GagaeSsiTests/WishListTests -only-testing:GagaeSsiTests/PaybackTests -quiet
+```
+
+Expected: `** TEST SUCCEEDED **`. `test_목록은_진행_중이_먼저…`가 순서로 실패하면 `fetchTrips`의 정렬 키(`startDate` 내림차순)를 확인한다.
+
+- [ ] **Step 8: 커밋**
+
+```bash
+git add GagaeSsi/Models/BudgetModels.swift GagaeSsi/Models/WishModels.swift GagaeSsi/Core/CoreDataManager.swift GagaeSsiTests/TripTests.swift
+git commit -m "feat: 여행 정산 — 대신 낸 남의 몫은 지갑으로, 지갑이 없으면 오늘 예산으로
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 7: 소비 입력 — 여행 필드 · 인원 · 결제자 · 지갑 자동 선택
+
+**Files:**
+- Modify: `GagaeSsi/Core/Utils/FormatterUtils.swift` (`shortDateRange` 추가)
+- Modify: `GagaeSsi/Features/Spend/SpendViewModel.swift`
+- Modify: `GagaeSsi/Features/Spend/SpendView.swift`
+
+UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 검증한다. 모델·데이터 계층은 앞 태스크에서 이미 테스트됐다.
+
+- [ ] **Step 1: 기간 포맷터**
+
+`FormatterUtils.swift`의 `relativeDate` 뒤에:
+
+```swift
+    /// 여행 기간 표시 (예: 9.12–9.14). 같은 날이면 한 번만.
+    static func shortDateRange(_ from: Date, _ to: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.dateFormat = "M.d"
+        let start = formatter.string(from: from)
+        let end = formatter.string(from: to)
+        return start == end ? start : "\(start)–\(end)"
+    }
+```
+
+- [ ] **Step 2: `SpendViewModel` 여행 상태**
+
+`spendableWishes` 선언 뒤에 추가:
+
+```swift
+    // MARK: 여행
+    /// 이 소비를 묶을 여행 (nil이면 평소 소비)
+    var tempTripId: UUID?
+    /// 나누는 인원 (1 = 내 개인 소비)
+    var tempParticipants: Int = 1
+    /// 내가 냈는지
+    var tempPaidByMe: Bool = true
+    /// 고를 수 있는 여행들 — 진행 중 + (편집 중이면) 그 기록이 묶인 정산 완료 여행
+    var activeTrips: [TripModel] = []
+    /// 사용자가 "여행 아님"을 직접 골랐으면 날짜를 바꿔도 다시 자동 선택하지 않는다
+    private var tripAutoSelectDismissed = false
+    /// 지갑이 여행 때문에 자동으로 골라졌는지 — 금액이 잔액을 넘으면 조용히 풀어준다
+    private var walletAutoSelected = false
+
+    var selectedTrip: TripModel? {
+        activeTrips.first { $0.id == tempTripId }
+    }
+    /// 정산 완료 여행의 소비는 여행·인원·결제자를 못 바꾼다
+    var isTripLocked: Bool { selectedTrip?.isSettled == true }
+    /// 공용 소비면 환급 필드를 숨긴다 — 정산과 겹치면 이중 반영
+    var isSharedSpending: Bool { tempTripId != nil && tempParticipants > 1 }
+
+    /// 지금 입력값으로 만든 임시 기록 — 내 몫·부담액 미리보기용
+    var previewRecord: SpendingRecordModel {
+        SpendingRecordModel(title: tempTitle, amount: tempAmount, date: tempDate,
+                            tripId: tempTripId,
+                            participants: tempTripId == nil ? 1 : tempParticipants,
+                            paidByMe: tempTripId == nil ? true : tempPaidByMe)
+    }
+
+    /// 인원·결제자에 따라 이 소비가 어떻게 잡히는지 한 줄
+    var tripPreviewText: String {
+        let p = previewRecord
+        guard p.isShared, p.amount > 0 else { return "" }
+        let share = FormatterUtils.currencyString(from: p.myShare)
+        if p.paidByMe {
+            return "내 몫 \(share) · 정산 때 \(FormatterUtils.currencyString(from: p.receivable)) 돌아와요"
+        }
+        return "내 몫 \(share)만 오늘 예산에서 빠져요"
+    }
+```
+
+`wishCoversAmount`와 `selectedWishLimit`을 부담액 기준으로 교체:
+
+```swift
+    /// 고른 지갑으로 이 소비의 부담액을 감당할 수 있는지 (친구가 낸 소비는 내 몫만)
+    var wishCoversAmount: Bool {
+        guard let wishId = tempWishItemId else { return true }
+        return previewRecord.budgetAmount <= CoreDataManager.shared.wishSpendableLimit(for: wishId,
+                                                                                      excluding: editingRecordId)
+    }
+```
+
+(`selectedWishLimit`은 그대로.)
+
+`loadSpendableWishes()` 뒤에 여행 메서드들 추가:
+
+```swift
+    /// 고를 수 있는 여행을 불러온다 (화면 진입·편집 시작·저장 후)
+    func loadActiveTrips() {
+        var trips = CoreDataManager.shared.fetchActiveTrips()
+        // 편집 중인 기록이 정산 완료 여행에 묶여 있으면 그 여행도 보여야 한다 (잠긴 채로)
+        if let id = tempTripId, !trips.contains(where: { $0.id == id }),
+           let linked = CoreDataManager.shared.fetchTrip(id: id) {
+            trips.append(linked)
+        }
+        activeTrips = trips
+        autoSelectTrip()
+    }
+
+    /// 소비 날짜가 진행 중 여행 하나의 기간 안이면 그 여행을 미리 고른다
+    func autoSelectTrip() {
+        guard !isEditing, tempTripId == nil, !tripAutoSelectDismissed,
+              let trip = CoreDataManager.shared.trip(containing: tempDate) else { return }
+        selectTrip(trip.id)
+    }
+
+    /// 여행을 고르거나(id) 푼다(nil). 고르면 인원 기본값과 지갑을 채운다.
+    func selectTrip(_ id: UUID?) {
+        tempTripId = id
+        if let trip = activeTrips.first(where: { $0.id == id }) {
+            tempParticipants = max(1, trip.defaultParticipants)
+            tempPaidByMe = true
+            autoSelectWallet(for: trip)
+        } else {
+            tripAutoSelectDismissed = true
+            tempParticipants = 1
+            tempPaidByMe = true
+            if walletAutoSelected { tempWishItemId = nil; walletAutoSelected = false }
+        }
+    }
+
+    /// 사용자가 지갑을 직접 고름 — 자동 선택 상태를 푼다
+    func pickWallet(_ id: UUID?) {
+        tempWishItemId = id
+        walletAutoSelected = false
+    }
+
+    /// 여행에 지갑이 있고 잔액이 내 부담액을 덮으면 지갑을 미리 고른다. 부족하면 예산에서.
+    private func autoSelectWallet(for trip: TripModel) {
+        guard let wishId = trip.wishItemId, tempWishItemId == nil else { return }
+        let limit = CoreDataManager.shared.wishSpendableLimit(for: wishId, excluding: editingRecordId)
+        if previewRecord.budgetAmount <= limit {
+            tempWishItemId = wishId
+            walletAutoSelected = true
+        }
+    }
+
+    /// 금액·인원·결제자가 바뀐 뒤 — 자동으로 골라둔 지갑이 더는 못 덮으면 조용히 예산으로 돌린다
+    func revalidateAutoWallet() {
+        guard walletAutoSelected else { return }
+        if !wishCoversAmount { tempWishItemId = nil; walletAutoSelected = false }
+        else if tempWishItemId == nil, let trip = selectedTrip { autoSelectWallet(for: trip) }
+    }
+```
+
+`updateAmountFromText` 끝에 `revalidateAutoWallet()` 호출 추가:
+
+```swift
+    func updateAmountFromText(_ text: String) {
+        if let result = FormatterUtils.formatCurrencyInput(text) {
+            tempAmount = result.plainNumber
+            tempAmountText = result.formatted
+        }
+        revalidateAutoWallet()
+    }
+```
+
+`saveSpending`에서 `model.paybackReceived = ...` 줄 뒤에:
+
+```swift
+        model.tripId = tempTripId
+        model.participants = tempTripId == nil ? 1 : tempParticipants
+        model.paidByMe = tempTripId == nil ? true : tempPaidByMe
+        // 공용 소비는 정산이 환급 역할을 하므로 환급 필드를 비운다
+        if model.isShared { model.expectedPayback = 0 }
+```
+
+`beginEdit`에서 `tempWishItemId = record.wishItemId` 뒤에:
+
+```swift
+        tempTripId = record.tripId
+        tempParticipants = record.participants
+        tempPaidByMe = record.paidByMe
+        walletAutoSelected = false
+        loadActiveTrips()
+```
+
+`clearForm`에 초기화 추가 (`editingRecordId = nil` 앞):
+
+```swift
+        tempTripId = nil
+        tempParticipants = 1
+        tempPaidByMe = true
+        tripAutoSelectDismissed = false
+        walletAutoSelected = false
+```
+
+그리고 `clearForm` 맨 끝(`model = ...` 뒤)에 `autoSelectTrip()` — 저장 직후 같은 날 두 번째 소비도 자동으로 여행에 묶이게.
+
+- [ ] **Step 3: `SpendView` — 여행 필드**
+
+`onAppear`에 `viewModel.loadActiveTrips()` 추가 (`loadSpendableWishes()` 뒤). 날짜 변경 감지를 `.onAppear` 체인 뒤에 추가:
+
+```swift
+        .onChange(of: viewModel.tempDate) { _, _ in viewModel.autoSelectTrip() }
+        .onChange(of: viewModel.tempParticipants) { _, _ in viewModel.revalidateAutoWallet() }
+        .onChange(of: viewModel.tempPaidByMe) { _, _ in viewModel.revalidateAutoWallet() }
+```
+
+`inputCard`의 필드 목록을 다음으로 (환급 필드는 공용 소비에서 숨김, 여행 필드는 날짜 뒤):
+
+```swift
+            VStack(spacing: 18) {
+                categoryField
+                contentField
+                amountField
+                if !viewModel.isSharedSpending { paybackField }
+                dateField
+                if !viewModel.activeTrips.isEmpty { tripField }
+                if !viewModel.spendableWishes.isEmpty { wishWalletField }
+            }
+```
+
+`wishWalletField`의 두 `walletRow` 액션을 `viewModel.pickWallet(nil)` / `viewModel.pickWallet(wish.id)`로 바꾼다.
+
+`wishWalletField` 앞에 여행 필드 추가:
+
+```swift
+    /// ⑥ 여행 — 같이 쓴 돈이면 인원과 결제자를 표시한다. 내 몫은 여행이 계산한다
+    private var tripField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel("🧳", "여행")
+
+            VStack(spacing: 0) {
+                walletRow(title: "여행 아님", detail: "평소 소비예요",
+                          selected: viewModel.tempTripId == nil) {
+                    viewModel.selectTrip(nil)
+                }
+                ForEach(viewModel.activeTrips) { trip in
+                    Rectangle().fill(Color.gagaeDivider).frame(height: 0.5).padding(.leading, 14)
+                    walletRow(title: trip.isSettled ? "\(trip.title) (정산 완료)" : trip.title,
+                              detail: "\(FormatterUtils.shortDateRange(trip.startDate, trip.endDate)) · \(trip.defaultParticipants)명",
+                              selected: viewModel.tempTripId == trip.id) {
+                        viewModel.selectTrip(trip.id)
+                    }
+                }
+            }
+            .background(Color.gagaeSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.gagaeDivider, lineWidth: 1.5)
+            )
+            .disabled(viewModel.isTripLocked)
+
+            if viewModel.tempTripId != nil { tripShareFields }
+        }
+    }
+
+    /// 인원 · 누가 냈나 · 미리보기
+    private var tripShareFields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("나누는 인원")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Spacer()
+                Stepper(value: $viewModel.tempParticipants, in: 1...20) {
+                    Text(viewModel.tempParticipants == 1 ? "내 개인 소비" : "\(viewModel.tempParticipants)명")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                }
+                .fixedSize()
+            }
+
+            if viewModel.tempParticipants > 1 {
+                Picker("누가 냈나", selection: $viewModel.tempPaidByMe) {
+                    Text("내가 냈어요").tag(true)
+                    Text("다른 사람이 냈어요").tag(false)
+                }
+                .pickerStyle(.segmented)
+
+                if !viewModel.tripPreviewText.isEmpty {
+                    Text(viewModel.tripPreviewText)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeGood)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if viewModel.isTripLocked {
+                Text("정산이 끝난 여행이라 여행·인원·결제자는 바꿀 수 없어요. 여행 상세에서 정산을 다시 열면 돼요.")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(Color.gagaeSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .disabled(viewModel.isTripLocked)
+    }
+```
+
+- [ ] **Step 4: 빌드 확인**
+
+```bash
+xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 16' build -quiet
+```
+
+Expected: `** BUILD SUCCEEDED **`
+
+- [ ] **Step 5: 시뮬레이터 수동 확인 (여행 화면은 아직 없으니 테스트 데이터로)**
+
+여행 목록 화면이 Task 9에서 생기므로, 지금은 여행이 없을 때 **여행 필드가 아예 안 보이는지**와 기존 소비 저장이 그대로 되는지만 확인한다. 이후 Task 9 완료 후 Task 9 Step 6에서 전체 흐름을 확인한다.
+
+- [ ] **Step 6: 커밋**
+
+```bash
+git add GagaeSsi/Core/Utils/FormatterUtils.swift GagaeSsi/Features/Spend/SpendViewModel.swift GagaeSsi/Features/Spend/SpendView.swift
+git commit -m "feat: 소비 입력에 여행 — 인원·결제자만 적으면 내 몫은 앱이 계산
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 8: 내역 편집 시트에 여행 필드
+
+**Files:**
+- Modify: `GagaeSsi/Features/History/HistorySpendEditView.swift`
+
+- [ ] **Step 1: 상태 추가**
+
+`@State private var payback = 0` 뒤에:
+
+```swift
+    // 여행
+    @State private var tripId: UUID?
+    @State private var participants = 1
+    @State private var paidByMe = true
+    @State private var trips: [TripModel] = []
+
+    private var selectedTrip: TripModel? { trips.first { $0.id == tripId } }
+    private var isTripLocked: Bool { selectedTrip?.isSettled == true }
+    private var isShared: Bool { tripId != nil && participants > 1 }
+    /// 미리보기용 임시 기록
+    private var preview: SpendingRecordModel {
+        SpendingRecordModel(title: title, amount: amount, date: date, tripId: tripId,
+                            participants: tripId == nil ? 1 : participants,
+                            paidByMe: tripId == nil ? true : paidByMe)
+    }
+```
+
+- [ ] **Step 2: 화면 — 날짜 피커와 환급 토글 사이에 여행 블록**
+
+`DatePicker("날짜", ...)` 줄 뒤, `// 환급 예정` 주석 앞에:
+
+```swift
+                            // 여행 (진행 중 여행이 있거나 이미 묶여 있을 때만)
+                            if !trips.isEmpty {
+                                Label("여행", systemImage: "suitcase.fill")
+                                    .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+                                Picker("여행", selection: $tripId) {
+                                    Text("여행 아님").tag(UUID?.none)
+                                    ForEach(trips) { t in
+                                        Text(t.isSettled ? "\(t.title) (정산 완료)" : t.title).tag(UUID?.some(t.id))
+                                    }
+                                }
+                                .pickerStyle(.menu).tint(.gagaePinkDark)
+                                .disabled(isTripLocked)
+                                .onChange(of: tripId) { _, newValue in
+                                    if let t = trips.first(where: { $0.id == newValue }) {
+                                        participants = max(1, t.defaultParticipants); paidByMe = true
+                                    } else { participants = 1; paidByMe = true }
+                                }
+
+                                if tripId != nil {
+                                    HStack {
+                                        Text("나누는 인원").font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
+                                        Spacer()
+                                        Stepper(value: $participants, in: 1...20) {
+                                            Text(participants == 1 ? "내 개인 소비" : "\(participants)명")
+                                                .font(.gagaeCalloutMedium).foregroundStyle(.gagaePinkDark)
+                                        }.fixedSize()
+                                    }
+                                    if participants > 1 {
+                                        Picker("누가 냈나", selection: $paidByMe) {
+                                            Text("내가 냈어요").tag(true)
+                                            Text("다른 사람이 냈어요").tag(false)
+                                        }.pickerStyle(.segmented)
+                                        if amount > 0 {
+                                            Text(paidByMe
+                                                 ? "내 몫 \(FormatterUtils.currencyString(from: preview.myShare)) · 정산 때 \(FormatterUtils.currencyString(from: preview.receivable)) 돌아와요"
+                                                 : "내 몫 \(FormatterUtils.currencyString(from: preview.myShare))만 그날 예산에서 빠져요")
+                                                .font(.gagaeCaption).foregroundStyle(.gagaeGood)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                    if isTripLocked {
+                                        Text("정산이 끝난 여행이라 여행·인원·결제자는 바꿀 수 없어요.")
+                                            .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                                    }
+                                }
+                            }
+```
+
+환급 토글 블록 전체(`Toggle(isOn: $hasPayback...)`부터 `if hasPayback { ... }` 끝까지)를 `if !isShared { ... }`로 감싼다.
+
+인원·결제자 컨트롤은 `isTripLocked`일 때 잠근다 — `Stepper`와 `Picker("누가 냈나")` 각각에 `.disabled(isTripLocked)`.
+
+- [ ] **Step 3: 로드·저장**
+
+`loadRecord()` 끝에:
+
+```swift
+        tripId = record.tripId
+        participants = record.participants
+        paidByMe = record.paidByMe
+        var active = CoreDataManager.shared.fetchActiveTrips()
+        if let id = record.tripId, !active.contains(where: { $0.id == id }),
+           let linked = CoreDataManager.shared.fetchTrip(id: id) {
+            active.append(linked)
+        }
+        trips = active
+```
+
+`save()`의 `updated.expectedPayback = hasPayback ? payback : 0` 를 다음으로:
+
+```swift
+        updated.tripId = tripId
+        updated.participants = tripId == nil ? 1 : participants
+        updated.paidByMe = tripId == nil ? true : paidByMe
+        // 공용 소비는 정산이 환급 역할을 하므로 환급 필드를 비운다
+        updated.expectedPayback = (hasPayback && !updated.isShared) ? payback : 0
+```
+
+- [ ] **Step 4: 빌드 확인**
+
+```bash
+xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 16' build -quiet
+```
+
+Expected: `** BUILD SUCCEEDED **`
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add GagaeSsi/Features/History/HistorySpendEditView.swift
+git commit -m "feat: 내역에서 소비를 고칠 때도 여행·인원·결제자를 바꿀 수 있게
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 9: 여행 목록 · 추가/편집 시트 · 설정 진입점
+
+**Files:**
+- Create: `GagaeSsi/Features/Trip/TripListView.swift`
+- Create: `GagaeSsi/Features/Trip/TripEditView.swift`
+- Modify: `GagaeSsi/Features/Settings/SettingsView.swift` (페이백 관리 행 뒤)
+
+기존 `PaybackListView`처럼 View + `@State` + `load()` 패턴을 따른다 (별도 ViewModel 없음 — 화면이 데이터 계층 API를 그대로 보여주기만 한다).
+
+- [ ] **Step 1: `TripEditView.swift`**
+
+```swift
+//
+//  TripEditView.swift
+//  GagaeSsi
+//
+//  여행 추가/편집 시트 — 제목·기간·인원·지갑 연결
+//
+
+import SwiftUI
+
+struct TripEditView: View {
+    enum Mode {
+        case add
+        case edit(TripModel)
+        var title: String { switch self { case .add: return "여행 추가"; case .edit: return "여행 수정" } }
+    }
+
+    let mode: Mode
+    let onSave: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var startDate = Calendar.current.startOfDay(for: Date())
+    @State private var endDate = Calendar.current.startOfDay(for: Date())
+    @State private var participants = 2
+    @State private var wishItemId: UUID?
+    @State private var wallets: [WishItemModel] = []
+    @FocusState private var focused: Bool
+
+    private var isValid: Bool { !title.isEmpty && endDate >= startDate && participants >= 1 }
+    private var selectedWallet: WishItemModel? { wallets.first { $0.id == wishItemId } }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.gagaeBackground.ignoresSafeArea()
+                ScrollView {
+                    GagaeCard {
+                        VStack(alignment: .leading, spacing: GagaeSpacing.md) {
+                            Label("여행 이름", systemImage: "suitcase.fill")
+                                .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+                            TextField("예: 제주 여행, 부산 친구들", text: $title)
+                                .font(.gagaeBody).focused($focused)
+                                .padding(GagaeSpacing.md).background(Color.gagaeSurface)
+                                .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
+
+                            DatePicker("시작일", selection: $startDate, displayedComponents: .date)
+                                .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary).tint(.gagaePinkDark)
+                            DatePicker("종료일", selection: $endDate, in: startDate..., displayedComponents: .date)
+                                .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary).tint(.gagaePinkDark)
+
+                            HStack {
+                                Label("인원", systemImage: "person.2.fill")
+                                    .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+                                Spacer()
+                                Stepper(value: $participants, in: 1...20) {
+                                    Text("\(participants)명").font(.gagaeCalloutMedium).foregroundStyle(.gagaePinkDark)
+                                }.fixedSize()
+                            }
+                            Text("소비를 적을 때 인원 기본값이에요. 항목마다 바꿀 수 있어요.")
+                                .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+
+                            GagaeDivider()
+
+                            // 지갑 연결
+                            Label("모아둔 위시 지갑", systemImage: "gift.fill")
+                                .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+                            Picker("지갑", selection: $wishItemId) {
+                                Text("연결 안 함").tag(UUID?.none)
+                                ForEach(wallets) { w in
+                                    Text("\(w.title) · 남은 \(FormatterUtils.currencyString(from: w.balance))")
+                                        .tag(UUID?.some(w.id))
+                                }
+                            }
+                            .pickerStyle(.menu).tint(.gagaePinkDark)
+                            if let w = selectedWallet {
+                                Text("이 여행에서 내가 내는 소비는 \(w.title) 지갑(남은 \(FormatterUtils.currencyString(from: w.balance)))에서 먼저 빠지고, 정산으로 돌아온 돈도 지갑으로 와요.")
+                                    .font(.gagaeCaption).foregroundStyle(.gagaeGood)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                Text("연결하지 않으면 평소처럼 하루 예산에서 빠져요.")
+                                    .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, GagaeSpacing.md).padding(.top, GagaeSpacing.md)
+
+                    GagaePrimaryButton(title: "저장하기", isEnabled: isValid) { save() }
+                        .padding(.horizontal, GagaeSpacing.md).padding(.top, GagaeSpacing.md)
+                }
+            }
+            .navigationTitle(mode.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("취소") { dismiss() }.foregroundStyle(.gagaePinkDark)
+                }
+            }
+            .onAppear { load() }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func load() {
+        var list = CoreDataManager.shared.fetchSpendableWishItems()
+        if case .edit(let t) = mode {
+            title = t.title
+            startDate = t.startDate
+            endDate = t.endDate
+            participants = t.defaultParticipants
+            wishItemId = t.wishItemId
+            // 연결된 지갑은 잔액이 0이 됐어도 후보로 남겨야 한다
+            if let id = t.wishItemId, !list.contains(where: { $0.id == id }),
+               let linked = CoreDataManager.shared.fetchWishItems().first(where: { $0.id == id }) {
+                list.append(linked)
+            }
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { focused = true }
+        }
+        wallets = list
+    }
+
+    private func save() {
+        guard isValid else { return }
+        let ok: Bool
+        switch mode {
+        case .add:
+            ok = CoreDataManager.shared.createTrip(TripModel(
+                title: title, startDate: startDate, endDate: endDate,
+                defaultParticipants: participants, wishItemId: wishItemId))
+        case .edit(let t):
+            var updated = t
+            updated.title = title
+            updated.startDate = startDate
+            updated.endDate = endDate
+            updated.defaultParticipants = participants
+            updated.wishItemId = wishItemId
+            ok = CoreDataManager.shared.updateTrip(updated)
+        }
+        if ok { onSave(); dismiss() }
+    }
+}
+```
+
+- [ ] **Step 2: `TripListView.swift`**
+
+```swift
+//
+//  TripListView.swift
+//  GagaeSsi
+//
+//  여행 목록 — 진행 중 / 정산 완료
+//
+
+import SwiftUI
+
+struct TripListView: View {
+    @Environment(AppEventBus.self) private var eventBus
+    @State private var trips: [TripModel] = []
+    @State private var summaries: [UUID: TripSettlementModel] = [:]
+    @State private var showAdd = false
+
+    private var active: [TripModel] { trips.filter { !$0.isSettled } }
+    private var settled: [TripModel] { trips.filter { $0.isSettled } }
+
+    var body: some View {
+        ZStack {
+            Color.gagaeBackground.ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: GagaeSpacing.lg) {
+                    infoCard.padding(.top, GagaeSpacing.md)
+                    if trips.isEmpty {
+                        GagaeCard {
+                            GagaeEmptyStateView(icon: "🧳", title: "여행이 없어요",
+                                                subtitle: "여행을 만들고 소비를 묶으면\n내 몫만 예산에서 빠지고 나중에 정산할 수 있어요")
+                        }
+                    } else {
+                        section("진행 중", active)
+                        section("정산 완료", settled)
+                    }
+                }
+                .padding(.horizontal, GagaeSpacing.md)
+                .padding(.bottom, GagaeSpacing.xl)
+            }
+        }
+        .navigationTitle("여행")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(Color.gagaeBackground, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showAdd = true } label: {
+                    Image(systemName: "plus.circle.fill").font(.system(size: 20)).foregroundStyle(.gagaePinkDark)
+                }
+            }
+        }
+        .onAppear { load() }
+        .onChange(of: eventBus.spendingAddedTrigger) { _, _ in load() }
+        .sheet(isPresented: $showAdd) { TripEditView(mode: .add) { load() } }
+    }
+
+    private var infoCard: some View {
+        HStack(spacing: GagaeSpacing.md) {
+            Image(systemName: "lightbulb.fill").font(.system(size: 20)).foregroundStyle(.gagaePoint)
+            Text("같이 쓴 돈은 내 몫만 예산에서 빠져요.\n내가 대신 낸 돈은 정산 때 돌아와요.")
+                .font(.gagaeSubheadline).foregroundStyle(.gagaeTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .padding(GagaeSpacing.md).background(Color.gagaePoint.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
+    }
+
+    @ViewBuilder
+    private func section(_ title: String, _ list: [TripModel]) -> some View {
+        if !list.isEmpty {
+            VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
+                Text(title).font(.gagaeHeadline).foregroundStyle(.gagaeText)
+                ForEach(list) { trip in
+                    NavigationLink { TripDetailView(tripId: trip.id) } label: { row(trip) }
+                        .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func row(_ trip: TripModel) -> some View {
+        let s = summaries[trip.id]
+        return GagaeCard {
+            HStack(spacing: GagaeSpacing.md) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(trip.title).font(.gagaeHeadline).foregroundStyle(.gagaeText)
+                        if trip.wishItemId != nil {
+                            Text("🎁").font(.system(size: 13))
+                        }
+                    }
+                    Text("\(FormatterUtils.shortDateRange(trip.startDate, trip.endDate)) · \(trip.defaultParticipants)명")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                    if trip.isSettled, let at = trip.settledAt {
+                        Text("\(FormatterUtils.shortDateRange(at, at)) 정산 · +\(FormatterUtils.currencyString(from: trip.settledAmount)) 돌아옴")
+                            .font(.gagaeCaption).foregroundStyle(.gagaeGood)
+                    }
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("내 몫").font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                    Text(FormatterUtils.currencyString(from: s?.myShareTotal ?? 0))
+                        .font(.system(size: 15, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.gagaeText)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(.gagaeTextTertiary)
+            }
+        }
+    }
+
+    private func load() {
+        trips = CoreDataManager.shared.fetchTrips()
+        summaries = Dictionary(uniqueKeysWithValues: trips.map {
+            ($0.id, CoreDataManager.shared.tripSettlement(for: $0.id))
+        })
+    }
+}
+```
+
+`TripDetailView`는 Task 10에서 만든다. 이 태스크만 빌드하려면 임시로 빈 뷰를 두지 말고 **Task 10까지 이어서 진행한 뒤** 빌드한다.
+
+- [ ] **Step 3: 설정 진입점**
+
+`SettingsView.swift`에서 `PaybackListView()` NavigationLink 블록(`.buttonStyle(.plain)`까지) 뒤에:
+
+```swift
+                rowDivider
+                NavigationLink {
+                    TripListView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#4FB0C6"), iconContent: AnyView(Text("🧳").font(.system(size: 15))),
+                               label: "여행")
+                }
+                .buttonStyle(.plain)
+```
+
+- [ ] **Step 4: 커밋은 Task 10 Step 4에서 함께**
+
+---
+
+### Task 10: 여행 상세 · 정산 시트
+
+**Files:**
+- Create: `GagaeSsi/Features/Trip/TripDetailView.swift`
+- Create: `GagaeSsi/Features/Trip/TripSettleSheet.swift`
+
+- [ ] **Step 1: `TripSettleSheet.swift`**
+
+```swift
+//
+//  TripSettleSheet.swift
+//  GagaeSsi
+//
+//  정산 시트 — 계산된 받을 돈을 보여주고, 실제 금액을 고칠 수 있게 한다
+//
+
+import SwiftUI
+
+struct TripSettleSheet: View {
+    let trip: TripModel
+    let settlement: TripSettlementModel
+    /// 연결된 지갑 이름 (nil이면 예산으로)
+    let walletTitle: String?
+    let onSettle: (Int) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var amountText = ""
+    @State private var amount = 0
+
+    private var differsFromComputed: Bool { amount != settlement.receivable }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.gagaeBackground.ignoresSafeArea()
+                ScrollView {
+                    GagaeCard {
+                        VStack(alignment: .leading, spacing: GagaeSpacing.md) {
+                            Text("🧳 \(trip.title)").font(.gagaeHeadline).foregroundStyle(.gagaeText)
+
+                            line("공용 지출", settlement.sharedTotal)
+                            if let n = settlement.uniformParticipants, let per = settlement.perPerson {
+                                HStack {
+                                    Text("÷ \(n)명").font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+                                    Spacer()
+                                    Text("인당 \(FormatterUtils.currencyString(from: per))")
+                                        .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
+                                }
+                            } else {
+                                line("내 몫 합계", settlement.myShareTotal)
+                            }
+                            line("내가 낸 돈", settlement.paidByMeTotal)
+
+                            GagaeDivider()
+
+                            Label("받을 돈", systemImage: "wonsign.circle.fill")
+                                .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+                            HStack(spacing: GagaeSpacing.sm) {
+                                Text("₩").font(.gagaeTitle3).foregroundStyle(.gagaePinkDark)
+                                TextField("0", text: $amountText)
+                                    .font(.gagaeTitle3).keyboardType(.numberPad)
+                                    .onChange(of: amountText) { _, v in
+                                        if let r = FormatterUtils.formatCurrencyInput(v) {
+                                            amount = r.plainNumber; amountText = r.formatted
+                                        } else if v.isEmpty { amount = 0 }
+                                    }
+                            }
+                            .padding(GagaeSpacing.md).background(Color.gagaeSurface)
+                            .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
+
+                            if differsFromComputed {
+                                Text("계산과 다른 금액이에요 (계산: \(FormatterUtils.currencyString(from: settlement.receivable)))")
+                                    .font(.gagaeCaption).foregroundStyle(.gagaeWarning)
+                            }
+
+                            if let walletTitle {
+                                Text("→ 🎁 \(walletTitle) 지갑으로 돌아가요")
+                                    .font(.gagaeCalloutMedium).foregroundStyle(.gagaeGood)
+                            } else {
+                                Text("→ 오늘 예산으로 들어와요")
+                                    .font(.gagaeCalloutMedium).foregroundStyle(.gagaeGood)
+                            }
+                            Text("정산하면 이 여행에 소비를 더 넣거나 고칠 수 없어요. 필요하면 정산을 다시 열 수 있어요.")
+                                .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.horizontal, GagaeSpacing.md).padding(.top, GagaeSpacing.md)
+
+                    GagaePrimaryButton(title: amount > 0 ? "정산 완료" : "받을 돈 없이 정산 완료", isEnabled: true) {
+                        onSettle(amount); dismiss()
+                    }
+                    .padding(.horizontal, GagaeSpacing.md).padding(.top, GagaeSpacing.md)
+                }
+            }
+            .navigationTitle("정산").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("취소") { dismiss() }.foregroundStyle(.gagaePinkDark) } }
+            .onAppear {
+                amount = settlement.receivable
+                amountText = settlement.receivable > 0 ? FormatterUtils.inputAmountString(from: settlement.receivable) : ""
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func line(_ label: String, _ value: Int) -> some View {
+        HStack {
+            Text(label).font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+            Spacer()
+            Text(FormatterUtils.currencyString(from: value)).font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
+        }
+    }
+}
+```
+
+- [ ] **Step 2: `TripDetailView.swift`**
+
+```swift
+//
+//  TripDetailView.swift
+//  GagaeSsi
+//
+//  여행 상세 — 총 지출 / 내 몫 / 내가 낸 돈 / 받을 돈, 소비 목록, 정산
+//
+
+import SwiftUI
+
+struct TripDetailView: View {
+    let tripId: UUID
+
+    @Environment(AppEventBus.self) private var eventBus
+    @Environment(\.dismiss) private var dismiss
+    @State private var trip: TripModel?
+    @State private var records: [SpendingRecordModel] = []
+    @State private var settlement = TripSettlementModel.compute(records: [])
+    @State private var walletTitle: String?
+    @State private var showEdit = false
+    @State private var showSettle = false
+    @State private var showDeleteConfirm = false
+    @State private var showReopenFailed = false
+    @State private var editingRecord: SpendingRecordModel?
+
+    private let cal = Calendar.current
+
+    var body: some View {
+        ZStack {
+            Color.gagaeBackground.ignoresSafeArea()
+            if let trip {
+                ScrollView {
+                    VStack(spacing: GagaeSpacing.lg) {
+                        if trip.isSettled { settledCard(trip) } else { summaryCard }
+                        recordsSection(trip)
+                        if !trip.isSettled {
+                            GagaePrimaryButton(title: "정산하기", isEnabled: !records.isEmpty) { showSettle = true }
+                        }
+                    }
+                    .padding(.horizontal, GagaeSpacing.md)
+                    .padding(.top, GagaeSpacing.md)
+                    .padding(.bottom, GagaeSpacing.xl)
+                }
+            }
+        }
+        .navigationTitle(trip?.title ?? "여행")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(Color.gagaeBackground, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("여행 수정") { showEdit = true }
+                    Button("여행 삭제", role: .destructive) { showDeleteConfirm = true }
+                } label: {
+                    Image(systemName: "ellipsis.circle").font(.system(size: 18)).foregroundStyle(.gagaePinkDark)
+                }
+            }
+        }
+        .onAppear { load() }
+        .onChange(of: eventBus.spendingAddedTrigger) { _, _ in load() }
+        .sheet(isPresented: $showEdit) {
+            if let trip { TripEditView(mode: .edit(trip)) { load() } }
+        }
+        .sheet(isPresented: $showSettle) {
+            if let trip {
+                TripSettleSheet(trip: trip, settlement: settlement, walletTitle: walletTitle) { amount in
+                    if CoreDataManager.shared.settleTrip(id: trip.id, actualAmount: amount) {
+                        eventBus.notifySpendingAdded()   // 예산·지갑 크레딧 → 홈 갱신
+                        load()
+                    }
+                }
+            }
+        }
+        .sheet(item: $editingRecord) { record in
+            HistorySpendEditView(record: record) {
+                eventBus.notifySpendingAdded()
+                load()
+            }
+        }
+        .confirmationDialog("여행을 삭제할까요?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("삭제", role: .destructive) {
+                if CoreDataManager.shared.deleteTrip(id: tripId) {
+                    eventBus.notifySpendingAdded()
+                    dismiss()
+                }
+            }
+            Button("취소", role: .cancel) { }
+        } message: {
+            Text("소비 기록은 그대로 남고 여행 연결만 풀려요. 이미 정산한 돈은 돌려받지 않아요.")
+        }
+        .alert("되돌릴 수 없어요", isPresented: $showReopenFailed) {
+            Button("확인", role: .cancel) { }
+        } message: {
+            Text("지갑으로 돌아온 정산금을 이미 다른 소비에 써서 정산을 다시 열 수 없어요.")
+        }
+    }
+
+    // MARK: - 요약
+
+    private var summaryCard: some View {
+        GagaeCard {
+            VStack(spacing: GagaeSpacing.md) {
+                HStack(spacing: GagaeSpacing.sm) {
+                    cell("총 지출", settlement.totalPaid, .gagaeText)
+                    cell("내 몫", settlement.myShareTotal, .gagaeText)
+                }
+                HStack(spacing: GagaeSpacing.sm) {
+                    cell("내가 낸 돈", settlement.paidByMeTotal, .gagaeText)
+                    cell(settlement.receivable > 0 ? "받을 돈" : "받을 돈 없음", settlement.receivable,
+                         settlement.receivable > 0 ? .gagaeGood : .gagaeTextTertiary)
+                }
+                if walletTitle != nil {
+                    Text("🎁 지갑에서 \(FormatterUtils.currencyString(from: settlement.fromWallet)) · 예산에서 \(FormatterUtils.currencyString(from: settlement.fromBudget))")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                }
+            }
+        }
+    }
+
+    private func cell(_ label: String, _ value: Int, _ color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(label).font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+            Text(FormatterUtils.currencyString(from: value))
+                .font(.system(size: 17, weight: .heavy, design: .rounded)).foregroundStyle(color)
+                .minimumScaleFactor(0.7).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, GagaeSpacing.sm)
+        .background(Color.gagaeSurface)
+        .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
+    }
+
+    private func settledCard(_ trip: TripModel) -> some View {
+        GagaeCard {
+            VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
+                Text("✅ 정산 완료").font(.gagaeHeadline).foregroundStyle(.gagaeGood)
+                if let per = settlement.perPerson, let n = settlement.uniformParticipants {
+                    Text("인당 \(FormatterUtils.currencyString(from: per)) (\(n)명)")
+                        .font(.gagaeSubheadline).foregroundStyle(.gagaeText)
+                } else {
+                    Text("내 몫 \(FormatterUtils.currencyString(from: settlement.myShareTotal))")
+                        .font(.gagaeSubheadline).foregroundStyle(.gagaeText)
+                }
+                Text("받은 돈 \(FormatterUtils.currencyString(from: trip.settledAmount)) · \(walletTitle.map { "🎁 \($0) 지갑으로 돌아감" } ?? "오늘 예산으로 들어옴")")
+                    .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let at = trip.settledAt {
+                    Text(FormatterUtils.formattedDate(at)).font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                }
+                GagaeSecondaryButton(title: "정산 다시 열기") {
+                    if CoreDataManager.shared.reopenTrip(id: trip.id) {
+                        eventBus.notifySpendingAdded()
+                        load()
+                    } else {
+                        showReopenFailed = true
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - 소비 목록
+
+    private func recordsSection(_ trip: TripModel) -> some View {
+        VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
+            Text("소비 \(records.count)건").font(.gagaeHeadline).foregroundStyle(.gagaeText)
+            if records.isEmpty {
+                GagaeCard {
+                    GagaeEmptyStateView(icon: "🧳", title: "아직 묶인 소비가 없어요",
+                                        subtitle: "기록 탭에서 소비를 적을 때 이 여행을 고르면 여기 모여요")
+                }
+            } else {
+                ForEach(groupedByDay, id: \.day) { group in
+                    GagaeCard {
+                        VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
+                            Text(FormatterUtils.formattedDate(group.day))
+                                .font(.gagaeCaptionMedium).foregroundStyle(.gagaeTextSecondary)
+                            ForEach(group.records) { r in
+                                recordRow(r, locked: trip.isSettled)
+                                if r.id != group.records.last?.id { GagaeDivider() }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var groupedByDay: [(day: Date, records: [SpendingRecordModel])] {
+        let dict = Dictionary(grouping: records) { cal.startOfDay(for: $0.date) }
+        return dict.keys.sorted().map { (day: $0, records: dict[$0] ?? []) }
+    }
+
+    private func recordRow(_ r: SpendingRecordModel, locked: Bool) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle().fill(r.category.color.opacity(0.13)).frame(width: 34, height: 34)
+                Text(r.category.emoji).font(.system(size: 16))
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(r.title.isEmpty ? r.category.rawValue : r.title)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(.gagaeText).lineLimit(1)
+                HStack(spacing: 4) {
+                    if r.isShared {
+                        chip("\(r.participants)명")
+                        chip(r.paidByMe ? "내가 냄" : "친구가 냄")
+                    } else {
+                        chip("개인")
+                    }
+                    if r.wishItemId != nil { chip("🎁 지갑") }
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(FormatterUtils.currencyString(from: r.amount))
+                    .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gagaeText)
+                if r.isShared {
+                    Text("내 몫 \(FormatterUtils.currencyString(from: r.myShare))")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { if !locked { editingRecord = r } }
+    }
+
+    private func chip(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundStyle(.gagaeTextSecondary)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Color.gagaeSurfaceAlt).clipShape(Capsule())
+    }
+
+    // MARK: - Load
+
+    private func load() {
+        trip = CoreDataManager.shared.fetchTrip(id: tripId)
+        records = CoreDataManager.shared.fetchSpendingRecords(tripId: tripId)
+        settlement = TripSettlementModel.compute(records: records)
+        walletTitle = trip?.wishItemId.flatMap { id in
+            CoreDataManager.shared.fetchWishItems().first { $0.id == id }?.title
+        }
+    }
+}
+```
+
+- [ ] **Step 3: 빌드 확인**
+
+```bash
+xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 16' build -quiet
+```
+
+Expected: `** BUILD SUCCEEDED **`
+
+- [ ] **Step 4: 커밋 (Task 9 파일 포함)**
+
+```bash
+git add GagaeSsi/Features/Trip GagaeSsi/Features/Settings/SettingsView.swift
+git commit -m "feat: 여행 화면 — 목록·추가·상세·정산 시트, 설정 진입점
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+- [ ] **Step 5: 시뮬레이터로 전체 흐름 확인**
+
+`mcp__Claude_Code_iOS_Simulator__control`로 앱을 띄워 아래를 순서대로 확인한다. 한 항목이라도 어긋나면 해당 태스크로 돌아간다.
+
+1. 설정 › 여행 › + → "제주" / 오늘~모레 / 3명 / 지갑 연결 안 함 → 저장 → 진행 중 섹션에 나타남
+2. 기록 탭 → 소비 입력에 🧳 여행 필드가 보이고 "제주"가 **자동 선택**돼 있음, 인원 3명
+3. 금액 90,000 · "내가 냈어요" → 미리보기 "내 몫 30,000원 · 정산 때 60,000원 돌아와요" → 저장
+4. 홈: 오늘 잔액이 90,000 줄었음
+5. 기록 탭 → 30,000 · "다른 사람이 냈어요" → "내 몫 10,000원만 오늘 예산에서 빠져요" → 저장 → 홈 잔액 10,000 추가 감소
+6. 설정 › 여행 › 제주 → 총 지출 120,000 / 내 몫 40,000 / 내가 낸 돈 90,000 / 받을 돈 60,000
+7. 정산하기 → 시트에 인당 40,000 · 받을 돈 60,000 → 정산 완료 → 홈 잔액 +60,000, 목록이 정산 완료로 이동
+8. 상세에서 소비 행을 탭해도 편집이 열리지 않음 (잠김) → "정산 다시 열기" → 진행 중으로 복귀, 홈 잔액 −60,000
+9. 여행 삭제 → 기록 탭 오늘 목록에 소비 2건이 그대로 있음
+
+---
+
+### Task 11: 내역 배지 · 내 몫 표시 · 위시 정산 회수 표시
+
+**Files:**
+- Modify: `GagaeSsi/Features/History/HistoryViewModel.swift` (여행 제목 맵)
+- Modify: `GagaeSsi/Features/History/HistoryView.swift` (`recordRow`)
+- Modify: `GagaeSsi/Features/Spend/SpendView.swift` (`spendingRow`)
+- Modify: `GagaeSsi/Features/Wishlist/WishListView.swift` (지갑 표시)
+
+- [ ] **Step 1: `HistoryViewModel`에 여행 제목 맵**
+
+`private(set) var monthTotal: Int = 0` 뒤에:
+
+```swift
+    /// 여행 배지용 — 기록의 tripId → 여행 이름
+    private(set) var tripTitles: [UUID: String] = [:]
+```
+
+`load()`에서 `let records = CoreDataManager.shared.fetchSpendingRecords(year: year, month: month)` 줄 앞에:
+
+```swift
+        tripTitles = Dictionary(uniqueKeysWithValues: CoreDataManager.shared.fetchTrips().map { ($0.id, $0.title) })
+```
+
+- [ ] **Step 2: `HistoryView.recordRow` — 내 몫과 배지**
+
+`recordRow`의 `VStack(alignment: .leading, spacing: 1)` 안, 🎁 배지 블록 뒤에:
+
+```swift
+                // 여행 소비 — 배지는 여행 상세로, 공용이면 결제 정보를 한 줄 더
+                if let tripId = record.tripId {
+                    NavigationLink {
+                        TripDetailView(tripId: tripId)
+                    } label: {
+                        Text("🧳 \(viewModel.tripTitles[tripId] ?? "여행")")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.gagaePinkDark)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if record.isShared {
+                    Text("결제 \(FormatterUtils.currencyString(from: record.amount)) · \(record.participants)명 · \(record.paidByMe ? "내가 냄" : "친구가 냄")")
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                }
+```
+
+금액 표시를 내 몫으로:
+
+```swift
+            Text("-" + FormatterUtils.currencyString(from: record.myShare))
+                .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gagaeDanger)
+```
+
+- [ ] **Step 3: `SpendView.spendingRow` — 오늘 목록도 같은 규칙**
+
+`spendingRow`에서 금액 `Text("-" + FormatterUtils.currencyString(from: record.amount))`를 `record.myShare`로 바꾸고, 제목 아래 `if record.expectedPayback > 0 { ... } else { ... }` 블록 **앞**에:
+
+```swift
+                if record.isShared {
+                    Text("🧳 결제 \(FormatterUtils.currencyString(from: record.amount)) · \(record.participants)명 · \(record.paidByMe ? "내가 냄" : "친구가 냄")")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                } else if record.tripId != nil {
+                    Text("🧳 여행 개인 소비")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                }
+```
+
+- [ ] **Step 4: `WishListView` — 정산으로 돌아온 돈**
+
+`Text("모은 \(...) 중 \(...) 썼어요")` 줄 뒤에:
+
+```swift
+                    if item.returnedAmount > 0 {
+                        Text("🧳 여행 정산으로 \(FormatterUtils.currencyString(from: item.returnedAmount)) 돌아왔어요")
+                            .font(.gagaeCaption).foregroundStyle(.gagaeGood)
+                    }
+```
+
+- [ ] **Step 5: 빌드 + 전체 테스트**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -quiet
+```
+
+Expected: `** TEST SUCCEEDED **` — 전체 스위트.
+
+- [ ] **Step 6: 시뮬레이터 확인**
+
+1. 기록 탭 오늘 목록: 공용 소비 행이 내 몫 금액 + "🧳 결제 90,000 · 3명 · 내가 냄"
+2. 내역 탭: 같은 행에 `🧳 제주` 배지 → 탭하면 여행 상세로 이동
+3. 캘린더 일별 합계가 내 몫 합(40,000)
+4. 지갑 연결 여행을 정산한 뒤 설정 › 위시리스트: "🧳 여행 정산으로 X 돌아왔어요"
+
+- [ ] **Step 7: 커밋**
+
+```bash
+git add GagaeSsi/Features/History/HistoryViewModel.swift GagaeSsi/Features/History/HistoryView.swift GagaeSsi/Features/Spend/SpendView.swift GagaeSsi/Features/Wishlist/WishListView.swift
+git commit -m "feat: 내역엔 내 몫과 여행 배지, 지갑엔 정산으로 돌아온 돈
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+---
+
+## 마무리
+
+- [ ] 스펙 `상태`를 `설계 (구현 전)` → `구현 완료`로 바꾸고 커밋 (`docs:`)
+- [ ] `develop`에서 `main`으로 PR. 본문에 스펙·계획 링크와 시뮬레이터 확인 항목(Task 10 Step 5, Task 11 Step 6) 결과를 적는다.
