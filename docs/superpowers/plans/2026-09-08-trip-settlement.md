@@ -798,27 +798,23 @@ Expected: `test_친구가_낸_공용_소비는_내_몫만_빠진다` 등 4~5개 
 
 - [ ] **Step 5: `updateSpendingRecord`의 지갑 검사를 부담액 기준으로**
 
-`updateSpendingRecord`에서 `spendingRecord.title = model.title` **앞**에 한 줄 추가:
-
-```swift
-        // 지갑 잔액 검사용 — 바꾸기 전 이 기록이 지갑에서 차지하던 금액
-        let previousBudgetAmount = SpendingRecordModel(entity: spendingRecord).budgetAmount
-```
-
-그리고 기존 지갑 검사 블록을 다음으로 교체:
+기존 지갑 검사 블록을 다음으로 교체 (필드 대입 뒤, `spendingRecord.paidByMe = model.paidByMe` 다음):
 
 ```swift
         // 부담액을 올려 지갑 잔액을 넘기면 연결을 끊는다. 일부만 지갑에서 빼는 방식은
         // 같은 날 소비 순서에 따라 결과가 달라지므로 "전부 아니면 전무"로 유지한다.
-        if let wishId = spendingRecord.wishItem?.id {
-            let others = wishSpentAmount(for: wishId) - previousBudgetAmount
-            if others + model.budgetAmount > savedAmount(for: wishId) {
-                spendingRecord.wishItem = nil
-            }
+        //
+        // `wishSpentAmount`는 컨텍스트의 미저장 변경을 읽으므로 위에서 바꾼 값이 이미 반영돼 있다.
+        // 따로 빼고 더할 필요 없이, 이 지갑에서 나간 총액이 모은 돈을 넘었는지만 보면 된다.
+        if let wishId = spendingRecord.wishItem?.id,
+           wishSpentAmount(for: wishId) > savedAmount(for: wishId) {
+            spendingRecord.wishItem = nil
         }
 ```
 
-(`wishSpentAmount`는 컨텍스트의 미저장 변경도 읽으므로 이미 바뀐 `participants`/`paidByMe`가 반영된 값에서 이전 부담액을 빼야 "다른 기록들의 합"이 된다. 그래서 `previousBudgetAmount`를 필드 대입 **전에** 잡는다.)
+(별도로 `이전 부담액을 빼는` 변수는 두지 않는다. `others = wishSpentAmount(for:) − 이전 부담액`, `others + 새 부담액`을 풀어보면 이전 부담액은 상쇄되어 그냥 `wishSpentAmount(for:)`가 남는다 — 애초에 뺐다 더할 필요가 없다. `wishSpentAmount`가 이미 컨텍스트의 미저장 변경(새 `participants`/`paidByMe`가 반영된 값)을 읽으므로, "이 지갑에서 나간 총액이 모은 돈을 넘었는가"만 보면 충분하다.)
+
+**주의:** 이 Step은 실제로 `previousBudgetAmount`를 빼고 더하는 구현으로 한 번 배포되어 회귀를 냈다 (증가 방향 편집에서 `NEW − OLD`만큼 과다 계산되어 잔액 안인데도 연결이 끊김 — 자세한 내용은 커밋 로그의 수정 커밋 참고). 반드시 위 collapsed 형태로 구현한다.
 
 - [ ] **Step 6: 테스트 통과 + 회귀 확인**
 
@@ -827,6 +823,24 @@ xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination '
 ```
 
 Expected: `** TEST SUCCEEDED **`. 여행이 아닌 소비는 `budgetAmount == amount`라 기존 테스트가 그대로 통과해야 한다.
+
+`TripTests.swift`에 아래 회귀 테스트도 포함한다 — 금액을 올려도 잔액 안이면 연결이 유지되는 방향은 기존 테스트 목록에 없어 회귀가 그대로 배포됐던 지점이다:
+
+```swift
+    /// 금액을 올려도 잔액 안이면 연결이 유지돼야 한다.
+    /// (연결이 끊기면 그 돈이 예산으로 되돌아와 그날을 초과로 만들고 이월까지 타고 내려간다)
+    func test_금액을_올려도_잔액_안이면_연결이_유지된다() {
+        let wallet = seedWallet(100_000)
+        var record = SpendingRecordModel(title: "여행", amount: 50_000, date: day(0))
+        XCTAssertTrue(sut.createSpendingRecord(record))
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: record.id, wishItemId: wallet))
+
+        record.amount = 80_000
+        XCTAssertTrue(sut.updateSpendingRecord(record))
+        XCTAssertEqual(sut.wishSpentAmount(for: wallet), 80_000, "잔액 안이면 지갑에 그대로 붙어 있어야 한다")
+        XCTAssertNotNil(sut.fetchSpendingRecords(date: day(0)).first { $0.id == record.id }?.wishItemId)
+    }
+```
 
 - [ ] **Step 7: 커밋**
 
@@ -849,6 +863,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `GagaeSsi/Models/SpendingCSVExporter.swift` (`header`, `makeCSV`)
 - Modify: `GagaeSsi/Features/Home/HomeViewModel.swift` (195행)
 - Modify: `GagaeSsi/Features/Spend/SpendView.swift` (`totalSpentToday`)
+- Modify: `GagaeSsi/Core/CoreDataManager.swift` (`recentAverageDailySpending`, 1704행)
 - Test: `GagaeSsiTests/CategorySpendingTests.swift`, `GagaeSsiTests/DataExportTests.swift`
 
 - [ ] **Step 1: 실패하는 테스트 추가**
@@ -918,7 +933,19 @@ Expected: 새 테스트 2개 + 헤더/환급 단정 FAIL.
 
 `TimeSlot.swift` 71행: `bySlot[slot, default: 0] += record.myShare`
 
-`HomeViewModel` 195행: `let spent = model.spendingRecords.map { $0.myShare }.reduce(0, +)`
+`HomeViewModel` 195행: `let spent = model.budgetedSpending`
+
+(`myShare`가 아니라 `budgetedSpending`을 쓴다. 이 값은 홈 카드의 "🛒 오늘 소비" 줄이고, 그
+카드는 기본 예산 / 이월 / 위시 저금 / 초과분 상환 / 저축·투자 / 오늘 소비 → 잔여 예산으로
+이어지는 예산 장부라 각 줄이 `budgetAmount` 계열이어야 합이 맞는다. 내가 90,000을 결제하고
+3명이 나눴으면 예산에서는 90,000이 빠지는데 `myShare`로는 30,000만 표시돼 60,000이 설명되지
+않는 채로 남는다. 같은 값이 돼지 캐릭터 상태(`CharacterState.from(spent:base:)`)에도 들어가
+실제로는 90,000이 나간 날에 30,000만 쓴 것처럼 웃는 얼굴을 보여주게 된다.
+`myShare`는 통계·내역·CSV처럼 "내가 실제로 소비한 몫"을 보는 화면의 렌즈이고, 홈 카드는
+"예산에서 얼마가 빠졌는가"를 보는 화면이라 렌즈가 다르다. `budgetAmount`는 지갑에서 쓴
+소비를 제외하지 않으므로, 위시 지갑에 연결된 소비가 있으면 `budgetedSpending`을 함께 쓴다
+— Task 3에서 지갑 연결 소비를 빼도록 이미 고쳐둔 계산이라, 기존에 있던 지갑 연결 소비와의
+불일치도 이 변경이 덤으로 바로잡는다.)
 
 `SpendView` 맨 아래 extension:
 
@@ -939,6 +966,14 @@ extension SpendViewModel {
 
 `makeCSV`의 `fields` 배열에서 `String(record.amount),` 뒤에 `String(record.myShare),` 추가.
 
+`CoreDataManager.recentAverageDailySpending`: `records.reduce(0) { $0 + $1.amount } / days` →
+`records.reduce(0) { $0 + $1.budgetAmount } / days`.
+
+(이 값은 통계가 아니라 `HomeViewModel.isDebtOffTrack`/`debtDailyCutNeeded`가 쓰는 "이대로면
+부채가 줄지 않아요" 경고의 입력이라 예산 표면이다. 하루 예산과 비교하는 값이므로 실제로
+예산에서 빠져나간 돈(`budgetAmount`) 기준이어야 한다 — 친구가 낸 여행비까지 `amount`로
+합산하면 7일 평균이 부풀어 경고가 잘못 뜬다.)
+
 - [ ] **Step 4: 테스트 통과 확인**
 
 ```bash
@@ -950,7 +985,7 @@ Expected: `** TEST SUCCEEDED **`
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add GagaeSsi/Features/History/HistoryViewModel.swift GagaeSsi/Features/Stats/StatsViewModel.swift GagaeSsi/Models/CategorySpendingModels.swift GagaeSsi/Models/TimeSlot.swift GagaeSsi/Models/SpendingCSVExporter.swift GagaeSsi/Features/Home/HomeViewModel.swift GagaeSsi/Features/Spend/SpendView.swift GagaeSsiTests/CategorySpendingTests.swift GagaeSsiTests/DataExportTests.swift
+git add GagaeSsi/Features/History/HistoryViewModel.swift GagaeSsi/Features/Stats/StatsViewModel.swift GagaeSsi/Models/CategorySpendingModels.swift GagaeSsi/Models/TimeSlot.swift GagaeSsi/Models/SpendingCSVExporter.swift GagaeSsi/Features/Home/HomeViewModel.swift GagaeSsi/Features/Spend/SpendView.swift GagaeSsi/Core/CoreDataManager.swift GagaeSsiTests/CategorySpendingTests.swift GagaeSsiTests/DataExportTests.swift
 git commit -m "feat: 내역·통계는 내가 소비한 몫으로 — 결제 대행분은 소비가 아니다
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"

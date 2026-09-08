@@ -635,9 +635,6 @@ final class CoreDataManager {
             targetBudget.addToSpendingRecords(spendingRecord)
         }
 
-        // 지갑 잔액 검사용 — 바꾸기 전 이 기록이 지갑에서 차지하던 금액
-        let previousBudgetAmount = SpendingRecordModel(entity: spendingRecord).budgetAmount
-
         spendingRecord.title = model.title
         spendingRecord.amount = NSDecimalNumber(value: model.amount)
         spendingRecord.date = model.date   // 전체 타임스탬프 보존 (시간대 리포트용)
@@ -649,11 +646,12 @@ final class CoreDataManager {
 
         // 부담액을 올려 지갑 잔액을 넘기면 연결을 끊는다. 일부만 지갑에서 빼는 방식은
         // 같은 날 소비 순서에 따라 결과가 달라지므로 "전부 아니면 전무"로 유지한다.
-        if let wishId = spendingRecord.wishItem?.id {
-            let others = wishSpentAmount(for: wishId) - previousBudgetAmount
-            if others + model.budgetAmount > savedAmount(for: wishId) {
-                spendingRecord.wishItem = nil
-            }
+        //
+        // `wishSpentAmount`는 컨텍스트의 미저장 변경을 읽으므로 위에서 바꾼 값이 이미 반영돼 있다.
+        // 따로 빼고 더할 필요 없이, 이 지갑에서 나간 총액이 모은 돈을 넘었는지만 보면 된다.
+        if let wishId = spendingRecord.wishItem?.id,
+           wishSpentAmount(for: wishId) > savedAmount(for: wishId) {
+            spendingRecord.wishItem = nil
         }
 
         guard saveContext() else { return false }
@@ -1914,6 +1912,7 @@ final class CoreDataManager {
     func wishSpentAmount(for wishItemId: UUID) -> Int {
         let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
         request.predicate = NSPredicate(format: "wishItem.id == %@", wishItemId as CVarArg)
+        request.relationshipKeyPathsForPrefetching = ["wishItem", "trip"]
         let records = (try? context.fetch(request)) ?? []
         return records.reduce(0) { $0 + SpendingRecordModel(entity: $1).budgetAmount }
     }

@@ -109,6 +109,7 @@ enum OverspendAnalyzer {
         //
         // 위시 지갑에서 쓴 소비도 뺀다 — 모아둔 돈에서 나간 것이라 그날 과소비가 아니다.
         // 넣으면 여행 기간이 통째로 '초과한 날'이 되고 부채로까지 전환된다.
+        // 친구가 낸 공용 소비도 내 몫만 — 대신 결제해준 돈은 그날의 과소비가 아니다.
         let outgoing = budget.budgetedSpending
         return DayEvaluation(allowance: allowance, outgoing: outgoing)
     }
