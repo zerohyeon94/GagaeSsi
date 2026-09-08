@@ -140,4 +140,71 @@ final class TripSettlementTests: XCTestCase {
         XCTAssertEqual(afterDelete.count, 1, "여행을 지워도 소비 기록은 남아야 한다")
         XCTAssertNil(afterDelete[0].tripId, "지워진 여행과의 연결은 nil이 되어야 한다")
     }
+
+    // MARK: - 정산 집계
+
+    /// 3명, 내가 점심 10만·저녁 20만·아침 15만을 다 냈다 → 인당 15만, 30만 돌려받는다
+    func test_내가_다_낸_여행은_인당_금액과_받을_돈이_나온다() {
+        let s = TripSettlementModel.compute(records: [
+            record(100_000, participants: 3), record(200_000, participants: 3), record(150_000, participants: 3),
+        ])
+        XCTAssertEqual(s.totalPaid, 450_000)
+        XCTAssertEqual(s.sharedTotal, 450_000)
+        XCTAssertEqual(s.myShareTotal, 150_000)
+        XCTAssertEqual(s.paidByMeTotal, 450_000)
+        XCTAssertEqual(s.receivable, 300_000)
+        XCTAssertEqual(s.perPerson, 150_000)
+    }
+
+    func test_친구가_낸_숙소는_내_몫만_집계되고_받을_돈은_없다() {
+        let s = TripSettlementModel.compute(records: [record(300_000, participants: 3, paidByMe: false)])
+        XCTAssertEqual(s.totalPaid, 300_000)
+        XCTAssertEqual(s.myShareTotal, 100_000)
+        XCTAssertEqual(s.paidByMeTotal, 0)
+        XCTAssertEqual(s.receivable, 0)
+    }
+
+    func test_항목별_인원이_섞이면_항목별_몫의_합이고_인당_금액은_없다() {
+        let s = TripSettlementModel.compute(records: [
+            record(300_000, participants: 3, paidByMe: false),   // 숙소 3명 → 내 몫 10만
+            record(80_000, participants: 2, paidByMe: true),     // 저녁 2명 → 내 몫 4만, 4만 돌아옴
+            record(3_000, participants: 1),                      // 기념품 → 내 몫 3천
+        ])
+        XCTAssertEqual(s.myShareTotal, 143_000)
+        XCTAssertEqual(s.sharedTotal, 380_000)
+        XCTAssertEqual(s.receivable, 40_000)
+        XCTAssertNil(s.perPerson)
+    }
+
+    func test_지갑에서_빠진_돈과_예산에서_빠진_돈이_갈린다() {
+        let wallet = UUID()
+        let s = TripSettlementModel.compute(records: [
+            record(90_000, participants: 3, paidByMe: true, wishItemId: wallet),   // 지갑에서 9만
+            record(60_000, participants: 3, paidByMe: false, wishItemId: wallet),  // 지갑에서 내 몫 2만
+            record(30_000, participants: 3, paidByMe: true),                       // 예산에서 3만
+        ])
+        XCTAssertEqual(s.fromWallet, 110_000)
+        XCTAssertEqual(s.fromBudget, 30_000)
+    }
+
+    func test_소비가_없으면_전부_0이다() {
+        let s = TripSettlementModel.compute(records: [])
+        XCTAssertEqual(s, TripSettlementModel(totalPaid: 0, sharedTotal: 0, myShareTotal: 0,
+                                              paidByMeTotal: 0, receivable: 0,
+                                              fromWallet: 0, fromBudget: 0, uniformParticipants: nil))
+    }
+
+    // MARK: - TripModel
+
+    func test_여행_기간_포함_판정은_시작일과_종료일을_포함한다() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let end = cal.date(byAdding: .day, value: 2, to: start)!
+        let trip = TripModel(title: "제주", startDate: start, endDate: end, defaultParticipants: 3)
+        XCTAssertTrue(trip.contains(start))
+        XCTAssertTrue(trip.contains(cal.date(byAdding: .hour, value: 30, to: start)!))
+        XCTAssertTrue(trip.contains(end))
+        XCTAssertFalse(trip.contains(cal.date(byAdding: .day, value: -1, to: start)!))
+        XCTAssertFalse(trip.contains(cal.date(byAdding: .day, value: 3, to: start)!))
+    }
 }
