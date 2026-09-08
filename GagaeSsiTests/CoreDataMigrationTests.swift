@@ -348,6 +348,11 @@ final class CoreDataMigrationTests: XCTestCase {
 
         let records = try newContext.fetch(NSFetchRequest<SpendingRecord>(entityName: "SpendingRecord"))
         XCTAssertEqual(records.count, 1)
+        // 모델 변환(SpendingRecordModel.init)은 participants에 max(1, ...) 보정을 걸어서,
+        // defaultValueString="1"이 모델에서 빠지더라도 이 보정이 0을 1로 감춰버릴 수 있다.
+        // 그래서 모델을 거치기 전 원본 엔티티 값을 먼저 직접 확인한다.
+        XCTAssertEqual(records[0].participants, 1, "모델의 기본값이 빠지면 0이 되므로 원본 값을 직접 확인한다")
+        XCTAssertTrue(records[0].paidByMe)
         let migrated = SpendingRecordModel(entity: records[0])
         XCTAssertNil(migrated.tripId)
         XCTAssertEqual(migrated.participants, 1)

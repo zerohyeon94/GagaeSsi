@@ -462,8 +462,13 @@ struct SpendingRecordModel: Identifiable {
     var paybackReceived: Bool
     /// 모아둔 위시 지갑에서 쓴 소비면 그 위시 id. nil이면 평소 소비.
     /// 연결된 소비는 이미 저금으로 예산에서 빠진 돈이라 하루 예산에서 다시 빼지 않는다.
+    /// `createSpendingRecord`/`updateSpendingRecord`는 이 관계를 저장하지 않는다 —
+    /// 저장 뒤 `linkSpendingToWish`로 따로 연결한다. 그래서 이 값을 설정하고 저장·재조회하면 nil로 보일 수 있다.
     var wishItemId: UUID?
     /// 여행에 묶인 소비면 그 여행 id. nil이면 평소 소비.
+    /// `createSpendingRecord`/`updateSpendingRecord`는 이 관계도 저장하지 않는다 —
+    /// 전용 연결 API(여행판 `linkSpendingToWish` 격)로 따로 연결한다. 마찬가지로 설정만 하고
+    /// 저장·재조회하면 nil로 보일 수 있다.
     var tripId: UUID?
     /// 이 소비를 나누는 인원. 1이면 공용이 아닌 내 소비.
     var participants: Int
@@ -473,12 +478,20 @@ struct SpendingRecordModel: Identifiable {
     /// 순 지출 (실지출 − 환급 예정)
     var netAmount: Int { amount - expectedPayback }
 
-    // MARK: 여행 파생값 — 저장하지 않는다. 여행이 아닌 소비는 셋 다 amount와 같다.
+    // MARK: 분담(N빵) 파생값 — 저장하지 않는다. 여행이 아닌 소비는 셋 다 amount와 같다.
+    // tripId와는 무관하다 — participants만으로 결정되므로, 여행에 묶이지 않아도
+    // participants가 3이면 이 값들은 그대로 적용된다.
+    /// 아직 읽는 곳이 없다 — 예산·통계 계산이 이 값으로 옮겨가는 건 다음 작업이다.
 
     /// 공용 소비인지 (N빵 대상)
     var isShared: Bool { participants > 1 }
-    /// 내가 소비한 몫. 공용이면 인원으로 나눈다 (원 단위 내림). 내역·통계는 이 값을 합친다.
-    var myShare: Int { participants > 1 ? amount / participants : amount }
+    /// 내가 소비한 몫. 공용이면 인원으로 나눈다 (원 단위 버림 — 금액은 음수가 아니므로
+    /// 정수 나눗셈의 0-방향 truncation이 곧 내림과 같다). 내역·통계는 이 값을 합친다.
+    var myShare: Int {
+        // participants > 1 가드는 단순 성능 지름길이 아니라, 오래된 데이터 등으로
+        // participants가 0인 값이 흘러들어와도 0으로 나누지 않게 막는 안전장치다.
+        participants > 1 ? amount / participants : amount
+    }
     /// 그날 예산(또는 지갑)에서 빠지는 돈. 내가 냈으면 전액, 남이 냈으면 내 몫.
     var budgetAmount: Int { paidByMe ? amount : myShare }
     /// 정산 때 돌아오는 남의 몫. 남이 낸 소비는 0.
@@ -498,7 +511,8 @@ struct SpendingRecordModel: Identifiable {
         self.paybackReceived = paybackReceived
         self.wishItemId = wishItemId
         self.tripId = tripId
-        self.participants = max(1, participants)
+        // 인원은 1명 이상, 저장 한계(Int16)를 넘지 않는 범위로 (999명이면 충분하다)
+        self.participants = min(999, max(1, participants))
         self.paidByMe = paidByMe
     }
 
@@ -513,7 +527,8 @@ struct SpendingRecordModel: Identifiable {
         self.paybackReceived = entity.paybackReceived
         self.wishItemId = entity.wishItem?.id
         self.tripId = entity.trip?.id
-        self.participants = max(1, Int(entity.participants))
+        // 인원은 1명 이상, 저장 한계(Int16)를 넘지 않는 범위로 (999명이면 충분하다)
+        self.participants = min(999, max(1, Int(entity.participants)))
         self.paidByMe = entity.paidByMe
     }
 }

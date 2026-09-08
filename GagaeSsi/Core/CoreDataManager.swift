@@ -565,7 +565,7 @@ final class CoreDataManager {
         newSpendingRecord.category = model.category.rawValue
         newSpendingRecord.expectedPayback = Int32(model.expectedPayback)
         newSpendingRecord.paybackReceived = model.paybackReceived
-        newSpendingRecord.participants = Int16(model.participants)
+        newSpendingRecord.participants = Int16(clamping: model.participants)
         newSpendingRecord.paidByMe = model.paidByMe
         newSpendingRecord.dailyBudget = dailyBudget
         dailyBudget.addToSpendingRecords(newSpendingRecord)
@@ -641,7 +641,7 @@ final class CoreDataManager {
         spendingRecord.category = model.category.rawValue
         spendingRecord.expectedPayback = Int32(model.expectedPayback)
         spendingRecord.paybackReceived = model.paybackReceived
-        spendingRecord.participants = Int16(model.participants)
+        spendingRecord.participants = Int16(clamping: model.participants)
         spendingRecord.paidByMe = model.paidByMe
 
         // 금액을 올려 지갑 잔액을 넘기면 연결을 끊는다. 일부만 지갑에서 빼는 방식은

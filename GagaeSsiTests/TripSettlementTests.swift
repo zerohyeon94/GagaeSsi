@@ -7,6 +7,7 @@
 //
 
 import XCTest
+import CoreData
 @testable import GagaeSsi
 
 final class TripSettlementTests: XCTestCase {
@@ -59,5 +60,84 @@ final class TripSettlementTests: XCTestCase {
         let r = SpendingRecordModel(title: "지출", amount: 10_000, date: Date(), participants: 0)
         XCTAssertEqual(r.participants, 1)
         XCTAssertEqual(r.myShare, 10_000)
+    }
+
+    func test_인원은_저장_한계를_넘지_않게_잘린다() {
+        let r = SpendingRecordModel(title: "지출", amount: 10_000, date: Date(), participants: 100_000)
+        XCTAssertEqual(r.participants, 999)
+    }
+
+    // MARK: - 편집 회귀
+
+    /// 폼이 다루지 않는 필드는 편집으로 덮이면 안 된다.
+    /// (인원·결제자는 아직 UI가 없지만, 데이터 계층은 이미 두 컬럼을 쓴다)
+    ///
+    /// `SpendViewModel`은 `CoreDataManager.shared`를 직접 참조해서 in-memory
+    /// 테스트 스토어로 갈아끼울 수 없다. 그래서 여기서는 `beginEdit` + `saveSpending`이
+    /// 실제로 하는 일 — 편집 대상 기록으로 model을 시작하고, 폼이 다루는 필드(제목)만
+    /// 바꾼 뒤 `updateSpendingRecord`를 호출하는 흐름 — 을 데이터 계층 한 단계 아래서
+    /// 그대로 재현해 같은 불변조건을 검증한다.
+    /// `beginEdit`이 실제로 `model = record`를 대입하는지는 코드 검토로 확인했다
+    /// (SpendViewModel.swift의 beginEdit 첫 줄).
+    func test_폼이_다루지_않는_필드는_수정으로_덮이지_않는다() {
+        let sut = CoreDataManager(inMemory: true)
+        sut.resetAllData()
+        let day = Calendar.current.startOfDay(for: Date())
+        _ = sut.createDailyBudget(DailyBudgetModel(availableAmount: 100_000, date: day,
+                                                   carryOverSources: [], spendingRecords: []))
+        let record = SpendingRecordModel(title: "저녁", amount: 90_000, date: day,
+                                         participants: 3, paidByMe: false)
+        XCTAssertTrue(sut.createSpendingRecord(record))
+
+        // beginEdit: 편집 대상 기록을 그대로 싣고 시작
+        var model = sut.fetchSpendingRecords(date: day)[0]
+        // saveSpending: 폼이 다루는 필드만 갱신 (여기선 제목만 바꾼다)
+        model.title = "저녁 회식"
+        XCTAssertTrue(sut.updateSpendingRecord(model))
+
+        let saved = sut.fetchSpendingRecords(date: day)[0]
+        XCTAssertEqual(saved.title, "저녁 회식")
+        XCTAssertEqual(saved.participants, 3, "인원이 기본값으로 덮이면 안 된다")
+        XCTAssertFalse(saved.paidByMe, "결제자가 기본값으로 덮이면 안 된다")
+    }
+
+    // MARK: - 삭제 규칙
+
+    /// Trip.spendingRecords는 deletionRule="Nullify"다. 여행을 지워도 소비 기록 자체는
+    /// 남아야 한다 (Cascade로 바뀌면 실제 소비 내역이 통째로 사라진다).
+    /// 아직 createTrip API가 없으므로(Task 5) 마이그레이션 테스트들과 같은 방식으로
+    /// NSEntityDescription을 통해 직접 삽입한다.
+    func test_여행을_지워도_소비_기록은_지워지지_않는다() {
+        let sut = CoreDataManager(inMemory: true)
+        sut.resetAllData()
+        let day = Calendar.current.startOfDay(for: Date())
+        _ = sut.createDailyBudget(DailyBudgetModel(availableAmount: 100_000, date: day,
+                                                   carryOverSources: [], spendingRecords: []))
+        let record = SpendingRecordModel(title: "숙소", amount: 120_000, date: day)
+        XCTAssertTrue(sut.createSpendingRecord(record))
+
+        let context = sut.context
+        let trip = NSEntityDescription.insertNewObject(forEntityName: "Trip", into: context)
+        trip.setValue(UUID(), forKey: "id")
+        trip.setValue("제주", forKey: "title")
+        trip.setValue(Date(), forKey: "startDate")
+        trip.setValue(Date(), forKey: "endDate")
+        trip.setValue(Int16(3), forKey: "defaultParticipants")
+        trip.setValue("진행중", forKey: "status")
+        trip.setValue(Date(), forKey: "createdAt")
+
+        guard let entity = sut.fetchSpendingRecordEntity(id: record.id) else {
+            XCTFail("방금 만든 소비 기록을 찾지 못함")
+            return
+        }
+        entity.setValue(trip, forKey: "trip")
+        XCTAssertTrue(sut.saveContext())
+
+        context.delete(trip)
+        XCTAssertTrue(sut.saveContext())
+
+        let afterDelete = sut.fetchSpendingRecords(date: day)
+        XCTAssertEqual(afterDelete.count, 1, "여행을 지워도 소비 기록은 남아야 한다")
+        XCTAssertNil(afterDelete[0].tripId, "지워진 여행과의 연결은 nil이 되어야 한다")
     }
 }

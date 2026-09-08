@@ -155,6 +155,9 @@ final class SpendViewModel {
 
     /// 편집 시작: 선택한 기록 값을 입력 폼에 채움
     func beginEdit(_ record: SpendingRecordModel) {
+        // 폼이 다루지 않는 필드(인원·결제자·여행 연결 등)가 저장 때 기본값으로 덮이지 않도록
+        // 편집 대상 기록을 그대로 싣고 시작한다
+        model = record
         editingRecordId = record.id
         tempTitle = record.title
         tempAmount = record.amount
