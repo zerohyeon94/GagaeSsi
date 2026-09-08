@@ -381,7 +381,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
         XCTAssertEqual(s.myShareTotal, 149_999)
         XCTAssertEqual(s.paidByMeTotal, 450_000)
         XCTAssertEqual(s.receivable, 300_001)
-        XCTAssertEqual(s.perPerson, 150_000)   // 표시용 인당 금액은 합계를 나눈 값이라 15만이 맞다
+        XCTAssertEqual(s.perPersonSpending, 150_000)   // 표시용 인당 금액은 합계를 나눈 값이라 15만이 맞다
     }
 
     func test_친구가_낸_숙소는_내_몫만_집계되고_받을_돈은_없다() {
@@ -401,7 +401,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
         XCTAssertEqual(s.myShareTotal, 143_000)
         XCTAssertEqual(s.sharedTotal, 380_000)
         XCTAssertEqual(s.receivable, 40_000)
-        XCTAssertNil(s.perPerson)
+        XCTAssertNil(s.perPersonSpending)
     }
 
     func test_지갑에서_빠진_돈과_예산에서_빠진_돈이_갈린다() {
@@ -562,7 +562,7 @@ struct TripSettlementModel: Equatable {
     let uniformParticipants: Int?
 
     /// 인원이 하나로 통일돼 있을 때의 인당 금액 (공용 합 ÷ 인원, 내림)
-    var perPerson: Int? {
+    var perPersonSpending: Int? {
         guard let n = uniformParticipants, n > 0 else { return nil }
         return sharedTotal / n
     }
@@ -1071,7 +1071,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
         spend(150_000, on: 1, participants: 3, tripId: trip.id)
 
         let s = sut.tripSettlement(for: trip.id)
-        XCTAssertEqual(s.perPerson, 150_000)
+        XCTAssertEqual(s.perPersonSpending, 150_000)
         XCTAssertEqual(s.paidByMeTotal, 450_000)
         // 10만·20만은 3으로 나누어떨어지지 않아 항목별 버림의 나머지가 여기 붙는다
         XCTAssertEqual(s.receivable, 300_001)
@@ -2322,7 +2322,7 @@ struct TripSettleSheet: View {
                             Text("🧳 \(trip.title)").font(.gagaeHeadline).foregroundStyle(.gagaeText)
 
                             line("공용 지출", settlement.sharedTotal)
-                            if let n = settlement.uniformParticipants, let per = settlement.perPerson {
+                            if let n = settlement.uniformParticipants, let per = settlement.perPersonSpending {
                                 HStack {
                                     Text("÷ \(n)명").font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
                                     Spacer()
@@ -2536,7 +2536,7 @@ struct TripDetailView: View {
         GagaeCard {
             VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
                 Text("✅ 정산 완료").font(.gagaeHeadline).foregroundStyle(.gagaeGood)
-                if let per = settlement.perPerson, let n = settlement.uniformParticipants {
+                if let per = settlement.perPersonSpending, let n = settlement.uniformParticipants {
                     Text("인당 \(FormatterUtils.currencyString(from: per)) (\(n)명)")
                         .font(.gagaeSubheadline).foregroundStyle(.gagaeText)
                 } else {

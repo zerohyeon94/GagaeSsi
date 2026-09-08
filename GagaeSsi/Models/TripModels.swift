@@ -17,7 +17,7 @@ enum TripStatus: String, Codable {
 }
 
 // MARK: - 여행 모델
-struct TripModel: Identifiable {
+struct TripModel: Identifiable, Equatable {
     var id: UUID
     var title: String
     var startDate: Date
@@ -49,8 +49,10 @@ struct TripModel: Identifiable {
         self.id = id
         self.title = title
         self.startDate = startDate
-        self.endDate = endDate
-        self.defaultParticipants = max(1, defaultParticipants)
+        // 종료일이 시작일보다 앞서면 기간 판정이 모든 날짜에 대해 거짓이 된다 — 하루짜리로 접는다
+        self.endDate = max(startDate, endDate)
+        // 소비 기록의 인원 한계(999명)와 맞춘다 — 여행 기본값이 더 크면 항목마다 잘려 어긋난다
+        self.defaultParticipants = min(999, max(1, defaultParticipants))
         self.status = status
         self.settledAt = settledAt
         self.settledAmount = settledAmount
@@ -64,8 +66,10 @@ struct TripModel: Identifiable {
         self.id = entity.id ?? UUID()
         self.title = entity.title ?? ""
         self.startDate = entity.startDate ?? Date()
-        self.endDate = entity.endDate ?? self.startDate
-        self.defaultParticipants = max(1, Int(entity.defaultParticipants))
+        // 종료일이 시작일보다 앞서면 기간 판정이 모든 날짜에 대해 거짓이 된다 — 하루짜리로 접는다
+        self.endDate = max(self.startDate, entity.endDate ?? self.startDate)
+        // 소비 기록의 인원 한계(999명)와 맞춘다 — 여행 기본값이 더 크면 항목마다 잘려 어긋난다
+        self.defaultParticipants = min(999, max(1, Int(entity.defaultParticipants)))
         self.status = TripStatus.from(entity.status)
         self.settledAt = entity.settledAt
         self.settledAmount = Int(entity.settledAmount)
@@ -96,8 +100,14 @@ struct TripSettlementModel: Equatable {
     /// 공용 소비의 인원이 전부 같으면 그 값. 섞여 있으면 nil ("인당" 줄을 보여줄지 판단)
     let uniformParticipants: Int?
 
-    /// 인원이 하나로 통일돼 있을 때의 인당 금액 (공용 합 ÷ 인원, 내림)
-    var perPerson: Int? {
+    /// 이 여행이 예산·지갑에서 실제로 빼간 돈 (지갑 + 예산). 정산 화면의 "지갑에서 X · 예산에서 Y" 합계.
+    var budgetTotal: Int { fromWallet + fromBudget }
+
+    /// **표시용** 인당 소비액 (공용 합 ÷ 인원, 내림). 공용 소비가 없으면 nil.
+    ///
+    /// 받을 돈 계산에 쓰면 안 된다 — `perPersonSpending × (인원−1)`은 항목별 버림 나머지 때문에
+    /// `receivable`과 어긋난다. 친구 개인별 채권은 이 앱의 범위 밖이다 (설계 9절).
+    var perPersonSpending: Int? {
         guard let n = uniformParticipants, n > 0 else { return nil }
         return sharedTotal / n
     }

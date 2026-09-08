@@ -112,6 +112,14 @@ struct TripSettlementModel {
     let receivable: Int     // Σ receivable — 정산 때 돌아올 남의 몫
     let fromWallet: Int     // 지갑에 연결된 소비의 budgetAmount 합
     let fromBudget: Int     // 나머지 budgetAmount 합
+    let uniformParticipants: Int?  // 공용 소비 인원이 전부 같으면 그 값, 섞여 있으면 nil
+
+    var budgetTotal: Int { fromWallet + fromBudget }  // 지갑 + 예산 — 정산 화면 합계용
+    var perPersonSpending: Int? {   // 표시용 인당 소비액 (sharedTotal ÷ uniformParticipants, 내림)
+        guard let n = uniformParticipants, n > 0 else { return nil }
+        return sharedTotal / n
+    }
+
     static func compute(records: [SpendingRecordModel]) -> TripSettlementModel
 }
 ```
@@ -249,7 +257,7 @@ func reopenTrip(id: UUID) -> Bool
 ## 10. 테스트 계획
 
 **`TripSettlementTests`** (순수 계산, CoreData 없음)
-- 3명·내가 45만 결제(10+20+15) → 항목별로 버림해 더하므로 `myShareTotal 149,999 · receivable 300,001` (표시용 `perPerson`은 15만)
+- 3명·내가 45만 결제(10+20+15) → 항목별로 버림해 더하므로 `myShareTotal 149,999 · receivable 300,001` (표시용 `perPersonSpending`은 15만)
 - 친구가 낸 30만 숙소 3명 → `myShare 10만 · budgetAmount 10만 · receivable 0`
 - 항목별 인원 혼재(3명 숙소 + 2명 저녁) → 합산이 항목별 몫의 합
 - `participants = 1` → 셋 다 `amount`, `receivable 0`

@@ -155,7 +155,7 @@ final class TripSettlementTests: XCTestCase {
         XCTAssertEqual(s.myShareTotal, 149_999)
         XCTAssertEqual(s.paidByMeTotal, 450_000)
         XCTAssertEqual(s.receivable, 300_001)
-        XCTAssertEqual(s.perPerson, 150_000)   // 표시용 인당 금액은 합계를 나눈 값이라 15만이 맞다
+        XCTAssertEqual(s.perPersonSpending, 150_000)   // 표시용 인당 금액은 합계를 나눈 값이라 15만이 맞다
     }
 
     func test_친구가_낸_숙소는_내_몫만_집계되고_받을_돈은_없다() {
@@ -175,7 +175,18 @@ final class TripSettlementTests: XCTestCase {
         XCTAssertEqual(s.myShareTotal, 143_000)
         XCTAssertEqual(s.sharedTotal, 380_000)
         XCTAssertEqual(s.receivable, 40_000)
-        XCTAssertNil(s.perPerson)
+        XCTAssertNil(s.perPersonSpending)
+    }
+
+    /// 개인 소비가 섞여도 공용 인원이 하나면 인당 금액이 나와야 한다.
+    /// (`participants` 집합에 개인 소비까지 넣으면 인당 줄이 조용히 사라진다)
+    func test_개인_소비가_섞여도_공용_인원이_같으면_인당_금액이_나온다() {
+        let s = TripSettlementModel.compute(records: [
+            record(300_000, participants: 3), record(150_000, participants: 3),
+            record(3_000, participants: 1),   // 기념품 — 인당 계산에 끼면 안 된다
+        ])
+        XCTAssertEqual(s.perPersonSpending, 150_000, "개인 소비는 공용 합에도 인원 집합에도 들어가지 않는다")
+        XCTAssertEqual(s.sharedTotal, 450_000)
     }
 
     func test_지갑에서_빠진_돈과_예산에서_빠진_돈이_갈린다() {
@@ -209,6 +220,8 @@ final class TripSettlementTests: XCTestCase {
         XCTAssertEqual(budgetDeducted - s.receivable, s.myShareTotal)
         XCTAssertEqual(s.myShareTotal, records.reduce(0) { $0 + $1.myShare },
                        "통계가 더하는 방식과 같아야 한다")
+        XCTAssertEqual(s.budgetTotal - s.receivable, s.myShareTotal,
+                       "집계값끼리도 장부가 맞아떨어져야 한다 (지갑/예산 분리가 깨지면 여기서 잡힌다)")
     }
 
     // MARK: - TripModel
@@ -223,5 +236,20 @@ final class TripSettlementTests: XCTestCase {
         XCTAssertTrue(trip.contains(end))
         XCTAssertFalse(trip.contains(cal.date(byAdding: .day, value: -1, to: start)!))
         XCTAssertFalse(trip.contains(cal.date(byAdding: .day, value: 3, to: start)!))
+    }
+
+    func test_종료일이_시작일보다_앞서면_하루짜리로_접힌다() {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let trip = TripModel(title: "거꾸로", startDate: start,
+                             endDate: cal.date(byAdding: .day, value: -3, to: start)!)
+        XCTAssertEqual(trip.endDate, start)
+        XCTAssertTrue(trip.contains(start))
+    }
+
+    func test_여행_인원도_소비와_같은_한계로_잘린다() {
+        let trip = TripModel(title: "대규모", startDate: Date(), endDate: Date(),
+                             defaultParticipants: 5_000)
+        XCTAssertEqual(trip.defaultParticipants, 999)
     }
 }

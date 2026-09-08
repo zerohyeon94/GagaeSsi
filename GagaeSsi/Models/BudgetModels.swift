@@ -481,7 +481,8 @@ struct SpendingRecordModel: Identifiable {
     // MARK: 분담(N빵) 파생값 — 저장하지 않는다. 여행이 아닌 소비는 셋 다 amount와 같다.
     // tripId와는 무관하다 — participants만으로 결정되므로, 여행에 묶이지 않아도
     // participants가 3이면 이 값들은 그대로 적용된다.
-    /// 아직 읽는 곳이 없다 — 예산·통계 계산이 이 값으로 옮겨가는 건 다음 작업이다.
+    /// 정산 집계(`TripSettlementModel.compute`)는 이미 이 값들을 읽는다. 예산 차감·통계 합산이
+    /// 이 값으로 옮겨오는 건 각각 뒤 단계(Task 3·4)다.
 
     /// 공용 소비인지 (N빵 대상)
     var isShared: Bool { participants > 1 }
