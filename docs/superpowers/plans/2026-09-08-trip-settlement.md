@@ -15,8 +15,9 @@
 ## 작업 전 알아둘 것
 
 - 프로젝트는 Xcode **file-system synchronized group**을 쓴다. `GagaeSsi/` 아래에 파일을 만들면 자동으로 타겟에 포함된다. `.pbxproj`를 손대지 않는다.
-- 빌드: `xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 16' build -quiet`
-- 테스트 한 클래스: `xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/<클래스> -quiet`
+- 빌드: `xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' build -quiet`
+- 테스트 한 클래스: `xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/<클래스> -quiet`
+- **시뮬레이터 destination 주의**: 이 머신의 Xcode는 iOS 26.x 런타임만 eligible로 본다. CLAUDE.md에 적힌 `name=iPhone 16`(iOS 18.0 런타임)은 `Unable to find a device matching the provided destination specifier`로 실패하므로, 위 명령의 `name=iPhone 17,OS=26.0`을 그대로 쓴다.
 - 테스트는 `CoreDataManager(inMemory: true)` + `setUp`에서 `resetAllData()`. 급여일이 테스트 구간에 걸리면 부채 흡수가 끼어드니 `WishWalletTests.safePayday` 패턴을 쓴다.
 - 주석·문서는 한국어. 색은 `Color.gagaeXxx` 토큰만, hex 직접 사용 금지(설정 아이콘 배경은 예외적으로 기존 코드가 hex를 씀).
 - 커밋 메시지는 `feat:`/`docs:` 접두 + 한국어 한 줄, 끝에 `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
@@ -339,7 +340,7 @@ final class TripSettlementTests: XCTestCase {
 - [ ] **Step 9: 테스트 실행**
 
 ```bash
-xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripSettlementTests -only-testing:GagaeSsiTests/CoreDataMigrationTests -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/TripSettlementTests -only-testing:GagaeSsiTests/CoreDataMigrationTests -quiet
 ```
 
 Expected: `** TEST SUCCEEDED **`. 실패하면 `contents` XML의 inverse 이름(`trips`↔`wishItem`, `spendingRecords`↔`trip`)이 맞는지 먼저 본다.
@@ -437,7 +438,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 2: 실패 확인**
 
 ```bash
-xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripSettlementTests -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/TripSettlementTests -quiet
 ```
 
 Expected: 컴파일 에러 `cannot find 'TripSettlementModel' in scope`.
@@ -577,7 +578,7 @@ struct TripSettlementModel: Equatable {
 - [ ] **Step 4: 테스트 통과 확인**
 
 ```bash
-xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripSettlementTests -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/TripSettlementTests -quiet
 ```
 
 Expected: `** TEST SUCCEEDED **`
@@ -741,7 +742,7 @@ final class TripTests: XCTestCase {
 - [ ] **Step 2: 실패 확인**
 
 ```bash
-xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripTests -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/TripTests -quiet
 ```
 
 Expected: `test_친구가_낸_공용_소비는_내_몫만_빠진다` 등 4~5개 FAIL (전액이 빠짐).
@@ -805,7 +806,7 @@ Expected: `test_친구가_낸_공용_소비는_내_몫만_빠진다` 등 4~5개 
 - [ ] **Step 6: 테스트 통과 + 회귀 확인**
 
 ```bash
-xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripTests -only-testing:GagaeSsiTests/WishWalletTests -only-testing:GagaeSsiTests/CarryOverChainTests -only-testing:GagaeSsiTests/OverspendHistoryTests -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/TripTests -only-testing:GagaeSsiTests/WishWalletTests -only-testing:GagaeSsiTests/CarryOverChainTests -only-testing:GagaeSsiTests/OverspendHistoryTests -quiet
 ```
 
 Expected: `** TEST SUCCEEDED **`. 여행이 아닌 소비는 `budgetAmount == amount`라 기존 테스트가 그대로 통과해야 한다.
@@ -873,7 +874,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 2: 실패 확인**
 
 ```bash
-xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/CategorySpendingTests -only-testing:GagaeSsiTests/DataExportTests -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/CategorySpendingTests -only-testing:GagaeSsiTests/DataExportTests -quiet
 ```
 
 Expected: 새 테스트 2개 + 헤더/환급 단정 FAIL.
@@ -924,7 +925,7 @@ extension SpendViewModel {
 - [ ] **Step 4: 테스트 통과 확인**
 
 ```bash
-xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/CategorySpendingTests -only-testing:GagaeSsiTests/DataExportTests -only-testing:GagaeSsiTests/TimeSlotTests -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/CategorySpendingTests -only-testing:GagaeSsiTests/DataExportTests -only-testing:GagaeSsiTests/TimeSlotTests -quiet
 ```
 
 Expected: `** TEST SUCCEEDED **`
@@ -1168,7 +1169,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 4: 빌드만 확인 (테스트는 Task 6에서)**
 
 ```bash
-xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 16' build -quiet
+xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' build -quiet
 ```
 
 Expected: 경고 없이 `** BUILD SUCCEEDED **`.
@@ -1314,7 +1315,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 2: 실패 확인**
 
 ```bash
-xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripTests -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/TripTests -quiet
 ```
 
 Expected: 컴파일 에러 `has no member 'settleTrip'`.
@@ -1500,7 +1501,7 @@ struct WishSavingEntryModel: Identifiable {
 - [ ] **Step 7: 전체 여행 테스트 + 위시 회귀**
 
 ```bash
-xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:GagaeSsiTests/TripTests -only-testing:GagaeSsiTests/TripSettlementTests -only-testing:GagaeSsiTests/WishWalletTests -only-testing:GagaeSsiTests/WishListTests -only-testing:GagaeSsiTests/PaybackTests -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/TripTests -only-testing:GagaeSsiTests/TripSettlementTests -only-testing:GagaeSsiTests/WishWalletTests -only-testing:GagaeSsiTests/WishListTests -only-testing:GagaeSsiTests/PaybackTests -quiet
 ```
 
 Expected: `** TEST SUCCEEDED **`. `test_목록은_진행_중이_먼저…`가 순서로 실패하면 `fetchTrips`의 정렬 키(`startDate` 내림차순)를 확인한다.
@@ -1814,7 +1815,7 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
 - [ ] **Step 4: 빌드 확인**
 
 ```bash
-xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 16' build -quiet
+xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' build -quiet
 ```
 
 Expected: `** BUILD SUCCEEDED **`
@@ -1947,7 +1948,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 4: 빌드 확인**
 
 ```bash
-xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 16' build -quiet
+xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' build -quiet
 ```
 
 Expected: `** BUILD SUCCEEDED **`
@@ -2631,7 +2632,7 @@ struct TripDetailView: View {
 - [ ] **Step 3: 빌드 확인**
 
 ```bash
-xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 16' build -quiet
+xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' build -quiet
 ```
 
 Expected: `** BUILD SUCCEEDED **`
@@ -2744,7 +2745,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 5: 빌드 + 전체 테스트**
 
 ```bash
-xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 16' -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -quiet
 ```
 
 Expected: `** TEST SUCCEEDED **` — 전체 스위트.

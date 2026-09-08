@@ -463,14 +463,32 @@ struct SpendingRecordModel: Identifiable {
     /// 모아둔 위시 지갑에서 쓴 소비면 그 위시 id. nil이면 평소 소비.
     /// 연결된 소비는 이미 저금으로 예산에서 빠진 돈이라 하루 예산에서 다시 빼지 않는다.
     var wishItemId: UUID?
+    /// 여행에 묶인 소비면 그 여행 id. nil이면 평소 소비.
+    var tripId: UUID?
+    /// 이 소비를 나누는 인원. 1이면 공용이 아닌 내 소비.
+    var participants: Int
+    /// 내가 결제했는지. false면 다른 사람이 냈고 내 몫만 예산에서 빠진다.
+    var paidByMe: Bool
 
     /// 순 지출 (실지출 − 환급 예정)
     var netAmount: Int { amount - expectedPayback }
 
+    // MARK: 여행 파생값 — 저장하지 않는다. 여행이 아닌 소비는 셋 다 amount와 같다.
+
+    /// 공용 소비인지 (N빵 대상)
+    var isShared: Bool { participants > 1 }
+    /// 내가 소비한 몫. 공용이면 인원으로 나눈다 (원 단위 내림). 내역·통계는 이 값을 합친다.
+    var myShare: Int { participants > 1 ? amount / participants : amount }
+    /// 그날 예산(또는 지갑)에서 빠지는 돈. 내가 냈으면 전액, 남이 냈으면 내 몫.
+    var budgetAmount: Int { paidByMe ? amount : myShare }
+    /// 정산 때 돌아오는 남의 몫. 남이 낸 소비는 0.
+    var receivable: Int { paidByMe ? amount - myShare : 0 }
+
     init(id: UUID = UUID(), title: String, amount: Int, date: Date,
          category: SpendingCategory = .other,
          expectedPayback: Int = 0, paybackReceived: Bool = false,
-         wishItemId: UUID? = nil) {
+         wishItemId: UUID? = nil,
+         tripId: UUID? = nil, participants: Int = 1, paidByMe: Bool = true) {
         self.id = id
         self.title = title
         self.amount = amount
@@ -479,6 +497,9 @@ struct SpendingRecordModel: Identifiable {
         self.expectedPayback = expectedPayback
         self.paybackReceived = paybackReceived
         self.wishItemId = wishItemId
+        self.tripId = tripId
+        self.participants = max(1, participants)
+        self.paidByMe = paidByMe
     }
 
     /// CoreData Entity -> Model 변환 생성자
@@ -491,5 +512,8 @@ struct SpendingRecordModel: Identifiable {
         self.expectedPayback = Int(entity.expectedPayback)
         self.paybackReceived = entity.paybackReceived
         self.wishItemId = entity.wishItem?.id
+        self.tripId = entity.trip?.id
+        self.participants = max(1, Int(entity.participants))
+        self.paidByMe = entity.paidByMe
     }
 }

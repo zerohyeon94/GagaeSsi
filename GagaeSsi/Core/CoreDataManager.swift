@@ -565,6 +565,8 @@ final class CoreDataManager {
         newSpendingRecord.category = model.category.rawValue
         newSpendingRecord.expectedPayback = Int32(model.expectedPayback)
         newSpendingRecord.paybackReceived = model.paybackReceived
+        newSpendingRecord.participants = Int16(model.participants)
+        newSpendingRecord.paidByMe = model.paidByMe
         newSpendingRecord.dailyBudget = dailyBudget
         dailyBudget.addToSpendingRecords(newSpendingRecord)
 
@@ -639,6 +641,8 @@ final class CoreDataManager {
         spendingRecord.category = model.category.rawValue
         spendingRecord.expectedPayback = Int32(model.expectedPayback)
         spendingRecord.paybackReceived = model.paybackReceived
+        spendingRecord.participants = Int16(model.participants)
+        spendingRecord.paidByMe = model.paidByMe
 
         // 금액을 올려 지갑 잔액을 넘기면 연결을 끊는다. 일부만 지갑에서 빼는 방식은
         // 같은 날 소비 순서에 따라 결과가 달라지므로 "전부 아니면 전무"로 유지한다.
@@ -899,7 +903,7 @@ final class CoreDataManager {
 
     // MARK: - Utilities
     func resetAllData() {
-        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "Payback", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry", "SpendingDebt", "DebtRepaymentEntry", "AssetTransfer"]
+        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "Payback", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry", "SpendingDebt", "DebtRepaymentEntry", "AssetTransfer", "Trip"]
 
         for entityName in entityNames {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)

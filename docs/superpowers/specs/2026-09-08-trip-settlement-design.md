@@ -58,7 +58,7 @@
 Trip (신규)
   id UUID · title String · startDate Date · endDate Date
   defaultParticipants Int16 · status String("진행중"/"정산완료")
-  settledAt Date? · settledAmount Int32 · createdAt Date
+  settledAt Date? · settledAmount Int32 · settlementEntryId UUID? · createdAt Date
   → wishItem       (optional, maxCount 1, Nullify)   연결된 지갑
   → spendingRecords (toMany, Nullify)
 
@@ -176,7 +176,7 @@ func reopenTrip(id: UUID) -> Bool
 4. 이미 정산 완료면 `false`
 
 **`reopenTrip(id:)`**
-1. 정산 때 만든 엔트리를 찾아 삭제 — 지갑이면 `source == tripSettlement && date == settledAt`인 `WishSavingEntry`, 예산이면 `reason == .tripSettlement && date == settledAt`인 `CarryOverSource`
+1. 정산 때 만든 엔트리를 `settlementEntryId`로 찾아 삭제 — 지갑이면 `WishSavingEntry`, 예산이면 `CarryOverSource`. (같은 날 두 여행을 정산해도 섞이지 않게 id로 찾는다)
 2. 지갑 크레딧을 이미 다른 소비가 써서 `잔액 < settledAmount`면 **거부**(`false`) — 위시 지갑 "잔액 한도" 규칙과 같은 태도
 3. 예산 크레딧이면 삭제 후 `settledAt`부터 이월 재계산
 4. `status = 진행중`, `settledAt = nil`, `settledAmount = 0`

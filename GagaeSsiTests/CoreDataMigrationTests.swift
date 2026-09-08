@@ -323,4 +323,51 @@ final class CoreDataMigrationTests: XCTestCase {
 
         try unload(newContainer)
     }
+
+    /// 여행 필드가 추가된 12로 올라와도 기존 소비는 "내 개인 소비"로 남아 숫자가 하나도 바뀌지 않아야 한다
+    func test_GagaeSsi11에서_12로_마이그레이션되고_기존_소비는_내_몫이_전액이다() throws {
+        let oldContainer = try container(with: try model(named: "GagaeSsi 11"))
+        let oldContext = oldContainer.viewContext
+
+        let budget = NSEntityDescription.insertNewObject(forEntityName: "DailyBudget", into: oldContext)
+        budget.setValue(NSDecimalNumber(value: 50_000), forKey: "availableAmount")
+        budget.setValue(Date(), forKey: "date")
+
+        let record = NSEntityDescription.insertNewObject(forEntityName: "SpendingRecord", into: oldContext)
+        record.setValue(UUID(), forKey: "id")
+        record.setValue("점심", forKey: "title")
+        record.setValue(NSDecimalNumber(value: 9_000), forKey: "amount")
+        record.setValue(Date(), forKey: "date")
+        record.setValue(budget, forKey: "dailyBudget")
+
+        try oldContext.save()
+        try unload(oldContainer)
+
+        let newContainer = try container(with: try currentModel())
+        let newContext = newContainer.viewContext
+
+        let records = try newContext.fetch(NSFetchRequest<SpendingRecord>(entityName: "SpendingRecord"))
+        XCTAssertEqual(records.count, 1)
+        let migrated = SpendingRecordModel(entity: records[0])
+        XCTAssertNil(migrated.tripId)
+        XCTAssertEqual(migrated.participants, 1)
+        XCTAssertTrue(migrated.paidByMe)
+        XCTAssertEqual(migrated.myShare, 9_000)
+        XCTAssertEqual(migrated.budgetAmount, 9_000)
+        XCTAssertEqual(migrated.receivable, 0)
+
+        // 신규 Trip 엔티티가 사용 가능한지
+        let trip = NSEntityDescription.insertNewObject(forEntityName: "Trip", into: newContext)
+        trip.setValue(UUID(), forKey: "id")
+        trip.setValue("제주", forKey: "title")
+        trip.setValue(Date(), forKey: "startDate")
+        trip.setValue(Date(), forKey: "endDate")
+        trip.setValue(Int16(3), forKey: "defaultParticipants")
+        trip.setValue("진행중", forKey: "status")
+        trip.setValue(Date(), forKey: "createdAt")
+        records[0].setValue(trip, forKey: "trip")
+
+        XCTAssertNoThrow(try newContext.save())
+        try unload(newContainer)
+    }
 }
