@@ -1073,7 +1073,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
         let s = sut.tripSettlement(for: trip.id)
         XCTAssertEqual(s.perPerson, 150_000)
         XCTAssertEqual(s.paidByMeTotal, 450_000)
-        XCTAssertEqual(s.receivable, 300_000)
+        // 10만·20만은 3으로 나누어떨어지지 않아 항목별 버림의 나머지가 여기 붙는다
+        XCTAssertEqual(s.receivable, 300_001)
     }
 ```
 
