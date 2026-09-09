@@ -49,7 +49,7 @@ enum CategorySpendingAnalyzer {
             let key = display.lowercased()
 
             if var accumulator = map[key] {
-                accumulator.total += record.amount
+                accumulator.total += record.myShare
                 accumulator.count += 1
                 if record.date > accumulator.lastDate {
                     accumulator.title = display          // 최근 표기를 대표로
@@ -57,7 +57,7 @@ enum CategorySpendingAnalyzer {
                 }
                 map[key] = accumulator
             } else {
-                map[key] = Accumulator(title: display, total: record.amount,
+                map[key] = Accumulator(title: display, total: record.myShare,
                                        count: 1, lastDate: record.date)
             }
         }

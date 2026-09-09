@@ -192,7 +192,7 @@ final class HomeViewModel {
     // MARK: - Private Methods
     private func applyDailyBudgetModel(_ model: DailyBudgetModel) {
         let base = model.availableAmount
-        let spent = model.spendingRecords.map { $0.amount }.reduce(0, +)
+        let spent = model.budgetedSpending
         let carry = model.carryOverSources.map { $0.amount }.reduce(0, +)
         let total = model.todayAvailable
 

@@ -637,8 +637,9 @@ extension SpendView {
 
 // MARK: - SpendViewModel Extension
 extension SpendViewModel {
+    /// 오늘 내가 쓴 돈 — 공용 소비는 내 몫만
     var totalSpentToday: Int {
-        spendingRecords.reduce(0) { $0 + $1.amount }
+        spendingRecords.reduce(0) { $0 + $1.myShare }
     }
 }
 

@@ -33,7 +33,7 @@ enum SpendingCSVExporter {
         }
     }
 
-    static let header = ["날짜", "시각", "카테고리", "항목", "금액", "환급 예정", "환급 받음"]
+    static let header = ["날짜", "시각", "카테고리", "항목", "금액", "내 몫", "환급 예정", "환급 받음"]
 
     /// 한글이 Excel에서 깨지지 않게 하는 UTF-8 BOM.
     /// 없으면 Excel이 CSV를 로컬 인코딩으로 읽어 한글이 전부 깨진다.
@@ -59,6 +59,7 @@ enum SpendingCSVExporter {
                 record.category.rawValue,
                 record.title,
                 String(record.amount),
+                String(record.myShare),
                 record.expectedPayback > 0 ? String(record.expectedPayback) : "",
                 record.expectedPayback > 0 ? (record.paybackReceived ? "Y" : "N") : "",
             ]

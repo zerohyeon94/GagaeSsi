@@ -60,11 +60,11 @@ final class HistoryViewModel {
         }
 
         let records = CoreDataManager.shared.fetchSpendingRecords(year: year, month: month)
-        monthTotal = records.reduce(0) { $0 + $1.amount }
+        monthTotal = records.reduce(0) { $0 + $1.myShare }
         var totals: [Date: Int] = [:]
         for r in records {
             let d = cal.startOfDay(for: r.date)
-            totals[d, default: 0] += r.amount
+            totals[d, default: 0] += r.myShare
         }
         dayTotals = totals
         loadDayBalances(year: year, month: month)

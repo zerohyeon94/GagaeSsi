@@ -99,4 +99,12 @@ final class CategorySpendingTests: XCTestCase {
         XCTAssertEqual(items[0].average, 7_777)
         XCTAssertEqual(items[0].count, 1)
     }
+
+    /// 8만을 결제했어도 4명이 나눴으면 내가 쓴 건 2만이다
+    func test_공용_소비는_내_몫으로_묶인다() {
+        let shared = SpendingRecordModel(title: "저녁", amount: 80_000, date: Date(),
+                                         tripId: UUID(), participants: 4, paidByMe: true)
+        let items = CategorySpendingAnalyzer.itemSummaries(from: [shared])
+        XCTAssertEqual(items.first?.total, 20_000)
+    }
 }

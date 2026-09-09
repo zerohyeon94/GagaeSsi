@@ -68,7 +68,7 @@ enum TimeSlot: String, CaseIterable, Identifiable {
 
         for record in records {
             guard let slot = TimeSlot.from(date: record.date, calendar: calendar) else { continue }
-            bySlot[slot, default: 0] += record.amount
+            bySlot[slot, default: 0] += record.myShare
             timedCount += 1
         }
 

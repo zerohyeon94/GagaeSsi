@@ -148,13 +148,13 @@ final class StatsViewModel {
         guard let year = comps.year, let month = comps.month else { return }
 
         let records = CoreDataManager.shared.fetchSpendingRecords(year: year, month: month)
-        monthlyTotal = records.reduce(0) { $0 + $1.amount }
+        monthlyTotal = records.reduce(0) { $0 + $1.myShare }
         expectedPaybackTotal = records.reduce(0) { $0 + $1.expectedPayback }
         dailyAverage = records.isEmpty ? 0 : monthlyTotal / max(1, Calendar.current.component(.day, from: Date()))
 
         var dict: [SpendingCategory: Int] = [:]
         for record in records {
-            dict[record.category, default: 0] += record.amount
+            dict[record.category, default: 0] += record.myShare
         }
 
         var totals = dict.map { CategoryTotal(category: $0.key, amount: $0.value) }
@@ -187,7 +187,7 @@ final class StatsViewModel {
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
             let total = records
                 .filter { $0.date >= startOfDay && $0.date < endOfDay }
-                .reduce(0) { $0 + $1.amount }
+                .reduce(0) { $0 + $1.myShare }
             return DailyTotal(date: startOfDay, amount: total)
         }
     }
@@ -206,6 +206,6 @@ final class StatsViewModel {
         let comps = Calendar.current.dateComponents([.year, .month], from: prevMonth)
         guard let year = comps.year, let month = comps.month else { return }
         let records = CoreDataManager.shared.fetchSpendingRecords(year: year, month: month)
-        prevMonthTotal = records.reduce(0) { $0 + $1.amount }
+        prevMonthTotal = records.reduce(0) { $0 + $1.myShare }
     }
 }

@@ -1709,7 +1709,7 @@ final class CoreDataManager {
 
         let records = fetchSpendingRecords(from: start, to: today)
         guard !records.isEmpty else { return 0 }
-        return records.reduce(0) { $0 + $1.amount } / days
+        return records.reduce(0) { $0 + $1.budgetAmount } / days
     }
 
     /// 오늘 일자의 기본 예산만 현재 설정 기준으로 다시 계산한다.
