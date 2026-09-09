@@ -159,4 +159,45 @@ final class TripTests: XCTestCase {
         XCTAssertEqual(sut.wishSpentAmount(for: wallet), 80_000, "잔액 안이면 지갑에 그대로 붙어 있어야 한다")
         XCTAssertNotNil(sut.fetchSpendingRecords(date: day(0)).first { $0.id == record.id }?.wishItemId)
     }
+
+    // MARK: - 최근 평균 소비 (Fix 3 회귀 — recentAverageDailySpending의 예산 렌즈)
+
+    /// 지갑에서 쓴 소비는 저금 시점에 이미 예산에서 빠진 돈이다. 7일 평균에 다시 잡히면
+    /// "이대로면 부채가 줄지 않아요" 경고가 지갑으로 쓴 여행비 때문에 잘못 뜬다.
+    func test_지갑에서_쓴_소비는_최근_평균_소비에_잡히지_않는다() {
+        spend(70_000, on: -1)
+        let before = sut.recentAverageDailySpending(days: 7)
+
+        let wallet = seedWallet(600_000)
+        let walletSpendId = spend(600_000, on: -2)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: walletSpendId, wishItemId: wallet))
+
+        XCTAssertEqual(sut.recentAverageDailySpending(days: 7), before,
+                       "지갑 연결 소비를 추가해도 7일 평균이 바뀌면 안 된다")
+    }
+
+    /// 친구가 낸 공용 소비는 내 몫만 예산에서 빠지므로 최근 평균에도 내 몫만 반영돼야 한다.
+    func test_친구가_낸_공용_소비는_최근_평균_소비에_내_몫만_반영된다() {
+        spend(90_000, on: -1, participants: 3, paidByMe: false)
+        XCTAssertEqual(sut.recentAverageDailySpending(days: 7), 30_000 / 7,
+                       "90,000을 3명이 나눈 내 몫 30,000만 반영돼야 한다")
+    }
+
+    // MARK: - overBudgetDays 회귀 (C2)
+    //
+    // StatsViewModel은 CoreDataManager.shared를 직접 참조해서 in-memory 테스트 스토어로
+    // 갈아끼울 seam이 없다. 그래서 overBudgetDays가 기대는 규칙 자체 —
+    // 공용 소비를 내가 대신 낸 날은 예산 렌즈(budgetOutflow)와 소비 렌즈(myShareTotal)의
+    // 판정이 실제로 갈린다는 것 — 를 여기서 고정한다.
+    func test_공용_소비를_내가_대신_낸_날은_예산_렌즈로만_초과가_잡힌다() {
+        let baseDailyBudget = 100_000
+        let records = [
+            SpendingRecordModel(title: "저녁", amount: 300_000, date: day(0),
+                                participants: 4, paidByMe: true),
+        ]
+        XCTAssertGreaterThan(records.budgetOutflow, baseDailyBudget,
+                             "300,000을 전액 결제했으니 예산 렌즈로는 초과다")
+        XCTAssertLessThanOrEqual(records.myShareTotal, baseDailyBudget,
+                                 "내 몫은 75,000이라 소비 렌즈로는 초과가 아니다 — overBudgetDays가 이 값을 쓰면 안 된다")
+    }
 }

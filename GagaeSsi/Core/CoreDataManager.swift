@@ -793,8 +793,12 @@ final class CoreDataManager {
             let date = calendar.date(byAdding: .day, value: offset, to: startDate)!
             let startOfDay = calendar.startOfDay(for: date)
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
-            // 홈 "최근 7일 소비 흐름" 차트는 소비 기록 화면이라 내 몫(myShare) 렌즈를 쓴다.
-            // 같은 화면의 예산 카드는 budgetAmount로 별도 계산되므로 여기서 헷갈릴 필요 없다.
+            // 홈 "최근 7일 소비 흐름" 차트는 소비 기록 화면이라 내 몫(myShare) 렌즈를 쓴다 —
+            // 위시 지갑에서 쓴 소비를 포함해 전 기록을 더한다 (실제로 소비는 했으니까).
+            // 반면 같은 홈 화면의 예산 장부 줄(budgetedSpending = budgetAmount + 지갑 제외
+            // 필터)은 예산 렌즈다. 두 값이 다른 건 렌즈 차이가 아니라 지갑 필터 유무 때문이고,
+            // 위시 지갑을 쓰는 사용자에게는 두 수치가 다르게 보이는 게 정상이다 — 서로 다른
+            // 질문("얼마나 썼나" vs "예산에서 얼마가 빠졌나")에 답하고 있다.
             let total = records
                 .filter { $0.date >= startOfDay && $0.date < endOfDay }
                 .reduce(0) { $0 + $1.myShare }
@@ -1711,7 +1715,10 @@ final class CoreDataManager {
 
         let records = fetchSpendingRecords(from: start, to: today)
         guard !records.isEmpty else { return 0 }
-        return records.reduce(0) { $0 + $1.budgetAmount } / days
+        // 예산과 비교하는 값이므로 예산 렌즈(budgetOutflow) — 지갑에서 쓴 소비(위시 저금으로
+        // 이미 예산에서 빠진 돈)까지 더하면 지갑으로 쓴 여행비 때문에 7일 평균이 부풀어
+        // "이대로면 부채가 줄지 않아요" 경고가 잘못 뜬다.
+        return records.budgetOutflow / days
     }
 
     /// 오늘 일자의 기본 예산만 현재 설정 기준으로 다시 계산한다.

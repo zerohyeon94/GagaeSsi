@@ -252,4 +252,25 @@ final class TripSettlementTests: XCTestCase {
                              defaultParticipants: 5_000)
         XCTAssertEqual(trip.defaultParticipants, 999)
     }
+
+    // MARK: - 소비 합산의 두 렌즈 (Fix 1)
+
+    /// budgetOutflow는 지갑 연결 기록을 빼고 나머지의 budgetAmount를 더한다.
+    /// myShareTotal은 지갑 연결 여부와 무관하게 모든 기록의 myShare를 더한다.
+    func test_budgetOutflow는_지갑_연결_기록을_빼고_budgetAmount를_더하고_myShareTotal은_전부_내_몫을_더한다() {
+        let wallet = UUID()
+        // 지갑에서 쓴, 친구가 낸 공용 소비 — 내 몫 4만, 지갑 연결이라 budgetOutflow에서 제외
+        let walletFriendSplit = record(120_000, participants: 3, paidByMe: false, wishItemId: wallet)
+        // 지갑과 무관한, 내가 낸 공용 소비 — budgetAmount는 전액
+        let selfPaidSplit = record(90_000, participants: 3, paidByMe: true)
+        // 여행과 무관한 평범한 소비
+        let ordinary = SpendingRecordModel(title: "커피", amount: 4_500, date: Date())
+
+        let records = [walletFriendSplit, selfPaidSplit, ordinary]
+
+        XCTAssertEqual(records.budgetOutflow, 90_000 + 4_500,
+                       "지갑에 연결된 기록은 저금 시점에 이미 예산에서 빠졌으므로 제외해야 한다")
+        XCTAssertEqual(records.myShareTotal, 40_000 + 30_000 + 4_500,
+                       "myShareTotal은 지갑 연결 여부와 무관하게 모든 기록의 내 몫을 더해야 한다")
+    }
 }

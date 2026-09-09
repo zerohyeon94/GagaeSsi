@@ -491,14 +491,20 @@ extension StatsView {
     }
 
     private var dailyChart: some View {
-        Chart {
+        // 막대 높이는 소비 렌즈(myShare)지만, 그날이 예산을 넘겼는지 색으로 알려주는 판정은
+        // 예산 렌즈(dailyBudgetTotals)로 봐야 한다 — 친구 몫까지 낸 날은 막대는 낮아도
+        // 실제로는 예산을 넘겼을 수 있다.
+        let budgetByDate = Dictionary(uniqueKeysWithValues:
+            viewModel.dailyBudgetTotals.map { (Calendar.current.startOfDay(for: $0.date), $0.amount) })
+        return Chart {
             ForEach(viewModel.dailyTotals) { item in
+                let dayBudgetAmount = budgetByDate[Calendar.current.startOfDay(for: item.date)] ?? item.amount
                 BarMark(
                     x: .value("날짜", item.date, unit: .day),
                     y: .value("금액", item.amount)
                 )
                 .foregroundStyle(
-                    item.amount > viewModel.baseDailyBudget && viewModel.baseDailyBudget > 0
+                    dayBudgetAmount > viewModel.baseDailyBudget && viewModel.baseDailyBudget > 0
                         ? Color.gagaeDanger : Color.gagaePinkDark
                 )
                 .cornerRadius(2)

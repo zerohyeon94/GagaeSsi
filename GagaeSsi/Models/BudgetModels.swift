@@ -534,3 +534,24 @@ struct SpendingRecordModel: Identifiable {
         self.paidByMe = entity.paidByMe
     }
 }
+
+// MARK: - 소비 합산의 두 렌즈
+//
+// 같은 기록도 화면의 질문에 따라 다른 금액으로 세어야 한다.
+// 합산하는 곳이 아니라 **그 숫자를 쓰는 곳**이 렌즈를 정한다 — 한 화면 안에서 두 합계가
+// 서로 달라지면 안 된다.
+extension Sequence where Element == SpendingRecordModel {
+    /// **소비 기록 렌즈** — 내가 소비한 몫의 합.
+    /// 내역·통계·카테고리·시간대·CSV처럼 "내가 얼마나 썼나"를 보여주는 화면이 쓴다.
+    /// 8만을 결제했어도 4명이 나눴으면 내 소비는 2만이다.
+    var myShareTotal: Int { reduce(0) { $0 + $1.myShare } }
+
+    /// **예산 렌즈** — 하루 예산에서 실제로 빠져나간 돈의 합.
+    /// 예산 차감·초과 판정·부채 경고처럼 "예산이 얼마나 줄었나"를 보는 곳이 쓴다.
+    ///
+    /// 두 조건이 함께 걸린다. 지갑에서 쓴 소비는 저금할 때 이미 예산에서 빠졌으므로 제외하고,
+    /// 친구가 낸 공용 소비는 내 몫만 센다. 둘 중 하나만 적용하면 조용히 틀린다.
+    var budgetOutflow: Int {
+        filter { $0.wishItemId == nil }.reduce(0) { $0 + $1.budgetAmount }
+    }
+}

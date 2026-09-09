@@ -393,8 +393,11 @@ struct OverspendHistoryView: View {
     private func loadRecords(for date: Date) {
         guard records[date] == nil else { return }
         // 예산 장부 화면 — 실제로 그날 예산에서 빠져나간 금액(budgetAmount) 기준으로
-        // 큰 지출부터 보여준다 (반성 우선순위). 초과 판정 자체도 budgetAmount 합계라 맞춰야 한다.
+        // 큰 지출부터 보여준다 (반성 우선순위). 초과 판정 자체가 budgetAmount의 합이 아니라
+        // "위시 지갑 연결 제외 + budgetAmount"(budgetedSpending)이므로, 목록도 지갑 연결
+        // 기록을 빼야 그날 합계와 나열된 기록들이 설명하는 금액이 어긋나지 않는다.
         records[date] = CoreDataManager.shared.fetchSpendingRecords(date: date)
+            .filter { $0.wishItemId == nil }
             .sorted { $0.budgetAmount > $1.budgetAmount }
     }
 

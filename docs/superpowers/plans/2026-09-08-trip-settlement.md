@@ -1082,6 +1082,59 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
+#### Task 4 정정 (코드 리뷰 반영)
+
+Task 4를 "합산하는 자리마다 렌즈를 정한다"로 실행했더니 결함이 났다. **원칙을 정정한다:
+렌즈는 합산 지점이 아니라 그 숫자를 쓰는 곳이 정한다.** 같은 화면 안에서도 "내가 얼마나
+썼나"를 보여주는 자리(소비 렌즈)와 "예산이 얼마나 줄었나"를 판정하는 자리(예산 렌즈)가
+공존할 수 있고, 둘을 같은 시리즈 하나로 때우면 조용히 틀린다.
+
+**예산 렌즈는 두 조건이 함께 걸린 값이다** — `filter { wishItemId == nil }` **AND**
+`budgetAmount`. 위시 지갑에서 쓴 소비는 저금 시점에 이미 예산에서 빠졌으므로 절대 다시
+세면 안 된다. 이 두 조건을 한 번에 적용하는 헬퍼를 `Sequence where Element ==
+SpendingRecordModel`에 추가해뒀다 (`GagaeSsi/Models/BudgetModels.swift`):
+
+- `myShareTotal: Int` — 소비 렌즈. `reduce(0) { $0 + $1.myShare }`와 동일.
+- `budgetOutflow: Int` — 예산 렌즈. `filter { $0.wishItemId == nil }`로 지갑 연결 기록을
+  뺀 뒤 `budgetAmount`를 합친다.
+
+**두 렌즈가 필요한 자리를 "합산 지점"이 아니라 "화면의 질문"으로 다시 찾은 결과:**
+
+- `StatsViewModel`은 `dailyTotals`/`monthlyTotal`을 `myShare` 기준(소비 렌즈, 차트·소비
+  총액 표시용)으로 두되, 다음 **네 개의 예산 판정**은 별도의 예산 렌즈 시리즈
+  (`dailyBudgetTotals`, `monthlyBudgetTotal` — `budgetOutflow`로 채운다)를 봐야 한다:
+  1. `savingsAmount` (`monthBudget - 월 합계`)
+  2. `budgetUsagePct` (월 합계 / `monthBudget`)
+  3. `dominantState` (`CharacterState.from(spent:base:)`에 넘기는 일별 합계)
+  4. `overBudgetDays` (일별 합계가 `baseDailyBudget`을 넘는 날 수)
+
+  `loadDailyStats`가 한 달의 기록을 하루씩 필터링하는 패스는 한 번만 돌리고, 그 결과에서
+  `myShareTotal`과 `budgetOutflow`를 함께 뽑아 두 시리즈를 같이 채운다 (기록을 두 번
+  fetch하지 않는다). `StatsView`의 일별 차트도 막대 높이는 소비 렌즈를 쓰되, 막대를
+  "초과"로 칠하는 색 판정은 예산 렌즈로 봐야 한다.
+
+- `CoreDataManager.recentAverageDailySpending`은 `budgetAmount`만으로는 부족하다 —
+  지갑 연결 필터까지 있어야 진짜 예산 렌즈다 (`.budgetOutflow`를 쓴다). 지갑 필터가
+  빠지면 위시 지갑에서 쓴 여행비가 "이대로면 부채가 줄지 않아요" 경고를 오발동시킨다.
+
+- `OverspendHistoryView.loadRecords(for:)`는 `budgetAmount`로 정렬하는 것만으로는
+  부족하다 — 그 화면이 설명하는 합계(`budgetedSpending` = 지갑 필터 + `budgetAmount`)와
+  맞추려면 지갑 연결 기록 자체를 목록에서 빼야 한다. "이 화면의 판정 함수가 두 조건을
+  같이 쓰면, 이 화면의 모든 관련 합산·목록도 두 조건을 같이 써야 한다"가 일반 규칙이다.
+
+- `CoreDataManager.fetchDailyTotals(days:)`의 렌즈(`myShare`, 전체 기록)는 정정 대상이
+  아니다 — 홈 "최근 7일 소비 흐름" 차트는 의도적으로 소비 렌즈다. 다만 근처 주석이
+  "같은 화면의 예산 카드는 헷갈릴 필요 없다"고 단정했던 건 틀렸다: 둘이 다른 건 렌즈
+  차이가 아니라 예산 카드에 걸린 지갑 필터 때문이고, 위시 지갑을 쓰는 사용자에게는 두
+  수치가 다르게 보이는 게 정상이라고 명시해야 한다.
+
+**재실행 시 반드시 지킬 것:** 새 합산 자리를 추가할 때 "이 화면에 이미 있는 합계는
+무슨 렌즈인가"부터 확인하고, 판정에 쓰이는 값과 표시에 쓰이는 값이 다른 렌즈일 수
+있다는 걸 전제로 설계한다. 화면 하나에 렌즈 하나만 있다고 가정하면 이 결함들이 다시
+난다.
+
+---
+
 ### Task 5: `CoreDataManager` 여행 섹션 (CRUD · 소비 연결 · 집계)
 
 **Files:**
