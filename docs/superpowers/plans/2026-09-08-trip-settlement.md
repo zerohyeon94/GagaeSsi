@@ -1171,13 +1171,16 @@ SpendingRecordModel`에 추가해뒀다 (`GagaeSsi/Models/BudgetModels.swift`):
         XCTAssertTrue(sut.fetchTrips().isEmpty)
     }
 
-    func test_목록은_진행_중이_먼저_그다음_정산_완료다() {
+    /// 정산 완료 정렬과 자동 선택 제외는 `settleTrip`이 있어야 검증할 수 있어 Task 6에서
+    /// 함께 확인한다. 여기서는 정산이 없는 상태에서 시작일 최근순 정렬과, 정산이 하나도
+    /// 없을 때 `fetchActiveTrips`가 `fetchTrips`와 같다는 것만 고정한다.
+    func test_진행_중_여행들은_시작일_최근순이고_전부_활성이다() {
         let old = makeTrip("작년", from: -400, to: -398)
-        let settled = makeTrip("정산됨", from: -30, to: -28)
-        XCTAssertTrue(sut.settleTrip(id: settled.id, actualAmount: 0))
         let recent = makeTrip("최근", from: -3, to: -1)
+        let mid = makeTrip("중간", from: -30, to: -28)
 
-        XCTAssertEqual(sut.fetchTrips().map(\.id), [recent.id, old.id, settled.id])
+        XCTAssertEqual(sut.fetchTrips().map(\.id), [recent.id, mid.id, old.id])
+        XCTAssertEqual(sut.fetchActiveTrips().map(\.id), sut.fetchTrips().map(\.id))
     }
 
     func test_소비에_여행을_묶고_여행별로_읽는다() {
@@ -1232,13 +1235,6 @@ SpendingRecordModel`에 추가해뒀다 (`GagaeSsi/Models/BudgetModels.swift`):
         XCTAssertNil(sut.trip(containing: day(1)))
     }
 
-    func test_정산_완료_여행은_자동_선택_대상이_아니다() {
-        let trip = makeTrip(from: 0, to: 2)
-        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 0))
-        XCTAssertNil(sut.trip(containing: day(1)))
-        XCTAssertTrue(sut.fetchActiveTrips().isEmpty)
-    }
-
     // MARK: - 집계
 
     func test_여행_집계는_사용자_예시와_같다() {
@@ -1254,8 +1250,6 @@ SpendingRecordModel`에 추가해뒀다 (`GagaeSsi/Models/BudgetModels.swift`):
         XCTAssertEqual(s.receivable, 300_001)
     }
 ```
-
-`settleTrip`은 Task 6에서 만든다. 이 단계에서는 컴파일이 안 되므로 Task 6 Step 1까지 이어서 진행한 뒤 함께 돌린다. (실패 확인 단계는 Task 6에 있다.)
 
 - [ ] **Step 2: 소비 CRUD에 `trip` 연결**
 
@@ -1361,13 +1355,15 @@ SpendingRecordModel`에 추가해뒀다 (`GagaeSsi/Models/BudgetModels.swift`):
     }
 ```
 
-- [ ] **Step 4: 빌드만 확인 (테스트는 Task 6에서)**
+- [ ] **Step 4: 테스트 확인**
+
+`settleTrip`을 쓰지 않는 테스트만 있으므로 이 단계에서 바로 통과해야 한다 (정산 완료 정렬·자동 선택 제외 검증은 Task 6에서 이어서 한다).
 
 ```bash
-xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' build -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/TripTests -quiet
 ```
 
-Expected: 경고 없이 `** BUILD SUCCEEDED **`.
+Expected: `TripTests` 전부 통과. 이어서 전체 스위트(`GagaeSsiTests`)도 회귀 없이 통과해야 한다.
 
 - [ ] **Step 5: 커밋**
 
@@ -1393,6 +1389,26 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 `TripTests`에:
 
 ```swift
+    // MARK: - 목록·자동 선택 (정산 완료 포함)
+    //
+    // `settleTrip`이 있어야 정산 완료 상태를 만들 수 있어 Task 5가 아니라 여기서 검증한다.
+
+    func test_목록은_진행_중이_먼저_그다음_정산_완료다() {
+        let old = makeTrip("작년", from: -400, to: -398)
+        let settled = makeTrip("정산됨", from: -30, to: -28)
+        XCTAssertTrue(sut.settleTrip(id: settled.id, actualAmount: 0))
+        let recent = makeTrip("최근", from: -3, to: -1)
+
+        XCTAssertEqual(sut.fetchTrips().map(\.id), [recent.id, old.id, settled.id])
+    }
+
+    func test_정산_완료_여행은_자동_선택_대상이_아니다() {
+        let trip = makeTrip(from: 0, to: 2)
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 0))
+        XCTAssertNil(sut.trip(containing: day(1)))
+        XCTAssertTrue(sut.fetchActiveTrips().isEmpty)
+    }
+
     // MARK: - 정산
 
     func test_정산하면_남의_몫이_오늘_예산으로_돌아온다() {

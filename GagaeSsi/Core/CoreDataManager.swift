@@ -567,6 +567,7 @@ final class CoreDataManager {
         newSpendingRecord.paybackReceived = model.paybackReceived
         newSpendingRecord.participants = Int16(clamping: model.participants)
         newSpendingRecord.paidByMe = model.paidByMe
+        newSpendingRecord.trip = model.tripId.flatMap { fetchTripEntity(id: $0) }
         newSpendingRecord.dailyBudget = dailyBudget
         dailyBudget.addToSpendingRecords(newSpendingRecord)
 
@@ -643,6 +644,7 @@ final class CoreDataManager {
         spendingRecord.paybackReceived = model.paybackReceived
         spendingRecord.participants = Int16(clamping: model.participants)
         spendingRecord.paidByMe = model.paidByMe
+        spendingRecord.trip = model.tripId.flatMap { fetchTripEntity(id: $0) }
 
         // 부담액을 올려 지갑 잔액을 넘기면 연결을 끊는다. 일부만 지갑에서 빼는 방식은
         // 같은 날 소비 순서에 따라 결과가 달라지므로 "전부 아니면 전무"로 유지한다.
@@ -2143,5 +2145,89 @@ final class CoreDataManager {
         }
         // 엔트리 제거 (오늘 엔트리 라이브 차감도 함께 해제됨)
         for e in entries { context.delete(e) }
+    }
+
+    // MARK: - 여행 (같이 쓴 돈 묶기 · 정산)
+
+    /// 진행 중이 먼저, 그다음 정산 완료. 각각 시작일 최근순.
+    func fetchTrips() -> [TripModel] {
+        let request: NSFetchRequest<Trip> = Trip.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "startDate", ascending: false)]
+        let models = ((try? context.fetch(request)) ?? []).map(TripModel.init)
+        return models.filter { !$0.isSettled } + models.filter { $0.isSettled }
+    }
+
+    /// 소비 입력에서 고를 수 있는 여행들 (정산 완료는 제외)
+    func fetchActiveTrips() -> [TripModel] {
+        fetchTrips().filter { !$0.isSettled }
+    }
+
+    func fetchTrip(id: UUID) -> TripModel? {
+        fetchTripEntity(id: id).map(TripModel.init)
+    }
+
+    private func fetchTripEntity(id: UUID) -> Trip? {
+        let request: NSFetchRequest<Trip> = Trip.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+
+    @discardableResult
+    func createTrip(_ model: TripModel) -> Bool {
+        let trip = Trip(context: context)
+        trip.id = model.id
+        applyTripFields(model, to: trip)
+        return saveContext()
+    }
+
+    @discardableResult
+    func updateTrip(_ model: TripModel) -> Bool {
+        guard let trip = fetchTripEntity(id: model.id) else { return false }
+        applyTripFields(model, to: trip)
+        return saveContext()
+    }
+
+    private func applyTripFields(_ model: TripModel, to trip: Trip) {
+        trip.title = model.title
+        trip.startDate = Calendar.current.startOfDay(for: model.startDate)
+        trip.endDate = Calendar.current.startOfDay(for: model.endDate)
+        trip.defaultParticipants = Int16(clamping: model.defaultParticipants)
+        trip.status = model.status.rawValue
+        trip.settledAt = model.settledAt
+        trip.settledAmount = Int32(clamping: model.settledAmount)
+        trip.settlementEntryId = model.settlementEntryId
+        trip.createdAt = model.createdAt
+        trip.wishItem = model.wishItemId.flatMap { fetchWishItemEntity(id: $0) }
+    }
+
+    /// 여행을 지운다. 소비는 연결만 끊기고(Nullify) 인원·결제자도 그대로라 예산 영향은 사실상 없지만,
+    /// 위시 삭제와 같은 규칙으로 가장 이른 소비 날짜부터 한 번 다시 계산한다.
+    @discardableResult
+    func deleteTrip(id: UUID) -> Bool {
+        guard let trip = fetchTripEntity(id: id) else { return false }
+        let linkedDates = (trip.spendingRecords?.allObjects as? [SpendingRecord] ?? [])
+            .compactMap { $0.date }
+        context.delete(trip)
+        guard saveContext() else { return false }
+        if let earliest = linkedDates.min() { recalculateCarryOverChain(from: earliest) }
+        return true
+    }
+
+    /// 소비 날짜가 기간 안인 진행 중 여행. 둘 이상 겹치면 고르지 않는다(nil) — 사용자가 직접 고르게.
+    func trip(containing date: Date) -> TripModel? {
+        let matches = fetchActiveTrips().filter { $0.contains(date) }
+        return matches.count == 1 ? matches.first : nil
+    }
+
+    /// 여행에 묶인 소비 (날짜 오름차순)
+    func fetchSpendingRecords(tripId: UUID) -> [SpendingRecordModel] {
+        let request: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        request.predicate = NSPredicate(format: "trip.id == %@", tripId as CVarArg)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: true)]
+        return ((try? context.fetch(request)) ?? []).map(SpendingRecordModel.init)
+    }
+
+    func tripSettlement(for tripId: UUID) -> TripSettlementModel {
+        TripSettlementModel.compute(records: fetchSpendingRecords(tripId: tripId))
     }
 }

@@ -217,4 +217,110 @@ final class TripTests: XCTestCase {
         XCTAssertLessThanOrEqual(records.myShareTotal, baseDailyBudget,
                                  "내 몫은 75,000이라 소비 렌즈로는 초과가 아니다 — overBudgetDays가 이 값을 쓰면 안 된다")
     }
+
+    // MARK: - 여행 헬퍼
+
+    @discardableResult
+    func makeTrip(_ title: String = "제주", from: Int = 0, to: Int = 2, participants: Int = 3,
+                  wishItemId: UUID? = nil) -> TripModel {
+        let trip = TripModel(title: title, startDate: day(from), endDate: day(to),
+                             defaultParticipants: participants, wishItemId: wishItemId)
+        XCTAssertTrue(sut.createTrip(trip))
+        return trip
+    }
+
+    // MARK: - 여행 CRUD
+
+    func test_여행을_만들고_읽고_고치고_지운다() {
+        let trip = makeTrip()
+        XCTAssertEqual(sut.fetchTrips().map(\.id), [trip.id])
+
+        var edited = trip
+        edited.title = "부산"; edited.defaultParticipants = 4
+        XCTAssertTrue(sut.updateTrip(edited))
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.title, "부산")
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.defaultParticipants, 4)
+
+        XCTAssertTrue(sut.deleteTrip(id: trip.id))
+        XCTAssertTrue(sut.fetchTrips().isEmpty)
+    }
+
+    /// 정산 완료 정렬과 자동 선택 제외는 `settleTrip`이 있어야 검증할 수 있어 Task 6에서
+    /// 함께 확인한다. 여기서는 정산이 없는 상태에서 시작일 최근순 정렬과, 정산이 하나도
+    /// 없을 때 `fetchActiveTrips`가 `fetchTrips`와 같다는 것만 고정한다.
+    func test_진행_중_여행들은_시작일_최근순이고_전부_활성이다() {
+        let old = makeTrip("작년", from: -400, to: -398)
+        let recent = makeTrip("최근", from: -3, to: -1)
+        let mid = makeTrip("중간", from: -30, to: -28)
+
+        XCTAssertEqual(sut.fetchTrips().map(\.id), [recent.id, mid.id, old.id])
+        XCTAssertEqual(sut.fetchActiveTrips().map(\.id), sut.fetchTrips().map(\.id))
+    }
+
+    func test_소비에_여행을_묶고_여행별로_읽는다() {
+        let trip = makeTrip()
+        let a = spend(90_000, participants: 3, tripId: trip.id)
+        let b = spend(30_000, on: 1, participants: 3, paidByMe: false, tripId: trip.id)
+        spend(5_000)   // 여행 아님
+
+        let records = sut.fetchSpendingRecords(tripId: trip.id)
+        XCTAssertEqual(Set(records.map(\.id)), [a, b])
+        XCTAssertEqual(records.first { $0.id == a }?.participants, 3)
+        XCTAssertEqual(records.first { $0.id == b }?.paidByMe, false)
+    }
+
+    func test_수정으로_여행_연결을_바꿀_수_있다() {
+        let trip = makeTrip()
+        let id = spend(50_000)
+        var edited = sut.fetchSpendingRecords(date: day(0)).first { $0.id == id }!
+        edited.tripId = trip.id; edited.participants = 2
+        XCTAssertTrue(sut.updateSpendingRecord(edited))
+        XCTAssertEqual(sut.fetchSpendingRecords(tripId: trip.id).map(\.id), [id])
+
+        edited.tripId = nil
+        XCTAssertTrue(sut.updateSpendingRecord(edited))
+        XCTAssertTrue(sut.fetchSpendingRecords(tripId: trip.id).isEmpty)
+    }
+
+    func test_여행을_지워도_소비와_예산_영향은_남는다() {
+        let trip = makeTrip()
+        let id = spend(90_000, participants: 3, paidByMe: false, tripId: trip.id)
+        let before = available()
+
+        XCTAssertTrue(sut.deleteTrip(id: trip.id))
+        let record = sut.fetchSpendingRecords(date: day(0)).first { $0.id == id }
+        XCTAssertNotNil(record)
+        XCTAssertNil(record?.tripId)
+        XCTAssertEqual(record?.participants, 3, "인원·결제자는 그대로")
+        XCTAssertEqual(available(), before, "예산 영향 불변")
+    }
+
+    // MARK: - 날짜로 여행 찾기
+
+    func test_기간에_드는_진행_중_여행이_하나면_그걸_준다() {
+        let trip = makeTrip(from: 0, to: 2)
+        XCTAssertEqual(sut.trip(containing: day(1))?.id, trip.id)
+        XCTAssertNil(sut.trip(containing: day(3)))
+    }
+
+    func test_기간이_겹치는_여행이_둘이면_고르지_않는다() {
+        makeTrip("A", from: 0, to: 2)
+        makeTrip("B", from: 1, to: 3)
+        XCTAssertNil(sut.trip(containing: day(1)))
+    }
+
+    // MARK: - 집계
+
+    func test_여행_집계는_사용자_예시와_같다() {
+        let trip = makeTrip(participants: 3)
+        spend(100_000, participants: 3, tripId: trip.id)
+        spend(200_000, participants: 3, tripId: trip.id)
+        spend(150_000, on: 1, participants: 3, tripId: trip.id)
+
+        let s = sut.tripSettlement(for: trip.id)
+        XCTAssertEqual(s.perPersonSpending, 150_000)
+        XCTAssertEqual(s.paidByMeTotal, 450_000)
+        // 10만·20만은 3으로 나누어떨어지지 않아 항목별 버림의 나머지가 여기 붙는다
+        XCTAssertEqual(s.receivable, 300_001)
+    }
 }
