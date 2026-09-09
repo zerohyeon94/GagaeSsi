@@ -7,7 +7,6 @@
 //
 
 import XCTest
-import CoreData
 @testable import GagaeSsi
 
 final class TripSettlementTests: XCTestCase {
@@ -99,46 +98,6 @@ final class TripSettlementTests: XCTestCase {
         XCTAssertEqual(saved.title, "저녁 회식")
         XCTAssertEqual(saved.participants, 3, "인원이 기본값으로 덮이면 안 된다")
         XCTAssertFalse(saved.paidByMe, "결제자가 기본값으로 덮이면 안 된다")
-    }
-
-    // MARK: - 삭제 규칙
-
-    /// Trip.spendingRecords는 deletionRule="Nullify"다. 여행을 지워도 소비 기록 자체는
-    /// 남아야 한다 (Cascade로 바뀌면 실제 소비 내역이 통째로 사라진다).
-    /// 아직 createTrip API가 없으므로(Task 5) 마이그레이션 테스트들과 같은 방식으로
-    /// NSEntityDescription을 통해 직접 삽입한다.
-    func test_여행을_지워도_소비_기록은_지워지지_않는다() {
-        let sut = CoreDataManager(inMemory: true)
-        sut.resetAllData()
-        let day = Calendar.current.startOfDay(for: Date())
-        _ = sut.createDailyBudget(DailyBudgetModel(availableAmount: 100_000, date: day,
-                                                   carryOverSources: [], spendingRecords: []))
-        let record = SpendingRecordModel(title: "숙소", amount: 120_000, date: day)
-        XCTAssertTrue(sut.createSpendingRecord(record))
-
-        let context = sut.context
-        let trip = NSEntityDescription.insertNewObject(forEntityName: "Trip", into: context)
-        trip.setValue(UUID(), forKey: "id")
-        trip.setValue("제주", forKey: "title")
-        trip.setValue(Date(), forKey: "startDate")
-        trip.setValue(Date(), forKey: "endDate")
-        trip.setValue(Int16(3), forKey: "defaultParticipants")
-        trip.setValue("진행중", forKey: "status")
-        trip.setValue(Date(), forKey: "createdAt")
-
-        guard let entity = sut.fetchSpendingRecordEntity(id: record.id) else {
-            XCTFail("방금 만든 소비 기록을 찾지 못함")
-            return
-        }
-        entity.setValue(trip, forKey: "trip")
-        XCTAssertTrue(sut.saveContext())
-
-        context.delete(trip)
-        XCTAssertTrue(sut.saveContext())
-
-        let afterDelete = sut.fetchSpendingRecords(date: day)
-        XCTAssertEqual(afterDelete.count, 1, "여행을 지워도 소비 기록은 남아야 한다")
-        XCTAssertNil(afterDelete[0].tripId, "지워진 여행과의 연결은 nil이 되어야 한다")
     }
 
     // MARK: - 정산 집계

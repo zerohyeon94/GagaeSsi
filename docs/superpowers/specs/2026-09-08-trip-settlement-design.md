@@ -151,7 +151,7 @@ spendingRecords.filter { $0.wishItemId == nil }.map(\.budgetAmount).reduce(0, +)
 
 내역·통계의 `.amount` 합산(`HistoryViewModel.load`, `StatsViewModel` 월 합계·카테고리·일별·전월, `CategorySpendingAnalyzer`, `SpendingCSVExporter`)은 `.myShare`로 바꾼다. 기계적 치환이며 회귀 테스트로 기존 값 불변을 확인한다.
 
-**재계산 트리거**: `participants`·`paidByMe` 변경은 `budgetAmount`를 바꾸므로 `updateSpendingRecord`가 이미 부르는 `recalculateCarryOverChain(from: date)`로 커버된다. `deleteTrip`은 연결됐던 소비 중 가장 이른 날짜부터 한 번 재계산한다 (위시 삭제와 동일). 여행 삭제는 소비의 `participants`·`paidByMe`를 건드리지 않으므로 사실상 예산은 불변이지만, 규칙의 일관성을 위해 부른다.
+**재계산 트리거**: `participants`·`paidByMe` 변경은 `budgetAmount`를 바꾸므로 `updateSpendingRecord`가 이미 부르는 `recalculateCarryOverChain(from: date)`로 커버된다. `deleteTrip`은 재계산하지 않는다 — 위시 삭제와 달리 여행을 지우는 건 소비의 `participants`·`paidByMe`를 건드리지 않고, `budgetAmount`는 그 둘만 보고 `trip`은 보지 않으므로 예산은 정확히 그대로다. 재계산은 그저 규칙을 맞추려고 부르는 게 아니다 — 아직 `.debtTransfer`로 전환되지 않은 과거 초과분을 그 김에 부채로 바꿔버리는 부수효과가 있어서, 이유 없이 부르면 "여행을 지웠을 뿐인데 빚이 생기는" 결과가 된다.
 
 ## 7. 데이터 계층 API (`CoreDataManager` 여행 섹션)
 
@@ -159,8 +159,10 @@ spendingRecords.filter { $0.wishItemId == nil }.map(\.budgetAmount).reduce(0, +)
 // 여행 CRUD
 func fetchTrips() -> [TripModel]                 // 진행 중 먼저, 이어서 정산 완료 (각각 최근순)
 func createTrip(_ model: TripModel) -> Bool
-func updateTrip(_ model: TripModel) -> Bool
-func deleteTrip(id: UUID) -> Bool                // 소비는 남기고 연결만 끊음(Nullify) + 재계산
+func updateTrip(id: UUID, title: String, startDate: Date, endDate: Date,
+                defaultParticipants: Int, wishItemId: UUID?) -> Bool
+                                                  // 편집 필드만 — 정산 상태는 settleTrip/reopenTrip만 건드림
+func deleteTrip(id: UUID) -> Bool                // 소비는 남기고 연결만 끊음(Nullify)
 func trip(containing date: Date) -> TripModel?   // 진행 중 여행 중 기간에 포함되는 것. 2개 이상이면 nil
 
 // 소비 ↔ 여행

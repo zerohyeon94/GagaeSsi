@@ -235,14 +235,35 @@ final class TripTests: XCTestCase {
         let trip = makeTrip()
         XCTAssertEqual(sut.fetchTrips().map(\.id), [trip.id])
 
-        var edited = trip
-        edited.title = "부산"; edited.defaultParticipants = 4
-        XCTAssertTrue(sut.updateTrip(edited))
+        XCTAssertTrue(sut.updateTrip(id: trip.id, title: "부산", startDate: trip.startDate,
+                                     endDate: trip.endDate, defaultParticipants: 4,
+                                     wishItemId: trip.wishItemId))
         XCTAssertEqual(sut.fetchTrip(id: trip.id)?.title, "부산")
         XCTAssertEqual(sut.fetchTrip(id: trip.id)?.defaultParticipants, 4)
 
         XCTAssertTrue(sut.deleteTrip(id: trip.id))
         XCTAssertTrue(sut.fetchTrips().isEmpty)
+    }
+
+    func test_updateTrip은_없는_id면_false다() {
+        XCTAssertFalse(sut.updateTrip(id: UUID(), title: "없음", startDate: day(0), endDate: day(0),
+                                      defaultParticipants: 2, wishItemId: nil))
+    }
+
+    func test_fetchTrip은_없는_id면_nil이다() {
+        XCTAssertNil(sut.fetchTrip(id: UUID()))
+    }
+
+    func test_같은_날_시작한_여행은_최근_생성순이다() {
+        let first = makeTrip("먼저", from: 0, to: 2)
+        let second = makeTrip("나중", from: 0, to: 2)
+        XCTAssertEqual(sut.fetchTrips().map(\.id), [second.id, first.id])
+    }
+
+    func test_여행에_지갑을_연결해_저장한다() {
+        let wallet = seedWallet(100_000)
+        let trip = makeTrip(wishItemId: wallet)
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.wishItemId, wallet)
     }
 
     /// 정산 완료 정렬과 자동 선택 제외는 `settleTrip`이 있어야 검증할 수 있어 Task 6에서
@@ -264,7 +285,7 @@ final class TripTests: XCTestCase {
         spend(5_000)   // 여행 아님
 
         let records = sut.fetchSpendingRecords(tripId: trip.id)
-        XCTAssertEqual(Set(records.map(\.id)), [a, b])
+        XCTAssertEqual(records.map(\.id), [a, b], "날짜 오름차순")
         XCTAssertEqual(records.first { $0.id == a }?.participants, 3)
         XCTAssertEqual(records.first { $0.id == b }?.paidByMe, false)
     }

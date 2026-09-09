@@ -1161,9 +1161,9 @@ SpendingRecordModel`에 추가해뒀다 (`GagaeSsi/Models/BudgetModels.swift`):
         let trip = makeTrip()
         XCTAssertEqual(sut.fetchTrips().map(\.id), [trip.id])
 
-        var edited = trip
-        edited.title = "부산"; edited.defaultParticipants = 4
-        XCTAssertTrue(sut.updateTrip(edited))
+        XCTAssertTrue(sut.updateTrip(id: trip.id, title: "부산", startDate: trip.startDate,
+                                     endDate: trip.endDate, defaultParticipants: 4,
+                                     wishItemId: trip.wishItemId))
         XCTAssertEqual(sut.fetchTrip(id: trip.id)?.title, "부산")
         XCTAssertEqual(sut.fetchTrip(id: trip.id)?.defaultParticipants, 4)
 
@@ -1190,7 +1190,7 @@ SpendingRecordModel`에 추가해뒀다 (`GagaeSsi/Models/BudgetModels.swift`):
         spend(5_000)   // 여행 아님
 
         let records = sut.fetchSpendingRecords(tripId: trip.id)
-        XCTAssertEqual(Set(records.map(\.id)), [a, b])
+        XCTAssertEqual(records.map(\.id), [a, b], "날짜 오름차순")
         XCTAssertEqual(records.first { $0.id == a }?.participants, 3)
         XCTAssertEqual(records.first { $0.id == b }?.paidByMe, false)
     }
@@ -1272,10 +1272,12 @@ SpendingRecordModel`에 추가해뒀다 (`GagaeSsi/Models/BudgetModels.swift`):
 ```swift
     // MARK: - 여행 (같이 쓴 돈 묶기 · 정산)
 
-    /// 진행 중이 먼저, 그다음 정산 완료. 각각 시작일 최근순.
+    /// 진행 중이 먼저, 그다음 정산 완료. 각각 시작일 최근순 — 같은 날 시작한 여행은
+    /// 최근 생성순으로 묶어 `fetchWishItems`와 같은 이유로 순서를 고정한다.
     func fetchTrips() -> [TripModel] {
         let request: NSFetchRequest<Trip> = Trip.fetchRequest()
-        request.sortDescriptors = [NSSortDescriptor(key: "startDate", ascending: false)]
+        request.sortDescriptors = [NSSortDescriptor(key: "startDate", ascending: false),
+                                   NSSortDescriptor(key: "createdAt", ascending: false)]
         let models = ((try? context.fetch(request)) ?? []).map(TripModel.init)
         return models.filter { !$0.isSettled } + models.filter { $0.isSettled }
     }
@@ -1299,41 +1301,59 @@ SpendingRecordModel`에 추가해뒀다 (`GagaeSsi/Models/BudgetModels.swift`):
     func createTrip(_ model: TripModel) -> Bool {
         let trip = Trip(context: context)
         trip.id = model.id
-        applyTripFields(model, to: trip)
-        return saveContext()
-    }
-
-    @discardableResult
-    func updateTrip(_ model: TripModel) -> Bool {
-        guard let trip = fetchTripEntity(id: model.id) else { return false }
-        applyTripFields(model, to: trip)
-        return saveContext()
-    }
-
-    private func applyTripFields(_ model: TripModel, to trip: Trip) {
-        trip.title = model.title
-        trip.startDate = Calendar.current.startOfDay(for: model.startDate)
-        trip.endDate = Calendar.current.startOfDay(for: model.endDate)
-        trip.defaultParticipants = Int16(clamping: model.defaultParticipants)
+        trip.createdAt = model.createdAt
+        applyTripEditableFields(title: model.title, startDate: model.startDate, endDate: model.endDate,
+                                defaultParticipants: model.defaultParticipants,
+                                wishItemId: model.wishItemId, to: trip)
+        // 정산 상태는 생성 시점 값 그대로 싣는다 — 이후로는 `settleTrip`/`reopenTrip`(Task 6)만 건드린다
         trip.status = model.status.rawValue
         trip.settledAt = model.settledAt
         trip.settledAmount = Int32(clamping: model.settledAmount)
         trip.settlementEntryId = model.settlementEntryId
-        trip.createdAt = model.createdAt
-        trip.wishItem = model.wishItemId.flatMap { fetchWishItemEntity(id: $0) }
+        return saveContext()
     }
 
-    /// 여행을 지운다. 소비는 연결만 끊기고(Nullify) 인원·결제자도 그대로라 예산 영향은 사실상 없지만,
-    /// 위시 삭제와 같은 규칙으로 가장 이른 소비 날짜부터 한 번 다시 계산한다.
+    /// 제목·기간·인원·지갑 연결만 수정한다 (정산 상태는 건드리지 않음 — `settleTrip`/`reopenTrip`만 쓴다).
+    ///
+    /// `TripModel`을 통째로 받아 덮으면, 폼 필드만 채운 새 모델이 `status`를 진행중으로,
+    /// `settledAmount`를 0으로, `settlementEntryId`를 nil로 되돌려 이미 정산된 여행을 조용히
+    /// 되돌리고, `settlementEntryId`가 가리키던 정산 크레딧을 되찾을 방법을 잃게 된다.
+    @discardableResult
+    func updateTrip(id: UUID, title: String, startDate: Date, endDate: Date,
+                    defaultParticipants: Int, wishItemId: UUID?) -> Bool {
+        guard let trip = fetchTripEntity(id: id) else { return false }
+        applyTripEditableFields(title: title, startDate: startDate, endDate: endDate,
+                                defaultParticipants: defaultParticipants,
+                                wishItemId: wishItemId, to: trip)
+        return saveContext()
+    }
+
+    /// 여행의 편집 가능한 필드(제목·기간·인원·지갑 연결)만 적용한다. 정산 상태 필드는
+    /// `createTrip`과 `settleTrip`/`reopenTrip`(Task 6)에서만 쓴다.
+    ///
+    /// `wishItemId`가 이미 지워진 위시를 가리키면 연결은 조용히 nil이 되고 저장 자체는
+    /// 그대로 성공한다 — `createSpendingRecord`가 `model.tripId`를 해석하는 것과 같은 규칙.
+    private func applyTripEditableFields(title: String, startDate: Date, endDate: Date,
+                                         defaultParticipants: Int, wishItemId: UUID?, to trip: Trip) {
+        trip.title = title
+        let start = Calendar.current.startOfDay(for: startDate)
+        trip.startDate = start
+        // 종료일이 시작일보다 앞서면 기간 판정이 모든 날짜에 대해 거짓이 된다 — 하루짜리로 접는다
+        trip.endDate = max(start, Calendar.current.startOfDay(for: endDate))
+        trip.defaultParticipants = Int16(clamping: defaultParticipants)
+        trip.wishItem = wishItemId.flatMap { fetchWishItemEntity(id: $0) }
+    }
+
+    /// 여행을 지운다. 소비는 연결만 끊기고(Nullify) 그대로 남는다.
+    ///
+    /// `budgetAmount`는 `participants`·`paidByMe`만 보고 `trip`은 보지 않으므로 예산은 정확히
+    /// 그대로다 — 위시 삭제와 달리 이월을 다시 계산할 이유가 없다. (재계산은 아직 전환되지 않은
+    /// 과거 초과분을 뒤늦게 부채로 바꾸므로, 이유 없이 부르면 여행을 지웠을 뿐인데 빚이 생긴다.)
     @discardableResult
     func deleteTrip(id: UUID) -> Bool {
         guard let trip = fetchTripEntity(id: id) else { return false }
-        let linkedDates = (trip.spendingRecords?.allObjects as? [SpendingRecord] ?? [])
-            .compactMap { $0.date }
         context.delete(trip)
-        guard saveContext() else { return false }
-        if let earliest = linkedDates.min() { recalculateCarryOverChain(from: earliest) }
-        return true
+        return saveContext()
     }
 
     /// 소비 날짜가 기간 안인 진행 중 여행. 둘 이상 겹치면 고르지 않는다(nil) — 사용자가 직접 고르게.
@@ -2318,13 +2338,11 @@ struct TripEditView: View {
                 title: title, startDate: startDate, endDate: endDate,
                 defaultParticipants: participants, wishItemId: wishItemId))
         case .edit(let t):
-            var updated = t
-            updated.title = title
-            updated.startDate = startDate
-            updated.endDate = endDate
-            updated.defaultParticipants = participants
-            updated.wishItemId = wishItemId
-            ok = CoreDataManager.shared.updateTrip(updated)
+            // updateTrip은 편집 필드만 받는다 — TripModel을 통째로 덮으면 정산 상태
+            // (status·settledAmount·settlementEntryId)가 폼 기본값으로 조용히 되돌아간다.
+            ok = CoreDataManager.shared.updateTrip(
+                id: t.id, title: title, startDate: startDate, endDate: endDate,
+                defaultParticipants: participants, wishItemId: wishItemId)
         }
         if ok { onSave(); dismiss() }
     }
