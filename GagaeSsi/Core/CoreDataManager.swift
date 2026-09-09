@@ -2012,8 +2012,12 @@ final class CoreDataManager {
         if existing { return }
 
         let target = Int(truncating: active.targetAmount ?? 0)
+        // 목표 도달 판정은 "목표를 향해 모은 돈"(= savedAmount − returnedAmount) 기준이어야 한다.
+        // savedAmount를 그대로 쓰면 여행 정산으로 돌아온 돈이 목표 진행으로 이중 계산돼
+        // 실제로 모은 돈보다 일찍 구매가능 상태로 넘어간다 (WishItemModel.goalContribution과 동일 규칙).
         let saved = savedAmount(for: activeId)
-        let remaining = target - saved
+        let goalSaved = saved - wishReturnedAmount(for: activeId)
+        let remaining = target - goalSaved
         if remaining <= 0 {
             active.status = WishStatus.purchasable.rawValue
             _ = saveContext()
@@ -2032,7 +2036,7 @@ final class CoreDataManager {
         active.addToSavingEntries(entry)
         budget.addToWishSavingEntries(entry)
 
-        if saved + amount >= target {
+        if goalSaved + amount >= target {
             active.status = WishStatus.purchasable.rawValue
         }
         _ = saveContext()
@@ -2092,8 +2096,13 @@ final class CoreDataManager {
         if let other = fetchActiveWishItemEntity(), other.id != id { return false }
         guard let entity = fetchWishItemEntity(id: id) else { return false }
 
-        // 재활성화 대비: 기존 엔트리 제거 후 새 저금 시작
-        for e in (entity.savingEntries?.allObjects as? [WishSavingEntry] ?? []) {
+        // 재활성화 대비: 기존 엔트리 제거 후 새 저금 시작.
+        // 평소 저금은 기존에도 환급 없이 지웠다(그대로 유지) — 정산으로 돌아온 돈만은
+        // DailyBudget에 달려 있지 않아 라이브 차감이 없으므로, 지우기 전에 반드시 환급해야
+        // 재활성화만으로 그 돈이 사라지지 않는다.
+        let entries = entity.savingEntries?.allObjects as? [WishSavingEntry] ?? []
+        refundSettlementEntries(entries)
+        for e in entries {
             context.delete(e)
         }
         entity.status = WishStatus.saving.rawValue
@@ -2127,10 +2136,11 @@ final class CoreDataManager {
 
     func deleteWishItem(id: UUID) -> Bool {
         guard let entity = fetchWishItemEntity(id: id) else { return false }
-        // 저금 중이었다면 누적액 환급 후 삭제
-        if WishStatus.from(entity.status) == .saving {
-            refundWishSaving(entity)
-        }
+        // 상태와 무관하게 항상 부른다 — 평소 저금 환급은 함수 내부에서 `.saving`일 때만 적용되고
+        // (기존 동작 유지), 정산으로 돌아온 돈은 상태·날짜 무관 전액 환급해야 한다. 목표를 채워
+        // `.purchasable`이 된 여행 지갑도 정산금을 들고 있을 수 있어 상태로 거르면 그 돈이 삭제로
+        // 그냥 사라진다.
+        refundWishSaving(entity)
         // 지갑에서 쓴 소비들은 연결만 끊기고 남는다(Nullify) → 다시 예산 차감 대상이 되므로
         // 가장 이른 소비 날짜부터 이월을 다시 계산해야 한다
         let linkedDates = (entity.spendingRecords?.allObjects as? [SpendingRecord] ?? [])
@@ -2141,20 +2151,34 @@ final class CoreDataManager {
         return true
     }
 
-    /// 과거 일자에 이미 이월로 반영된 저금분을 오늘 잔액으로 환급한다.
-    /// 오늘 저금분은 엔트리 삭제(라이브 차감 제거)로 자연 환급되므로, 환급 이월액은
-    /// "오늘 이전 엔트리 합계"만 더한다. (이중 환급 방지)
+    /// 지갑을 없앨 때 모아둔 돈을 오늘 잔액으로 환급한다.
+    ///
+    /// 평소 저금은 **저금 중(`.saving`)일 때만, 오늘 이전** 엔트리를 더한다 — 오늘 저금분은
+    /// 엔트리를 지우면 그날의 라이브 차감이 같이 풀려 저절로 환급되기 때문이고(이중 환급 방지),
+    /// 저금 중이 아닌 상태에서는 이미 남은 돈을 쓰거나 쥔 채로 사용자가 선택한 것이라 환급하지
+    /// 않는 게 기존 동작이다.
+    /// 여행 정산으로 돌아온 돈은 애초에 `DailyBudget`에 달려 있지 않아 라이브 차감이 없다.
+    /// 상태·날짜와 무관하게 전부 환급하지 않으면 지갑을 지울 때(또는 목표를 채워 구매가능
+    /// 상태가 된 뒤 지울 때) 그 돈이 사라진다.
     private func refundWishSaving(_ entity: WishItem) {
         let today = Calendar.current.startOfDay(for: Date())
         let entries = entity.savingEntries?.allObjects as? [WishSavingEntry] ?? []
-        let pastTotal = entries
-            .filter { Calendar.current.startOfDay(for: $0.date ?? today) < today }
-            .reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
 
-        if pastTotal != 0, let budget = fetchOrCreateDailyBudgetEntity(date: today) {
+        let ordinaryPastTotal = WishStatus.from(entity.status) == .saving
+            ? entries
+                .filter { WishSavingSource.from($0.source) == nil }
+                .filter { Calendar.current.startOfDay(for: $0.date ?? today) < today }
+                .reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+            : 0
+        let settlementTotal = entries
+            .filter { WishSavingSource.from($0.source) == .tripSettlement }
+            .reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+        let refundTotal = ordinaryPastTotal + settlementTotal
+
+        if refundTotal != 0, let budget = fetchOrCreateDailyBudgetEntity(date: today) {
             let refund = CarryOverSource(context: context)
             refund.id = UUID()
-            refund.amount = NSDecimalNumber(value: pastTotal)
+            refund.amount = NSDecimalNumber(value: refundTotal)
             refund.date = today
             refund.toDate = today
             refund.dailyBudget = budget
@@ -2162,6 +2186,25 @@ final class CoreDataManager {
         }
         // 엔트리 제거 (오늘 엔트리 라이브 차감도 함께 해제됨)
         for e in entries { context.delete(e) }
+    }
+
+    /// 정산으로 돌아온 돈(`source == tripSettlement`)만 날짜·상태 무관 전액 오늘 잔액으로
+    /// 환급한다. `deactivateWish`/`activateWish`처럼 평소 저금은 건드리지 않아야 하는 곳에서 쓴다.
+    /// 엔트리 자체는 지우지 않는다 — 호출부가 지운다.
+    private func refundSettlementEntries(_ entries: [WishSavingEntry]) {
+        let total = entries
+            .filter { WishSavingSource.from($0.source) == .tripSettlement }
+            .reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+        guard total != 0 else { return }
+        let today = Calendar.current.startOfDay(for: Date())
+        guard let budget = fetchOrCreateDailyBudgetEntity(date: today) else { return }
+        let refund = CarryOverSource(context: context)
+        refund.id = UUID()
+        refund.amount = NSDecimalNumber(value: total)
+        refund.date = today
+        refund.toDate = today
+        refund.dailyBudget = budget
+        budget.addToCarryOverSources(refund)
     }
 
     // MARK: - 여행 (같이 쓴 돈 묶기 · 정산)
@@ -2276,10 +2319,10 @@ final class CoreDataManager {
     /// - Parameter actualAmount: 실제 받은 금액. 계산값과 달라도 막지 않는다.
     /// - Returns: 이미 정산됐거나 음수면 `false`
     @discardableResult
-    func settleTrip(id: UUID, actualAmount: Int) -> Bool {
+    func settleTrip(id: UUID, actualAmount: Int, now: Date = Date()) -> Bool {
         guard let trip = fetchTripEntity(id: id),
               TripStatus.from(trip.status) == .active, actualAmount >= 0 else { return false }
-        let today = Calendar.current.startOfDay(for: Date())
+        let today = Calendar.current.startOfDay(for: now)
 
         var entryId: UUID?
         if actualAmount > 0 {
@@ -2311,22 +2354,44 @@ final class CoreDataManager {
     ///
     /// 지갑으로 돌아간 돈을 이미 다른 소비가 써서 잔액이 부족하면 거부한다 (지갑 "잔액 한도" 규칙).
     /// 크레딧을 `settlementEntryId`로 찾으므로 정산 뒤 지갑을 붙이거나 뗐어도 제자리를 찾는다.
+    /// 크레딧을 찾을 수 없으면(예: 지갑을 지워 정산금이 오늘 예산에 이름 없이 합쳐진 경우) 되돌릴
+    /// 수 없다 — 상태만 바꾸면 그 돈은 장부에 남은 채로 사라진 셈이 되고, 나중에 다시 정산하면
+    /// 없던 돈이 새로 생긴다. 그래서 이 경우는 항상 거부한다: 정산 완료 상태로 영구히 남는
+    /// (다시 열 수 없는) 여행이 생길 수 있지만, 이는 Fix 1로 지갑을 지워도 정산금 자체는 예산으로
+    /// 환급되고 나서만 벌어지는 드문 경로다 — 돈을 잃는 것보다 "다시 열기를 거부"하는 쪽이 안전하다.
+    ///
+    /// `now`는 다른 날짜로 옮겨 테스트하기 위한 훅이다(`settleTrip`의 `now`와 짝) — 이 함수 자체는
+    /// "오늘"에 기대는 로직이 없고 `settlementEntryId`가 가리키는, 이미 날짜가 박힌 크레딧만
+    /// 다루므로 본문에서 직접 쓰이진 않는다.
+    ///
+    /// 정산과 다시 열기 사이에 날짜가 지나가면 완전한 역연산이 아닐 수 있다: 그 사이에
+    /// `recalculateCarryOverChain`/`convertOverspendIfEligible`가 돌아 정산 크레딧이 낀 날의
+    /// 초과분을 부채로 전환해버렸다면, 크레딧을 지워도 그 전환은 되돌아가지 않는다(부채 전환은
+    /// 영구적이라는 기존 결정과 같다). 이 경우도 크레딧 자체는 정상적으로 지워지고 여행은
+    /// 진행 중으로 돌아간다 — 다만 그 사이에 생긴 부채는 남는다.
     @discardableResult
-    func reopenTrip(id: UUID) -> Bool {
+    func reopenTrip(id: UUID, now: Date = Date()) -> Bool {
         guard let trip = fetchTripEntity(id: id),
               TripStatus.from(trip.status) == .settled else { return false }
         let settledAmount = Int(trip.settledAmount)
         var recalcFrom: Date?
 
         if let entryId = trip.settlementEntryId, settledAmount > 0 {
-            if let entry = fetchWishSavingEntryEntity(id: entryId), let wishId = entry.wishItem?.id {
-                guard wishBalance(for: wishId) >= settledAmount else { return false }
+            if let entry = fetchWishSavingEntryEntity(id: entryId) {
+                if let wishId = entry.wishItem?.id {
+                    guard wishBalance(for: wishId) >= settledAmount else { return false }
+                }
+                // wishItem이 nil인 고아 엔트리는 잔액 검사 없이 그냥 지운다 — 어떤 지갑 잔액도
+                // 붙들고 있지 않다.
                 context.delete(entry)
             } else if let source = fetchCarryOverSourceEntity(id: entryId) {
                 recalcFrom = source.date
                 context.delete(source)
+            } else {
+                // 크레딧을 찾을 수 없으면 되돌릴 수 없다 — 상태만 바꾸면 돈이 장부에서 사라지거나
+                // 다시 정산할 때 없던 돈이 생긴다. 아무것도 바꾸지 않고 거부한다.
+                return false
             }
-            // 둘 다 없으면(지갑이 지워져 Cascade로 사라진 경우) 되돌릴 크레딧이 없다 — 상태만 되돌린다
         }
 
         trip.status = TripStatus.active.rawValue

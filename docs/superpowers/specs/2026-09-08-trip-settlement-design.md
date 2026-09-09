@@ -186,7 +186,7 @@ func reopenTrip(id: UUID) -> Bool
 4. 이미 정산 완료면 `false`
 
 **`reopenTrip(id:)`**
-1. 정산 때 만든 엔트리를 `settlementEntryId`로 찾아 삭제 — 지갑이면 `WishSavingEntry`, 예산이면 `CarryOverSource`. (같은 날 두 여행을 정산해도 섞이지 않게 id로 찾는다)
+1. 정산 때 만든 엔트리를 `settlementEntryId`로 찾아 삭제 — 지갑이면 `WishSavingEntry`, 예산이면 `CarryOverSource`. (같은 날 두 여행을 정산해도 섞이지 않게 id로 찾는다) 크레딧을 찾지 못하면 거부한다(`false`, 아무것도 바꾸지 않음) — 상태만 되돌리면 그 돈은 장부에서 사라진 셈이 되고 나중에 다시 정산하면 없던 돈이 새로 생긴다
 2. 지갑 크레딧을 이미 다른 소비가 써서 `잔액 < settledAmount`면 **거부**(`false`) — 위시 지갑 "잔액 한도" 규칙과 같은 태도
 3. 예산 크레딧이면 삭제 후 `settledAt`부터 이월 재계산
 4. `status = 진행중`, `settledAt = nil`, `settledAmount = 0`
@@ -253,6 +253,7 @@ func reopenTrip(id: UUID) -> Bool
 | 공용 소비에 환급 예정(`expectedPayback`)이 함께 있음 | 생기지 않게 막는다 — 인원 > 1이면 입력 화면에서 환급 필드를 숨기고 저장 시 0으로 비운다. `receivable`과 `expectedPayback`은 둘 다 "돌아올 돈"이라 공존하면 이중 계상된다 |
 | 정산 화면에 "1인당 얼마씩 받을지" 표시 | **표시하지 않는다.** `receivable ÷ (인원−1)`은 나머지 때문에 합이 `receivable`과 어긋난다(100,000/3명이면 66,667을 둘이 나눠야 함). 화면은 **인당 소비액**(`공용 합 ÷ 인원`)과 **받을 돈 합계**만 보여주고, 친구끼리의 개인별 채권은 범위 밖이다 |
 | 여행 삭제 | 소비·`participants`·`paidByMe`는 남음. 정산 완료 여행은 크레딧도 남음(회수 안 함) |
+| 지갑을 지우면 정산금은 예산으로 환급된다 | 정산 엔트리(`source == tripSettlement`)는 지갑 상태·날짜와 무관하게 항상 오늘 예산으로 환급된 뒤 지워진다 — 평소 저금(`.saving`일 때 오늘 이전 것만)과 다른 규칙. 그 뒤 `reopenTrip`은 `settlementEntryId`가 더는 아무것도 가리키지 않아 거부된다(위 항목 참고) |
 | `amount / participants` 나머지 | 내림. 남의 몫(`receivable`)에 나머지가 붙는다 |
 | 인원을 1로 내림 | 공용 아님 = `myShare == budgetAmount == amount`, `receivable 0` |
 | 지갑에서 산 위시(예: 여행)를 홈에서 볼 때 | 홈 "오늘 소비"에 잡히지 않는다 (의도). `HomeViewModel.spent`가 `budgetedSpending`을 쓰면서, 지갑 연결 소비(`wishItemId != nil`)는 저금 시점에 이미 예산에서 빠졌기 때문에 홈 소비 합계에서 제외된다 — 이중 차감을 막기 위함 |

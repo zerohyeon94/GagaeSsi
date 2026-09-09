@@ -54,17 +54,28 @@ struct WishItemModel: Identifiable {
 
     // MARK: - Computed
     /// 지갑에 남은 돈. 목표를 채운 뒤 여행 등에 쓰면 여기서 빠진다.
+    /// 정산으로 돌아온 돈도 지갑이 실제로 들고 있는 돈이라 여기엔 포함한다 — 쓸 수 있는 돈이다.
     var balance: Int { max(0, savedAmount - spentAmount) }
     /// 지갑에서 쓴 적이 있는지 (있으면 목록에서 게이지 대신 잔액을 보여준다)
     var hasSpending: Bool { spentAmount > 0 }
-    /// 목표 대비 저금 진행률 (0~1)
+
+    /// 목표를 향해 "내가 모은 돈" = `savedAmount − returnedAmount`.
+    ///
+    /// 여행 정산으로 돌아온 돈은 애초에 내가 대신 냈던 돈이 돌아온 것일 뿐, 목표를 향해 새로
+    /// 모은 돈이 아니다. 지출이 `savedAmount`를 줄이지 않으므로 `savedAmount`에 그대로 더하면
+    /// 쓴 돈이 돌아오기만 해도 목표 진행률이 오르는 이중 계산이 된다 — `progress`·
+    /// `remainingAmount`·`daysLeft`는 반드시 이 값을 써야 한다. 지갑이 실제로 쥔 돈(`balance`)은
+    /// 이 값과 다르다 — 정산금은 쓸 수는 있지만 목표 진행에는 세지 않는다.
+    var goalContribution: Int { max(0, savedAmount - returnedAmount) }
+
+    /// 목표 대비 저금 진행률 (0~1). 정산으로 돌아온 돈은 세지 않는다 — `goalContribution` 참고.
     var progress: Double {
         guard targetAmount > 0 else { return 0 }
-        return max(0, min(1, Double(savedAmount) / Double(targetAmount)))
+        return max(0, min(1, Double(goalContribution) / Double(targetAmount)))
     }
 
-    /// 목표까지 남은 금액
-    var remainingAmount: Int { max(0, targetAmount - savedAmount) }
+    /// 목표까지 남은 금액. 정산으로 돌아온 돈은 세지 않는다 — `goalContribution` 참고.
+    var remainingAmount: Int { max(0, targetAmount - goalContribution) }
 
     /// 남은 저금 일수 (올림). dailySaving이 0이면 nil.
     var daysLeft: Int? {

@@ -477,4 +477,109 @@ final class TripTests: XCTestCase {
         let trip = makeTrip()
         XCTAssertFalse(sut.reopenTrip(id: trip.id))
     }
+
+    // MARK: - 지갑 생애주기 vs 정산금 (Fix 1~3 회귀)
+
+    /// Fix 1 회귀: 지갑이 목표를 채워 `.purchasable`이어도, 그 안에 든 정산금은 지갑을
+    /// 지울 때 사라지지 않고 오늘 예산으로 돌아와야 한다.
+    func test_지갑을_지워도_정산으로_돌아온_돈은_예산으로_환급된다() {
+        let wallet = seedWallet(500_000)   // 목표 도달로 즉시 .purchasable
+        let trip = makeTrip(participants: 3, wishItemId: wallet)
+        let id = spend(450_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 300_000))
+        let walletBalance = sut.wishBalance(for: wallet)
+        XCTAssertEqual(walletBalance, 350_000, "지갑 잔액 = 저금 80만(오늘치 50만 + 정산 30만) − 소비 45만 (사전 조건)")
+
+        // 지갑을 지우면: 연결된 소비(45만)는 다시 예산 차감 대상이 되고, 오늘치 평소 저금(50만)은
+        // 라이브 차감 해제로 자연 환급되고, 정산금(30만)은 Fix 1로 명시 환급된다.
+        // 이 세 효과의 합은 정확히 지갑 잔액(35만)과 같다 — "지갑을 지우면 지갑이 쥐고 있던 돈만큼
+        // 예산이 늘어난다"는 게 참이어야 한다. 버그가 있으면(정산금 환급 누락) 정확히 30만원만큼 모자란다.
+        let before = available()
+        XCTAssertTrue(sut.deleteWishItem(id: wallet))
+        XCTAssertEqual(available(), before + walletBalance,
+                       "지갑이 쥐고 있던 돈(35만, 그중 정산금 30만 포함)은 지갑을 지워도 예산으로 돌아와야 한다")
+    }
+
+    /// Fix 2 회귀: 정산 크레딧을 더 이상 찾을 수 없으면(지갑이 지워져 Fix 1로 이미 예산에
+    /// 이름 없이 합쳐진 경우) `reopenTrip`은 아무것도 바꾸지 않고 거부해야 한다.
+    func test_정산_크레딧을_찾을_수_없으면_다시_열_수_없다() {
+        let wallet = seedWallet(500_000)
+        let trip = makeTrip(participants: 3, wishItemId: wallet)
+        let id = spend(450_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 300_000))
+        XCTAssertTrue(sut.deleteWishItem(id: wallet), "지갑을 지우면 정산 엔트리도 함께 사라진다")
+
+        XCTAssertFalse(sut.reopenTrip(id: trip.id))
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.status, .settled, "상태는 그대로 정산 완료여야 한다")
+    }
+
+    /// Fix 3 회귀: 정산으로 돌아온 돈은 지갑이 실제로 쥔 돈(balance)에는 들어가지만
+    /// 목표 진행률(progress)·남은 금액(remainingAmount)에는 들어가지 않아야 한다.
+    func test_정산으로_돌아온_돈은_목표_진행률에_들어가지_않는다() {
+        let wish = WishItemModel(title: "여행자금", targetAmount: 1_000_000, dailySaving: 500_000)
+        XCTAssertTrue(sut.createWishItem(wish))
+        XCTAssertTrue(sut.activateWish(id: wish.id, dailySaving: 500_000))
+        XCTAssertEqual(sut.fetchWishItems().first { $0.id == wish.id }?.savedAmount, 500_000,
+                       "오늘치 저금 50만원 (사전 조건)")
+
+        let trip = makeTrip(participants: 3, wishItemId: wish.id)
+        let id = spend(450_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wish.id))
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 300_000))
+
+        let item = sut.fetchWishItems().first { $0.id == wish.id }!
+        XCTAssertEqual(item.status, .saving, "아직 목표(100만) 미달 — 정산금을 포함해도 80만이라 구매가능이 아니다")
+        XCTAssertEqual(item.savedAmount, 800_000)
+        XCTAssertEqual(item.balance, 350_000, "지갑이 실제로 쥔 돈(80만 저금 − 45만 소비)엔 정산금이 포함된다")
+        XCTAssertEqual(item.progress, 0.5, accuracy: 0.0001, "정산금 30만을 뺀 50만 기준 진행률이어야 한다")
+        XCTAssertEqual(item.remainingAmount, 500_000, "정산금은 남은 목표 금액을 줄이지 않는다")
+    }
+
+    func test_음수_수령액은_거부된다() {
+        let trip = makeTrip()
+        XCTAssertFalse(sut.settleTrip(id: trip.id, actualAmount: -1))
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.status, .active)
+    }
+
+    /// 정산 크레딧은 `DailyBudget`에 달리지 않는다 — 달리면 평소 저금처럼 그날 예산에서
+    /// 빠져버려, "내 몫은 오늘 전액 나가고 남의 몫은 정산 때 한 번에 돌아온다"는 규칙이 깨진다.
+    func test_정산_크레딧은_그날_위시_저금으로_잡히지_않는다() {
+        let wallet = seedWallet(500_000)   // 목표 도달로 오늘치 저금 50만원이 오늘 예산에 붙는다
+        let beforeWishSaving = sut.fetchDailyBudgetModel(date: day(0))?.wishSavingAmount
+        let trip = makeTrip(participants: 3, wishItemId: wallet)
+        let id = spend(450_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 300_000))
+
+        XCTAssertEqual(sut.fetchDailyBudgetModel(date: day(0))?.wishSavingAmount, beforeWishSaving,
+                       "정산금 30만원은 DailyBudget.wishSavingEntries에 붙지 않아 오늘 위시 저금액을 그대로 둔다")
+    }
+
+    /// Fix 4 회귀: `now:`로 정산일과 재오픈일을 갈라 며칠 뒤 재오픈하는 경로를 재현한다.
+    ///
+    /// 정산과 재오픈 사이에 `processDailyBudgets`가 며칠치를 채우며 도는데, 이 구간에 초과
+    /// 소비가 없으면(이 테스트처럼 매일 예산이 충분하면) 부채 전환이 끼어들 일이 없어
+    /// `reopenTrip`이 크레딧을 지우는 것만으로 완전한 역연산이 된다 — `available()`이 정산
+    /// 전 값으로 정확히 돌아온다. (초과분이 있어 그 사이에 부채로 전환됐다면 `reopenTrip`은
+    /// 크레딧은 지우되 그 부채는 되돌리지 않는다 — `reopenTrip`의 문서 주석에 적어 둔 대로다.)
+    func test_며칠_뒤_다시_열어도_예산은_정산_전으로_정확히_돌아온다() {
+        let trip = makeTrip(from: -5, to: -3)
+        spend(90_000, on: -3, participants: 3, tripId: trip.id)
+        let before = available(-3)
+
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 60_000, now: day(-3)))
+        XCTAssertEqual(available(-3), before + 60_000)
+
+        // 며칠이 지나가는 걸 흉내낸다 — 그사이 초과 소비가 없어 부채 전환은 일어나지 않는다.
+        sut.processDailyBudgets(upTo: day(0))
+
+        XCTAssertTrue(sut.reopenTrip(id: trip.id, now: day(0)))
+        let reopened = sut.fetchTrip(id: trip.id)
+        XCTAssertEqual(reopened?.status, .active)
+        XCTAssertNil(reopened?.settledAt)
+        XCTAssertEqual(reopened?.settledAmount, 0)
+        XCTAssertEqual(available(-3), before, "크레딧이 지워져 정산 전 값으로 정확히 돌아온다")
+    }
 }
