@@ -2292,10 +2292,67 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ### Task 8: 내역 편집 시트에 여행 필드
 
+**지배 규칙 (Task 7 리뷰에서 나온, 반드시 지켜야 하는 것):**
+
+> **폼은 화면에 실제로 보여준 값만 덮어쓴다 — 숨겨진 필드가 저장된 데이터를 조용히 바꾸면 안 된다.**
+
+`CoreDataManager.deleteTrip`은 `trip` 연결만 Nullify하고 `participants`/`paidByMe`는 그대로 둔다(그래서 여행을 지워도 예산이 안 움직인다). 즉 `tripId == nil && participants == 3`은 정상 상태일 수 있다. `updated.participants = tripId == nil ? 1 : participants`처럼 쓰면, 그런 기록을 제목만 고쳐 저장해도 인원이 조용히 1로 무너지고 `budgetAmount`가 갑자기 3배로 뛰며 그날 이후 이월 체인이 통째로 틀어진다. 아래 스텝은 이 문제를 피하도록 다시 쓴 버전이다 — Task 7의 버그 패턴(위 스니펫)을 반복하지 않는다.
+
+또한 `SpendingRecordModel.isShared`는 `participants > 1`이며 `tripId`와 무관하다(모델의 doc comment 참고).
+
 **Files:**
 - Modify: `GagaeSsi/Features/History/HistorySpendEditView.swift`
+- Add: `GagaeSsiTests/SpendingEditDraftTests.swift`
 
-- [ ] **Step 1: 상태 추가**
+- [ ] **Step 1: 폼→기록 규칙을 순수 타입으로 추출**
+
+`HistorySpendEditView`는 `@State`를 가진 `View`라 저장 경로를 직접 단위 테스트할 수 없다. 그 규칙(정확히 Task 7에서 깨졌던 규칙)을 파일 상단에 순수 값 타입으로 뺀다:
+
+```swift
+/// 내역 편집 시트가 폼 값을 기록에 얹는 규칙.
+///
+/// 폼이 다루지 않는 필드(지갑 연결, 환급 수령 여부 등)는 원본에서 그대로 가져온다 —
+/// 화면에 보여주지 않은 값을 저장 때 기본값으로 되돌리면 사용자가 모르는 사이 데이터가 바뀐다.
+struct SpendingEditDraft {
+    var title: String
+    var amount: Int
+    var category: SpendingCategory
+    var date: Date
+    var tripId: UUID?
+    var participants: Int
+    var paidByMe: Bool
+    var hasPayback: Bool
+    var payback: Int
+
+    func applied(to record: SpendingRecordModel) -> SpendingRecordModel {
+        var result = record
+        result.title = title.isEmpty ? category.rawValue : title
+        result.amount = amount
+        result.category = category
+        // date-only 피커라 시각 성분은 원래 기록의 것을 유지하려면 날짜만 교체
+        let cal = Calendar.current
+        let timeComps = cal.dateComponents([.hour, .minute, .second], from: record.date)
+        result.date = cal.date(bySettingHour: timeComps.hour ?? 0, minute: timeComps.minute ?? 0,
+                               second: timeComps.second ?? 0, of: cal.startOfDay(for: date)) ?? date
+        result.tripId = tripId
+        // tripId == nil이라고 1/true로 강제하지 않는다 — 위 지배 규칙 참고
+        result.participants = max(1, participants)
+        result.paidByMe = paidByMe
+        // 공용 소비는 정산이 환급 역할을 하므로 환급 필드를 비운다 — 단, 이미 받은 환급은
+        // 예외다. receivePayback이 이미 CarryOverSource 크레딧을 올려놨는데 여기서 0으로
+        // 지우면 그 크레딧을 설명할 근거가 사라진다.
+        if record.paybackReceived {
+            result.expectedPayback = record.expectedPayback
+        } else {
+            result.expectedPayback = (hasPayback && !result.isShared) ? payback : 0
+        }
+        // id, wishItemId, paybackReceived는 record 값 그대로 유지된다
+        return result
+    }
+}
+```
+
+- [ ] **Step 2: 상태 추가**
 
 `@State private var payback = 0` 뒤에:
 
@@ -2308,73 +2365,32 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
     private var selectedTrip: TripModel? { trips.first { $0.id == tripId } }
     private var isTripLocked: Bool { selectedTrip?.isSettled == true }
-    private var isShared: Bool { tripId != nil && participants > 1 }
-    /// 미리보기용 임시 기록
-    private var preview: SpendingRecordModel {
-        SpendingRecordModel(title: title, amount: amount, date: date, tripId: tripId,
-                            participants: tripId == nil ? 1 : participants,
-                            paidByMe: tripId == nil ? true : paidByMe)
+    private var draft: SpendingEditDraft {
+        SpendingEditDraft(title: title, amount: amount, category: category, date: date,
+                          tripId: tripId, participants: participants, paidByMe: paidByMe,
+                          hasPayback: hasPayback, payback: payback)
     }
+    private var preview: SpendingRecordModel { draft.applied(to: record) }
+    private var isShared: Bool { preview.isShared }
 ```
 
-- [ ] **Step 2: 화면 — 날짜 피커와 환급 토글 사이에 여행 블록**
+- [ ] **Step 3: 화면 — 날짜 피커와 환급 토글 사이에 여행 블록**
 
-`DatePicker("날짜", ...)` 줄 뒤, `// 환급 예정` 주석 앞에:
+`DatePicker("날짜", ...)` 줄 뒤, `// 환급 예정` 주석 앞에 여행 피커와 분담 블록을 넣는다.
 
-```swift
-                            // 여행 (진행 중 여행이 있거나 이미 묶여 있을 때만)
-                            if !trips.isEmpty {
-                                Label("여행", systemImage: "suitcase.fill")
-                                    .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
-                                Picker("여행", selection: $tripId) {
-                                    Text("여행 아님").tag(UUID?.none)
-                                    ForEach(trips) { t in
-                                        Text(t.isSettled ? "\(t.title) (정산 완료)" : t.title).tag(UUID?.some(t.id))
-                                    }
-                                }
-                                .pickerStyle(.menu).tint(.gagaePinkDark)
-                                .disabled(isTripLocked)
-                                .onChange(of: tripId) { _, newValue in
-                                    if let t = trips.first(where: { $0.id == newValue }) {
-                                        participants = max(1, t.defaultParticipants); paidByMe = true
-                                    } else { participants = 1; paidByMe = true }
-                                }
+여행 피커는 `!trips.isEmpty`일 때만 렌더링한다. "여행 아님" 행 + 여행 목록(정산 완료는 `"\(title) (정산 완료)"`), `.disabled(isTripLocked)`. `tripId`가 바뀌어 여행이 선택되면 `participants = max(1, trip.defaultParticipants)`, `paidByMe = true`로 채운다. **`nil`로 풀 때는(여행 아님을 고를 때) `participants`/`paidByMe`를 건드리지 않는다** — 건드리면 Task 7과 같은 버그가 재현된다.
 
-                                if tripId != nil {
-                                    HStack {
-                                        Text("나누는 인원").font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
-                                        Spacer()
-                                        Stepper(value: $participants, in: 1...20) {
-                                            Text(participants == 1 ? "내 개인 소비" : "\(participants)명")
-                                                .font(.gagaeCalloutMedium).foregroundStyle(.gagaePinkDark)
-                                        }.fixedSize()
-                                    }
-                                    if participants > 1 {
-                                        Picker("누가 냈나", selection: $paidByMe) {
-                                            Text("내가 냈어요").tag(true)
-                                            Text("다른 사람이 냈어요").tag(false)
-                                        }.pickerStyle(.segmented)
-                                        if amount > 0 {
-                                            Text(paidByMe
-                                                 ? "내 몫 \(FormatterUtils.currencyString(from: preview.myShare)) · 정산 때 \(FormatterUtils.currencyString(from: preview.receivable)) 돌아와요"
-                                                 : "내 몫 \(FormatterUtils.currencyString(from: preview.myShare))만 그날 예산에서 빠져요")
-                                                .font(.gagaeCaption).foregroundStyle(.gagaeGood)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                    }
-                                    if isTripLocked {
-                                        Text("정산이 끝난 여행이라 여행·인원·결제자는 바꿀 수 없어요.")
-                                            .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
-                                    }
-                                }
-                            }
-```
+분담 블록(인원 Stepper + 누가 냈나 Picker + 미리보기 줄)은 **`tripId != nil || participants > 1`일 때** 렌더링한다 — `tripId != nil`만으로 게이팅하면 안 되고, `trips.isEmpty`와도 무관해야 한다. `deleteTrip`으로 여행 연결이 끊긴 분담 기록은 여행이 하나도 없어도 분담 값을 보여주고 고칠 수 있어야 한다.
 
-환급 토글 블록 전체(`Toggle(isOn: $hasPayback...)`부터 `if hasPayback { ... }` 끝까지)를 `if !isShared { ... }`로 감싼다.
+인원 Stepper 범위는 **`1...999`** (모델이 999에서 자르므로, `1...20`이면 30명짜리 여행을 이 화면에서 조정할 방법이 없어진다).
 
-인원·결제자 컨트롤은 `isTripLocked`일 때 잠근다 — `Stepper`와 `Picker("누가 냈나")` 각각에 `.disabled(isTripLocked)`.
+미리보기 문구는 Task 7과 같다: `paidByMe`면 `"내 몫 X · 정산 때 Y 돌아와요"`, 아니면 `"내 몫 X만큼만 그날 예산에서 빠져요"` (숫자 바로 뒤 "만큼만" — "만"만 쓰면 화폐 단위로 읽힌다).
 
-- [ ] **Step 3: 로드·저장**
+환급 토글 블록 전체(`Toggle(isOn: $hasPayback...)`부터 `if hasPayback { ... }` 끝까지)를 `if !isShared { ... }`로 감싼다. 숨겨졌는데 `payback > 0 && !record.paybackReceived`이면 한 줄 안내: `"환급 예정 \(금액)은 정산이 대신해요 — 저장하면 지워져요"`.
+
+`isTripLocked`일 때 여행 피커·인원 Stepper·누가 냈나 Picker에 더해 **금액 필드**도 잠근다 — 지갑에 연결된 정산 완료 여행에서 금액을 올리면 `wishBalance`가 줄고, `reopenTrip`은 `wishBalance < settledAmount`면 거부하므로 정산을 다시 열 수 없는 상태를 만들 수 있다. 잠금 안내 문구에 "금액도 바꿀 수 없고, 여행 상세에서 정산을 먼저 다시 열어야 한다"는 내용을 포함한다.
+
+- [ ] **Step 4: 로드·저장**
 
 `loadRecord()` 끝에:
 
@@ -2390,31 +2406,44 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
         trips = active
 ```
 
-`save()`의 `updated.expectedPayback = hasPayback ? payback : 0` 를 다음으로:
+`save()`는 필드별 대입을 모두 `SpendingEditDraft`로 옮기고 한 줄이 된다:
 
 ```swift
-        updated.tripId = tripId
-        updated.participants = tripId == nil ? 1 : participants
-        updated.paidByMe = tripId == nil ? true : paidByMe
-        // 공용 소비는 정산이 환급 역할을 하므로 환급 필드를 비운다
-        updated.expectedPayback = (hasPayback && !updated.isShared) ? payback : 0
+    private func save() {
+        guard isValid else { return }
+        if CoreDataManager.shared.updateSpendingRecord(draft.applied(to: record)) {
+            onSaved()
+            dismiss()
+        }
+    }
 ```
 
-- [ ] **Step 4: 빌드 확인**
+- [ ] **Step 5: 테스트 — `GagaeSsiTests/SpendingEditDraftTests.swift` (CoreData 없이 순수)**
+
+먼저 실패를 확인한 뒤(`SpendingEditDraft`가 없으므로 빌드 실패) 위 타입을 구현해 통과시킨다. 최소한 다음을 검증한다:
+- Task 7 회귀: `tripId == nil, participants == 3, paidByMe == false`인 기록을 제목만 바꿔 저장해도 `participants == 3`, `paidByMe == false`가 유지된다. 버그 버전이었다면 `budgetAmount`가 `amount`(전체) 였을 것을 `amount / 3`과 비교해 확인한다.
+- `wishItemId`, `paybackReceived`, `id`는 편집해도 그대로다.
+- date-only 피커는 원래 기록의 시각을 보존한다.
+- 공용으로 바꾸면 `expectedPayback`이 0이 되지만, `paybackReceived == true`면 원래 값이 유지된다.
+- `participants: 0`은 1로 보정된다.
+
+- [ ] **Step 6: 빌드·테스트 확인**
 
 ```bash
 xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' build -quiet
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -only-testing:GagaeSsiTests/SpendingEditDraftTests
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0'
 ```
 
-Expected: `** BUILD SUCCEEDED **`
+Expected: `** BUILD SUCCEEDED **`, 새 테스트 전부 통과, 전체 스위트 회귀 없음.
 
-- [ ] **Step 5: 커밋**
+- [ ] **Step 7: 커밋**
 
 ```bash
-git add GagaeSsi/Features/History/HistorySpendEditView.swift
+git add GagaeSsi/Features/History/HistorySpendEditView.swift GagaeSsiTests/SpendingEditDraftTests.swift
 git commit -m "feat: 내역에서 소비를 고칠 때도 여행·인원·결제자를 바꿀 수 있게
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
