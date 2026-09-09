@@ -183,14 +183,14 @@ struct SpendingRecordModel: Identifiable {
 `CoreDataManager.createSpendingRecord`에서 `newSpendingRecord.paybackReceived = model.paybackReceived` 줄 뒤에:
 
 ```swift
-        newSpendingRecord.participants = Int16(model.participants)
+        newSpendingRecord.participants = Int16(clamping: model.participants)
         newSpendingRecord.paidByMe = model.paidByMe
 ```
 
 `updateSpendingRecord`에서 `spendingRecord.paybackReceived = model.paybackReceived` 줄 뒤에:
 
 ```swift
-        spendingRecord.participants = Int16(model.participants)
+        spendingRecord.participants = Int16(clamping: model.participants)
         spendingRecord.paidByMe = model.paidByMe
 ```
 
@@ -1314,10 +1314,10 @@ SpendingRecordModel`에 추가해뒀다 (`GagaeSsi/Models/BudgetModels.swift`):
         trip.title = model.title
         trip.startDate = Calendar.current.startOfDay(for: model.startDate)
         trip.endDate = Calendar.current.startOfDay(for: model.endDate)
-        trip.defaultParticipants = Int16(model.defaultParticipants)
+        trip.defaultParticipants = Int16(clamping: model.defaultParticipants)
         trip.status = model.status.rawValue
         trip.settledAt = model.settledAt
-        trip.settledAmount = Int32(model.settledAmount)
+        trip.settledAmount = Int32(clamping: model.settledAmount)
         trip.settlementEntryId = model.settlementEntryId
         trip.createdAt = model.createdAt
         trip.wishItem = model.wishItemId.flatMap { fetchWishItemEntity(id: $0) }
@@ -1672,7 +1672,7 @@ struct WishSavingEntryModel: Identifiable {
 
         trip.status = TripStatus.settled.rawValue
         trip.settledAt = today
-        trip.settledAmount = Int32(actualAmount)
+        trip.settledAmount = Int32(clamping: actualAmount)
         trip.settlementEntryId = entryId
         return saveContext()
     }
