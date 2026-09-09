@@ -13,7 +13,7 @@ struct DataExportView: View {
     @State private var exportedFile: URL?
     @State private var errorMessage: String?
 
-    private var total: Int { records.reduce(0) { $0 + $1.amount } }
+    private var total: Int { records.reduce(0) { $0 + $1.myShare } }
 
     var body: some View {
         ZStack {

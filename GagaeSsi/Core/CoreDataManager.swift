@@ -793,9 +793,11 @@ final class CoreDataManager {
             let date = calendar.date(byAdding: .day, value: offset, to: startDate)!
             let startOfDay = calendar.startOfDay(for: date)
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+            // 홈 "최근 7일 소비 흐름" 차트는 소비 기록 화면이라 내 몫(myShare) 렌즈를 쓴다.
+            // 같은 화면의 예산 카드는 budgetAmount로 별도 계산되므로 여기서 헷갈릴 필요 없다.
             let total = records
                 .filter { $0.date >= startOfDay && $0.date < endOfDay }
-                .reduce(0) { $0 + $1.amount }
+                .reduce(0) { $0 + $1.myShare }
             return (date: startOfDay, total: total)
         }
     }

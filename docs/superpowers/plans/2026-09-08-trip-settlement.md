@@ -863,10 +863,27 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `GagaeSsi/Models/SpendingCSVExporter.swift` (`header`, `makeCSV`)
 - Modify: `GagaeSsi/Features/Home/HomeViewModel.swift` (195행)
 - Modify: `GagaeSsi/Features/Spend/SpendView.swift` (`totalSpentToday`)
-- Modify: `GagaeSsi/Core/CoreDataManager.swift` (`recentAverageDailySpending`, 1704행)
-- Test: `GagaeSsiTests/CategorySpendingTests.swift`, `GagaeSsiTests/DataExportTests.swift`
+- Modify: `GagaeSsi/Core/CoreDataManager.swift` (`recentAverageDailySpending`, 1704행; `fetchDailyTotals` — `myShare`, 홈 "최근 7일 소비 흐름" 차트는 소비 기록 화면)
+- Modify: `GagaeSsi/Features/History/HistoryView.swift` (`dayListCard`의 일별 합계 — `myShare`, 같은 화면 달력 셀과 렌즈를 맞춘다)
+- Modify: `GagaeSsi/Features/Stats/CategoryDetailView.swift` (`total` — `myShare`, 같은 화면 `items` 목록·비중(`share`)과 렌즈를 맞춘다)
+- Modify: `GagaeSsi/Features/Settings/DataExportView.swift` (`total` — `myShare`, CSV 미리보기이므로 CSV의 "내 몫" 열과 맞춘다)
+- Modify: `GagaeSsi/Features/History/OverspendHistoryView.swift` (`detail`의 기록별 금액, `loadRecords`의 정렬 — `budgetAmount`, 이 화면은 예산 장부: 초과 판정 자체가 `budgetedSpending`(Σ`budgetAmount`)이라 그걸 설명하는 기록도 같은 렌즈여야 한다)
+- Modify: `GagaeSsi/Models/SpendingTitleCleanup.swift` (`titleStats`의 `Accumulator` 두 곳 — `myShare`, "이 항목으로 얼마 썼는지"를 보여주는 소비 기록 화면)
+- Test: `GagaeSsiTests/CategorySpendingTests.swift`, `GagaeSsiTests/DataExportTests.swift`, `GagaeSsiTests/SpendingTitleCleanupTests.swift`
 
 - [ ] **Step 1: 실패하는 테스트 추가**
+
+`SpendingTitleCleanupTests`에 추가 (`titleStats`를 직접 테스트하는 파일이라 여기가 맞다):
+
+```swift
+    /// 항목 이름 정리도 소비 기록 화면이므로 내 몫으로 묶인다
+    func test_항목_정리_합계도_내_몫으로_묶인다() {
+        let shared = SpendingRecordModel(title: "저녁", amount: 80_000, date: Date(),
+                                         tripId: UUID(), participants: 4, paidByMe: true)
+        let stats = SpendingTitleCleanup.titleStats(from: [shared])
+        XCTAssertEqual(stats.first?.total, 20_000)
+    }
+```
 
 `CategorySpendingTests`에 추가:
 
@@ -973,6 +990,78 @@ extension SpendViewModel {
 부채가 줄지 않아요" 경고의 입력이라 예산 표면이다. 하루 예산과 비교하는 값이므로 실제로
 예산에서 빠져나간 돈(`budgetAmount`) 기준이어야 한다 — 친구가 낸 여행비까지 `amount`로
 합산하면 7일 평균이 부풀어 경고가 잘못 뜬다.)
+
+**놓치기 쉬운 여섯 곳 — 화면 하나 안에서 두 합계가 서로 달라지는 자리.**
+지금까지 바꾼 자리들은 "이 화면은 소비 기록이다/예산 장부다"를 판단해 렌즈를 골랐는데,
+아래는 같은 화면 안에 이미 한쪽 렌즈로 바뀐 합계가 있는데 다른 합산이 그걸 놓친 경우다.
+**원칙: 한 화면 안에서 두 합계가 서로 달라지면 안 된다 — 화면 단위로 렌즈를 정하고 그
+화면의 모든 합산을 같은 렌즈로 맞춘다.**
+
+`CoreDataManager.fetchDailyTotals(days:)`:
+
+```swift
+            let total = records
+                .filter { $0.date >= startOfDay && $0.date < endOfDay }
+                .reduce(0) { $0 + $1.myShare }
+```
+
+→ `myShare`. `HomeView`의 "최근 7일 소비 흐름" 카드가 이 값을 쓰는데, 이건 소비 기록 카드지
+예산 카드가 아니다 (예산 카드는 `budgetedSpending` 기반으로 따로 있다). 주석으로 두 카드의
+렌즈가 왜 다른지 남겨둔다.
+
+`HistoryView.dayListCard`:
+
+```swift
+Text(FormatterUtils.currencyString(from: viewModel.selectedRecords.reduce(0) { $0 + $1.myShare }))
+```
+
+→ `myShare`. 같은 날짜의 달력 셀(`HistoryViewModel.load()`의 `dayTotals`, 이미 `myShare`)과
+일별 카드 합계가 어긋나면 안 된다.
+
+`CategoryDetailView.total`:
+
+```swift
+private var total: Int { records.reduce(0) { $0 + $1.myShare } }
+```
+
+→ `myShare`. 같은 화면의 `items`(항목별 목록, 이미 `myShare`로 바뀜)와 합이 맞아야 하고,
+`share`가 이 값을 `StatsViewModel.monthlyTotal`(`myShare` 기준)로 나누므로 분자·분모 렌즈가
+같아야 비중이 100%를 넘지 않는다.
+
+`DataExportView.total`:
+
+```swift
+private var total: Int { records.reduce(0) { $0 + $1.myShare } }
+```
+
+→ `myShare`. 이 미리보기가 요약하는 CSV 자체가 "내 몫" 열을 따로 가진 소비 기록 표라
+합계도 같은 렌즈여야 한다.
+
+`OverspendHistoryView` — 기록별 금액 표시와 정렬 둘 다:
+
+```swift
+Text("-" + FormatterUtils.currencyString(from: record.budgetAmount))
+...
+records[date] = CoreDataManager.shared.fetchSpendingRecords(date: date)
+    .sorted { $0.budgetAmount > $1.budgetAmount }
+```
+
+→ 여기만 `budgetAmount` (다른 다섯 곳과 다르다). 이 화면은 "왜 그날 예산을 넘겼는지"를
+설명하는 예산 장부이고, 초과 판정 자체가 `OverspendDay`/`budgetedSpending`(Σ`budgetAmount`)
+기준이다. 목록이 `myShare`를 쓰면 넘긴 금액의 합과 나열된 기록들이 설명하는 금액이 어긋난다.
+
+`SpendingTitleCleanup.titleStats`의 `Accumulator` — **두 곳 모두**:
+
+```swift
+                accumulator.total += record.myShare
+                ...
+                map[key] = Accumulator(title: normalized, count: 1,
+                                       total: record.myShare, lastDate: record.date)
+```
+
+→ `myShare`. `CategorySpendingAnalyzer.itemSummaries`와 같은 누적기 모양이고 "이 항목으로
+얼마 썼는지"를 보여주는 소비 기록 화면이다. 두 곳 중 하나만 고치면 그룹의 첫 기록만 다른
+렌즈로 세어져 조용히 틀린다.
 
 - [ ] **Step 4: 테스트 통과 확인**
 

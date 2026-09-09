@@ -23,7 +23,7 @@ struct CategoryDetailView: View {
     @State private var records: [SpendingRecordModel] = []
     @State private var items: [CategorySpendingItem] = []
 
-    private var total: Int { records.reduce(0) { $0 + $1.amount } }
+    private var total: Int { records.reduce(0) { $0 + $1.myShare } }
     private var share: Double {
         guard monthlyTotal > 0 else { return 0 }
         return Double(total) / Double(monthlyTotal)

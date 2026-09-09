@@ -63,6 +63,14 @@ final class SpendingTitleCleanupTests: XCTestCase {
         XCTAssertEqual(stats.map(\.title), ["커피"])
     }
 
+    /// 항목 이름 정리도 소비 기록 화면이므로 내 몫으로 묶인다
+    func test_항목_정리_합계도_내_몫으로_묶인다() {
+        let shared = SpendingRecordModel(title: "저녁", amount: 80_000, date: Date(),
+                                         tripId: UUID(), participants: 4, paidByMe: true)
+        let stats = SpendingTitleCleanup.titleStats(from: [shared])
+        XCTAssertEqual(stats.first?.total, 20_000)
+    }
+
     // MARK: - 확실한 중복
 
     func test_공백만_다른_표기를_중복으로_묶는다() {

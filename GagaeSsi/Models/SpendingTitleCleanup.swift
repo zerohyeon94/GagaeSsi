@@ -67,7 +67,8 @@ enum SpendingTitleCleanup {
 
             if var accumulator = map[key] {
                 accumulator.count += 1
-                accumulator.total += record.amount
+                // 항목 이름 정리도 소비 기록 화면 — 내가 소비한 몫(myShare)으로 묶는다
+                accumulator.total += record.myShare
                 if record.date > accumulator.lastDate {
                     accumulator.title = normalized
                     accumulator.lastDate = record.date
@@ -75,7 +76,7 @@ enum SpendingTitleCleanup {
                 map[key] = accumulator
             } else {
                 map[key] = Accumulator(title: normalized, count: 1,
-                                       total: record.amount, lastDate: record.date)
+                                       total: record.myShare, lastDate: record.date)
             }
         }
 

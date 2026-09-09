@@ -357,7 +357,7 @@ struct OverspendHistoryView: View {
                             .font(.system(size: 13, weight: .medium, design: .rounded))
                             .foregroundStyle(.gagaeText).lineLimit(1)
                         Spacer()
-                        Text("-" + FormatterUtils.currencyString(from: record.amount))
+                        Text("-" + FormatterUtils.currencyString(from: record.budgetAmount))
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundStyle(.gagaeDanger)
                     }
@@ -392,8 +392,10 @@ struct OverspendHistoryView: View {
 
     private func loadRecords(for date: Date) {
         guard records[date] == nil else { return }
+        // 예산 장부 화면 — 실제로 그날 예산에서 빠져나간 금액(budgetAmount) 기준으로
+        // 큰 지출부터 보여준다 (반성 우선순위). 초과 판정 자체도 budgetAmount 합계라 맞춰야 한다.
         records[date] = CoreDataManager.shared.fetchSpendingRecords(date: date)
-            .sorted { $0.amount > $1.amount }   // 큰 지출부터 (반성 우선순위)
+            .sorted { $0.budgetAmount > $1.budgetAmount }
     }
 
     private func dayLabel(_ date: Date) -> String {

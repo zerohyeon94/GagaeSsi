@@ -133,7 +133,7 @@ private extension HistoryView {
                 Text(viewModel.selectedDateLabel).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.gagaeText)
                 Spacer()
                 if !viewModel.selectedRecords.isEmpty {
-                    Text(FormatterUtils.currencyString(from: viewModel.selectedRecords.reduce(0) { $0 + $1.amount }))
+                    Text(FormatterUtils.currencyString(from: viewModel.selectedRecords.reduce(0) { $0 + $1.myShare }))
                         .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.gagaeDanger)
                 }
             }
