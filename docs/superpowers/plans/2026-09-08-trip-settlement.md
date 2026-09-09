@@ -2810,7 +2810,13 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `GagaeSsi/Features/History/HistoryViewModel.swift` (여행 제목 맵)
 - Modify: `GagaeSsi/Features/History/HistoryView.swift` (`recordRow`)
 - Modify: `GagaeSsi/Features/Spend/SpendView.swift` (`spendingRow`)
+- Modify: `GagaeSsi/Features/Stats/CategoryDetailView.swift` ("전체 기록" 행의 금액 표시)
 - Modify: `GagaeSsi/Features/Wishlist/WishListView.swift` (지갑 표시)
+
+> **개별 기록 행의 금액 표시도 `myShare`로 통일한다.** Task 4에서 합계는 전부 렌즈를 맞췄지만
+> 행 단위 표시는 그대로 `amount`인 곳이 남아 있다 — 합계는 내 몫인데 그 아래 행들은 결제 전액이면
+> 더해봐도 합이 안 맞는다. 내역(`HistoryView.recordRow`)·기록 탭(`SpendView.spendingRow`)·
+> 카테고리 상세("전체 기록") 세 곳을 같이 바꾸고, 공용 소비에는 결제 전액을 보조 줄로 따로 보여준다.
 
 - [ ] **Step 1: `HistoryViewModel`에 여행 제목 맵**
 
