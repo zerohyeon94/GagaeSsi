@@ -392,6 +392,8 @@ enum CarryOverReason: String {
     case poolWithdraw
     /// 환급·페이백 수령
     case refund
+    /// 여행 정산으로 돌아온 남의 몫 (내가 대신 낸 돈이 실제로 돌아온 날)
+    case tripSettlement
     /// 초과분 상환으로 그날 예산에서 빠진 금액 (음수)
     case debtRepay
     /// 음수 이월을 부채로 옮기면서 남긴 상쇄 크레딧 (양수).
@@ -402,7 +404,7 @@ enum CarryOverReason: String {
     /// 부채 관련 항목은 과거 초과의 결과일 뿐 그날의 과소비 판정 기준이 아니다.
     var countsTowardAllowance: Bool {
         switch self {
-        case .carryOver, .poolWithdraw, .refund: return true
+        case .carryOver, .poolWithdraw, .refund, .tripSettlement: return true
         case .debtRepay, .debtTransfer: return false
         }
     }

@@ -84,7 +84,7 @@ enum OverspendAnalyzer {
             switch source.reason {
             case .carryOver:
                 savedCarryOver += source.amount
-            case .poolWithdraw, .refund:
+            case .poolWithdraw, .refund, .tripSettlement:
                 sameDayAdjustment += source.amount
             case .debtRepay, .debtTransfer:
                 debtAdjustment += source.amount

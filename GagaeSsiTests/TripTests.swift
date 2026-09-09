@@ -344,4 +344,137 @@ final class TripTests: XCTestCase {
         // 10만·20만은 3으로 나누어떨어지지 않아 항목별 버림의 나머지가 여기 붙는다
         XCTAssertEqual(s.receivable, 300_001)
     }
+
+    // MARK: - 목록·자동 선택 (정산 완료 포함)
+    //
+    // `settleTrip`이 있어야 정산 완료 상태를 만들 수 있어 Task 5가 아니라 여기서 검증한다.
+
+    func test_목록은_진행_중이_먼저_그다음_정산_완료다() {
+        let old = makeTrip("작년", from: -400, to: -398)
+        let settled = makeTrip("정산됨", from: -30, to: -28)
+        XCTAssertTrue(sut.settleTrip(id: settled.id, actualAmount: 0))
+        let recent = makeTrip("최근", from: -3, to: -1)
+
+        XCTAssertEqual(sut.fetchTrips().map(\.id), [recent.id, old.id, settled.id])
+    }
+
+    func test_정산_완료_여행은_자동_선택_대상이_아니다() {
+        let trip = makeTrip(from: 0, to: 2)
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 0))
+        XCTAssertNil(sut.trip(containing: day(1)))
+        XCTAssertTrue(sut.fetchActiveTrips().isEmpty)
+    }
+
+    // MARK: - 정산
+
+    func test_정산하면_남의_몫이_오늘_예산으로_돌아온다() {
+        let trip = makeTrip(participants: 3)
+        spend(450_000, participants: 3, tripId: trip.id)
+        let before = available()
+
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: sut.tripSettlement(for: trip.id).receivable))
+        XCTAssertEqual(available(), before + 300_000)
+        let settled = sut.fetchTrip(id: trip.id)
+        XCTAssertEqual(settled?.status, .settled)
+        XCTAssertEqual(settled?.settledAmount, 300_000)
+        XCTAssertNotNil(settled?.settledAt)
+    }
+
+    func test_실제_수령액을_덮어쓰면_그_금액이_반영된다() {
+        let trip = makeTrip(participants: 3)
+        spend(450_000, participants: 3, tripId: trip.id)
+        let before = available()
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 290_000))
+        XCTAssertEqual(available(), before + 290_000)
+    }
+
+    func test_받을_돈이_없으면_크레딧_없이_상태만_바뀐다() {
+        let trip = makeTrip(participants: 3)
+        spend(90_000, participants: 3, paidByMe: false, tripId: trip.id)
+        let before = available()
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 0))
+        XCTAssertEqual(available(), before)
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.status, .settled)
+        XCTAssertNil(sut.fetchTrip(id: trip.id)?.settlementEntryId)
+    }
+
+    func test_이미_정산된_여행은_다시_정산되지_않는다() {
+        let trip = makeTrip()
+        spend(90_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 60_000))
+        let before = available()
+        XCTAssertFalse(sut.settleTrip(id: trip.id, actualAmount: 60_000))
+        XCTAssertEqual(available(), before)
+    }
+
+    func test_지갑_연결_여행은_정산금이_지갑으로_돌아온다() {
+        let wallet = seedWallet(500_000)
+        let trip = makeTrip(participants: 3, wishItemId: wallet)
+        let id = spend(450_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+        XCTAssertEqual(sut.wishBalance(for: wallet), 50_000)
+        let budgetBefore = available()
+
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 300_000))
+        XCTAssertEqual(sut.wishBalance(for: wallet), 350_000, "지갑 잔액이 회복된다")
+        XCTAssertEqual(available(), budgetBefore, "예산에는 아무 변화 없다")
+        XCTAssertEqual(sut.fetchWishItems().first { $0.id == wallet }?.returnedAmount, 300_000)
+    }
+
+    func test_지갑을_먼저_지운_여행은_정산금이_예산으로_온다() {
+        let wallet = seedWallet(100_000)
+        let trip = makeTrip(participants: 3, wishItemId: wallet)
+        spend(90_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.deleteWishItem(id: wallet))
+        let before = available()
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 60_000))
+        XCTAssertEqual(available(), before + 60_000)
+    }
+
+    // MARK: - 정산 다시 열기
+
+    func test_예산으로_정산한_여행을_다시_열면_크레딧이_사라진다() {
+        let trip = makeTrip()
+        spend(90_000, participants: 3, tripId: trip.id)
+        let before = available()
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 60_000))
+        XCTAssertTrue(sut.reopenTrip(id: trip.id))
+        XCTAssertEqual(available(), before)
+        let reopened = sut.fetchTrip(id: trip.id)
+        XCTAssertEqual(reopened?.status, .active)
+        XCTAssertNil(reopened?.settledAt)
+        XCTAssertEqual(reopened?.settledAmount, 0)
+    }
+
+    func test_지갑으로_정산한_여행을_다시_열면_지갑_잔액이_줄어든다() {
+        let wallet = seedWallet(500_000)
+        let trip = makeTrip(wishItemId: wallet)
+        let id = spend(450_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 300_000))
+
+        XCTAssertTrue(sut.reopenTrip(id: trip.id))
+        XCTAssertEqual(sut.wishBalance(for: wallet), 50_000)
+        XCTAssertEqual(sut.fetchWishItems().first { $0.id == wallet }?.returnedAmount, 0)
+    }
+
+    func test_지갑_크레딧을_이미_써버렸으면_다시_열_수_없다() {
+        let wallet = seedWallet(500_000)
+        let trip = makeTrip(wishItemId: wallet)
+        let id = spend(450_000, participants: 3, tripId: trip.id)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+        XCTAssertTrue(sut.settleTrip(id: trip.id, actualAmount: 300_000))   // 잔액 35만
+
+        let later = spend(320_000, on: 1)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: later, wishItemId: wallet))   // 잔액 3만
+
+        XCTAssertFalse(sut.reopenTrip(id: trip.id))
+        XCTAssertEqual(sut.fetchTrip(id: trip.id)?.status, .settled, "아무것도 바뀌지 않는다")
+        XCTAssertEqual(sut.wishBalance(for: wallet), 30_000)
+    }
+
+    func test_진행_중_여행은_다시_열_수_없다() {
+        let trip = makeTrip()
+        XCTAssertFalse(sut.reopenTrip(id: trip.id))
+    }
 }

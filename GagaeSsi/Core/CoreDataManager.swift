@@ -1916,6 +1916,21 @@ final class CoreDataManager {
         return entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
     }
 
+    /// 여행 정산으로 이 지갑에 돌아온 돈 합계
+    func wishReturnedAmount(for wishItemId: UUID) -> Int {
+        let request: NSFetchRequest<WishSavingEntry> = WishSavingEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "wishItem.id == %@ AND source == %@",
+                                        wishItemId as CVarArg, WishSavingSource.tripSettlement.rawValue)
+        let entries = (try? context.fetch(request)) ?? []
+        return entries.reduce(0) { $0 + Int(truncating: $1.amount ?? 0) }
+    }
+
+    private func fetchWishSavingEntryEntity(id: UUID) -> WishSavingEntry? {
+        let request: NSFetchRequest<WishSavingEntry> = WishSavingEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+
     // MARK: - 위시 지갑 (모은 돈으로 쓰기)
 
     /// 이 위시 지갑에서 쓴 소비 합 — 예산에서 빠졌을 금액(`budgetAmount`) 기준.
@@ -2044,14 +2059,16 @@ final class CoreDataManager {
         return entities.map {
             let id = $0.id ?? UUID()
             return WishItemModel(entity: $0, savedAmount: savedAmount(for: id),
-                                 spentAmount: wishSpentAmount(for: id))
+                                 spentAmount: wishSpentAmount(for: id),
+                                 returnedAmount: wishReturnedAmount(for: id))
         }
     }
 
     func fetchActiveWishItem() -> WishItemModel? {
         guard let entity = fetchActiveWishItemEntity(), let id = entity.id else { return nil }
         return WishItemModel(entity: entity, savedAmount: savedAmount(for: id),
-                             spentAmount: wishSpentAmount(for: id))
+                             spentAmount: wishSpentAmount(for: id),
+                             returnedAmount: wishReturnedAmount(for: id))
     }
 
     private func fetchWishItemEntity(id: UUID) -> WishItem? {
@@ -2249,5 +2266,75 @@ final class CoreDataManager {
 
     func tripSettlement(for tripId: UUID) -> TripSettlementModel {
         TripSettlementModel.compute(records: fetchSpendingRecords(tripId: tripId))
+    }
+
+    /// 여행을 정산한다 — 내가 대신 낸 남의 몫(`actualAmount`)을 되돌린다.
+    ///
+    /// 지갑이 연결돼 있으면 지갑으로(저금 엔트리, `source = tripSettlement`), 아니면 오늘 예산으로
+    /// (`CarryOverSource`, 페이백 수령과 같은 통로). 지갑 엔트리는 `DailyBudget`에 달지 않는다 —
+    /// 달면 오늘 예산에서 저금으로 빠져버린다.
+    /// - Parameter actualAmount: 실제 받은 금액. 계산값과 달라도 막지 않는다.
+    /// - Returns: 이미 정산됐거나 음수면 `false`
+    @discardableResult
+    func settleTrip(id: UUID, actualAmount: Int) -> Bool {
+        guard let trip = fetchTripEntity(id: id),
+              TripStatus.from(trip.status) == .active, actualAmount >= 0 else { return false }
+        let today = Calendar.current.startOfDay(for: Date())
+
+        var entryId: UUID?
+        if actualAmount > 0 {
+            if let wish = trip.wishItem {
+                let entry = WishSavingEntry(context: context)
+                entry.id = UUID()
+                entry.date = today
+                entry.amount = NSDecimalNumber(value: actualAmount)
+                entry.source = WishSavingSource.tripSettlement.rawValue
+                entry.wishItem = wish
+                wish.addToSavingEntries(entry)
+                entryId = entry.id
+            } else {
+                guard let budget = fetchOrCreateDailyBudgetEntity(date: today) else { return false }
+                let source = addCarryOverSource(to: budget, amount: actualAmount,
+                                                date: today, toDate: today, reason: .tripSettlement)
+                entryId = source.id
+            }
+        }
+
+        trip.status = TripStatus.settled.rawValue
+        trip.settledAt = today
+        trip.settledAmount = Int32(clamping: actualAmount)
+        trip.settlementEntryId = entryId
+        return saveContext()
+    }
+
+    /// 정산을 되돌린다 — 정산 때 만든 크레딧을 지우고 진행 중으로.
+    ///
+    /// 지갑으로 돌아간 돈을 이미 다른 소비가 써서 잔액이 부족하면 거부한다 (지갑 "잔액 한도" 규칙).
+    /// 크레딧을 `settlementEntryId`로 찾으므로 정산 뒤 지갑을 붙이거나 뗐어도 제자리를 찾는다.
+    @discardableResult
+    func reopenTrip(id: UUID) -> Bool {
+        guard let trip = fetchTripEntity(id: id),
+              TripStatus.from(trip.status) == .settled else { return false }
+        let settledAmount = Int(trip.settledAmount)
+        var recalcFrom: Date?
+
+        if let entryId = trip.settlementEntryId, settledAmount > 0 {
+            if let entry = fetchWishSavingEntryEntity(id: entryId), let wishId = entry.wishItem?.id {
+                guard wishBalance(for: wishId) >= settledAmount else { return false }
+                context.delete(entry)
+            } else if let source = fetchCarryOverSourceEntity(id: entryId) {
+                recalcFrom = source.date
+                context.delete(source)
+            }
+            // 둘 다 없으면(지갑이 지워져 Cascade로 사라진 경우) 되돌릴 크레딧이 없다 — 상태만 되돌린다
+        }
+
+        trip.status = TripStatus.active.rawValue
+        trip.settledAt = nil
+        trip.settledAmount = 0
+        trip.settlementEntryId = nil
+        guard saveContext() else { return false }
+        if let from = recalcFrom { recalculateCarryOverChain(from: from) }
+        return true
     }
 }

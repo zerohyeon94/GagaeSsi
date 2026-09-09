@@ -49,6 +49,8 @@ struct WishItemModel: Identifiable {
     var savedAmount: Int
     /// 이 위시 지갑에서 쓴 소비 합계
     var spentAmount: Int
+    /// 여행 정산으로 이 지갑에 돌아온 돈 합계 (`savedAmount`에 포함돼 있다 — 표시용 구분값)
+    var returnedAmount: Int
 
     // MARK: - Computed
     /// 지갑에 남은 돈. 목표를 채운 뒤 여행 등에 쓰면 여기서 빠진다.
@@ -75,7 +77,7 @@ struct WishItemModel: Identifiable {
     init(id: UUID = UUID(), title: String, targetAmount: Int, dailySaving: Int = 0,
          status: WishStatus = .waiting, kind: WishKind = .want,
          createdAt: Date = Date(), activatedAt: Date? = nil, completedAt: Date? = nil,
-         savedAmount: Int = 0, spentAmount: Int = 0) {
+         savedAmount: Int = 0, spentAmount: Int = 0, returnedAmount: Int = 0) {
         self.id = id
         self.title = title
         self.targetAmount = targetAmount
@@ -87,10 +89,11 @@ struct WishItemModel: Identifiable {
         self.completedAt = completedAt
         self.savedAmount = savedAmount
         self.spentAmount = spentAmount
+        self.returnedAmount = returnedAmount
     }
 
-    /// CoreData Entity -> Model 변환 생성자 (savedAmount·spentAmount는 별도 주입)
-    init(entity: WishItem, savedAmount: Int = 0, spentAmount: Int = 0) {
+    /// CoreData Entity -> Model 변환 생성자 (savedAmount·spentAmount·returnedAmount는 별도 주입)
+    init(entity: WishItem, savedAmount: Int = 0, spentAmount: Int = 0, returnedAmount: Int = 0) {
         self.id = entity.id ?? UUID()
         self.title = entity.title ?? ""
         self.targetAmount = Int(truncating: entity.targetAmount ?? 0)
@@ -102,6 +105,17 @@ struct WishItemModel: Identifiable {
         self.completedAt = entity.completedAt
         self.savedAmount = savedAmount
         self.spentAmount = spentAmount
+        self.returnedAmount = returnedAmount
+    }
+}
+
+// MARK: - 저금 엔트리 출처
+/// nil이면 매일 저금. 여행 정산으로 돌아온 돈은 저금이 아니라 회수라 구분해서 보여준다.
+enum WishSavingSource: String, Codable {
+    case tripSettlement
+
+    static func from(_ raw: String?) -> WishSavingSource? {
+        raw.flatMap(WishSavingSource.init(rawValue:))
     }
 }
 
@@ -110,16 +124,19 @@ struct WishSavingEntryModel: Identifiable {
     var id: UUID
     var date: Date
     var amount: Int
+    var source: WishSavingSource?
 
-    init(id: UUID = UUID(), date: Date, amount: Int) {
+    init(id: UUID = UUID(), date: Date, amount: Int, source: WishSavingSource? = nil) {
         self.id = id
         self.date = date
         self.amount = amount
+        self.source = source
     }
 
     init(entity: WishSavingEntry) {
         self.id = entity.id ?? UUID()
         self.date = entity.date ?? Date()
         self.amount = Int(truncating: entity.amount ?? 0)
+        self.source = WishSavingSource.from(entity.source)
     }
 }
