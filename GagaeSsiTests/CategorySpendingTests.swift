@@ -107,4 +107,18 @@ final class CategorySpendingTests: XCTestCase {
         let items = CategorySpendingAnalyzer.itemSummaries(from: [shared])
         XCTAssertEqual(items.first?.total, 20_000)
     }
+
+    /// 같은 항목이 두 건이면 병합 경로도 내 몫으로 더해야 한다.
+    /// (초기 생성만 고치고 병합을 놓치면 그룹의 첫 건만 다른 렌즈로 세어진다)
+    func test_같은_항목이_여러_건이어도_모두_내_몫으로_묶인다() {
+        let trip = UUID()
+        let items = CategorySpendingAnalyzer.itemSummaries(from: [
+            SpendingRecordModel(title: "저녁", amount: 80_000, date: day(-1),
+                                tripId: trip, participants: 4, paidByMe: true),
+            SpendingRecordModel(title: "저녁", amount: 40_000, date: day(-2),
+                                tripId: trip, participants: 4, paidByMe: true),
+        ])
+        XCTAssertEqual(items.first?.total, 30_000, "20,000 + 10,000")
+        XCTAssertEqual(items.first?.count, 2)
+    }
 }

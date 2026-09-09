@@ -160,6 +160,23 @@ final class TripTests: XCTestCase {
         XCTAssertNotNil(sut.fetchSpendingRecords(date: day(0)).first { $0.id == record.id }?.wishItemId)
     }
 
+    // MARK: - 홈 "오늘 소비" 집계 (Task 4 회귀 — HomeViewModel.spent가 budgetedSpending을 쓴다)
+
+    /// 지갑에서 산 위시(예: 여행)는 저금 시점에 이미 예산에서 빠진 돈이라, 홈 "오늘 소비"
+    /// (budgetedSpending)에는 잡히지 않아야 한다 — 기록 자체는 지워지지 않고 그대로 남는다.
+    /// ₩400,000짜리 위시를 지갑에서 사면 홈 소비가 ₩400,000이 아니라 ₩0으로 보이는 게 의도다.
+    func test_지갑에서_산_소비는_그날_budgetedSpending에_잡히지_않는다() {
+        let wallet = seedWallet(400_000)
+        let id = spend(400_000)
+        XCTAssertTrue(sut.linkSpendingToWish(recordId: id, wishItemId: wallet))
+
+        let budget = sut.fetchDailyBudgetModel(date: day(0))
+        XCTAssertEqual(budget?.budgetedSpending, 0,
+                       "지갑 연결 소비는 이미 예산에서 빠진 돈이라 오늘 소비로 다시 잡히면 안 된다")
+        XCTAssertTrue(sut.fetchSpendingRecords(date: day(0)).contains { $0.id == id },
+                      "예산에서 빠졌다고 기록 자체가 사라지면 안 된다")
+    }
+
     // MARK: - 최근 평균 소비 (Fix 3 회귀 — recentAverageDailySpending의 예산 렌즈)
 
     /// 지갑에서 쓴 소비는 저금 시점에 이미 예산에서 빠진 돈이다. 7일 평균에 다시 잡히면

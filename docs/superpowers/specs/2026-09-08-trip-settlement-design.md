@@ -253,6 +253,7 @@ func reopenTrip(id: UUID) -> Bool
 | 여행 삭제 | 소비·`participants`·`paidByMe`는 남음. 정산 완료 여행은 크레딧도 남음(회수 안 함) |
 | `amount / participants` 나머지 | 내림. 남의 몫(`receivable`)에 나머지가 붙는다 |
 | 인원을 1로 내림 | 공용 아님 = `myShare == budgetAmount == amount`, `receivable 0` |
+| 지갑에서 산 위시(예: 여행)를 홈에서 볼 때 | 홈 "오늘 소비"에 잡히지 않는다 (의도). `HomeViewModel.spent`가 `budgetedSpending`을 쓰면서, 지갑 연결 소비(`wishItemId != nil`)는 저금 시점에 이미 예산에서 빠졌기 때문에 홈 소비 합계에서 제외된다 — 이중 차감을 막기 위함 |
 
 ## 10. 테스트 계획
 

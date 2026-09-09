@@ -29,7 +29,7 @@ final class DataExportTests: XCTestCase {
         ])
         let lines = csv.components(separatedBy: "\r\n")
 
-        XCTAssertTrue(lines[0].hasSuffix("날짜,시각,카테고리,항목,금액,내 몫,환급 예정,환급 받음"))
+        XCTAssertTrue(lines[0].hasSuffix("날짜,시각,카테고리,항목,결제 금액,인원,내가 결제,내 몫,환급 예정,환급 받음"))
         XCTAssertTrue(lines[1].contains("오늘 것"), "최신 기록이 먼저")
         XCTAssertTrue(lines[2].contains("어제 것"))
     }
@@ -49,18 +49,18 @@ final class DataExportTests: XCTestCase {
     func test_환급_정보는_있을_때만_채워진다() {
         let withPayback = SpendingCSVExporter.makeCSV(from: [
             record("교통비", 21_000, date(2026, 8, 7), payback: 5_000, received: true)])
-        XCTAssertTrue(withPayback.contains("21000,21000,5000,Y"))
+        XCTAssertTrue(withPayback.contains("21000,1,Y,21000,5000,Y"))
 
         let without = SpendingCSVExporter.makeCSV(from: [record("커피", 4_000, date(2026, 8, 7))])
-        XCTAssertTrue(without.contains("4000,4000,,"), "환급이 없으면 두 칸은 빈 값")
+        XCTAssertTrue(without.contains("4000,1,Y,4000,,"), "환급이 없으면 두 칸은 빈 값")
     }
 
-    /// 8만을 결제했어도 4명이 나눴으면 내 몫은 2만 — 금액과 내 몫은 다른 열이다
+    /// 8만을 결제했어도 4명이 나눴으면 내 몫은 2만 — 결제 금액과 내 몫은 다른 열이다
     func test_공용_소비는_금액과_내_몫이_따로_들어간다() {
         let shared = SpendingRecordModel(title: "저녁", amount: 80_000, date: date(2026, 8, 7),
                                          tripId: UUID(), participants: 4, paidByMe: true)
         let csv = SpendingCSVExporter.makeCSV(from: [shared])
-        XCTAssertTrue(csv.contains("80000,20000,,"))
+        XCTAssertTrue(csv.contains("80000,4,Y,20000,,"))
     }
 
     // MARK: - 이스케이프

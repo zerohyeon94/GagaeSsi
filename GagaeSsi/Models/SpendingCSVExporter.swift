@@ -7,6 +7,12 @@
 //  서버에 사본이 없는 앱이라 기기를 잃으면 기록이 영구 소실된다.
 //  사용자가 직접 파일로 빼둘 수 있는 유일한 수단.
 //
+//  그래서 이 CSV만으로 예산 반영액을 다시 계산할 수 있어야 한다. 인원(participants)과
+//  내가 결제(paidByMe)가 있어야 "결제 금액"과 "내 몫"이 왜 다른지(2인분? 4인분?), 그리고
+//  budgetAmount(내가 냈으면 전액, 남이 냈으면 내 몫)를 복구본에서 다시 계산할 수 있다.
+//  내 몫은 결제 금액 ÷ 인원로 유도 가능하니 저장하지 않아도 되지만, 인원·내가 결제는
+//  기록에서 되돌릴 수 없는 사실이라 반드시 남겨야 한다.
+//
 
 import Foundation
 
@@ -33,7 +39,7 @@ enum SpendingCSVExporter {
         }
     }
 
-    static let header = ["날짜", "시각", "카테고리", "항목", "금액", "내 몫", "환급 예정", "환급 받음"]
+    static let header = ["날짜", "시각", "카테고리", "항목", "결제 금액", "인원", "내가 결제", "내 몫", "환급 예정", "환급 받음"]
 
     /// 한글이 Excel에서 깨지지 않게 하는 UTF-8 BOM.
     /// 없으면 Excel이 CSV를 로컬 인코딩으로 읽어 한글이 전부 깨진다.
@@ -59,6 +65,8 @@ enum SpendingCSVExporter {
                 record.category.rawValue,
                 record.title,
                 String(record.amount),
+                String(record.participants),
+                record.paidByMe ? "Y" : "N",
                 String(record.myShare),
                 record.expectedPayback > 0 ? String(record.expectedPayback) : "",
                 record.expectedPayback > 0 ? (record.paybackReceived ? "Y" : "N") : "",

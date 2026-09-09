@@ -71,7 +71,7 @@ struct DataExportView: View {
         GagaeCard {
             VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
                 HStack {
-                    Text("내보낼 기록")
+                    Text("내보낼 기록 · 내 몫 합계")
                         .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
                     Spacer()
                     Text("\(records.count)건 · \(FormatterUtils.currencyString(from: total))")
