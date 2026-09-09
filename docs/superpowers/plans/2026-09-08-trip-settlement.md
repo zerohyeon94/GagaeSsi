@@ -1894,8 +1894,8 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
     var activeTrips: [TripModel] = []
     /// 사용자가 "여행 아님"을 직접 골랐으면 날짜를 바꿔도 다시 자동 선택하지 않는다
     private var tripAutoSelectDismissed = false
-    /// 지갑이 여행 때문에 자동으로 골라졌는지 — 금액이 잔액을 넘으면 조용히 풀어준다
-    private var walletAutoSelected = false
+    /// 사용자가 지갑을 직접 골랐으면 자동 선택이 더는 손대지 않는다
+    private var walletManuallyPicked = false
 
     var selectedTrip: TripModel? {
         activeTrips.first { $0.id == tempTripId }
@@ -1971,33 +1971,37 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
             tripAutoSelectDismissed = true
             tempParticipants = 1
             tempPaidByMe = true
-            if walletAutoSelected { tempWishItemId = nil; walletAutoSelected = false }
+            if !walletManuallyPicked { tempWishItemId = nil }
         }
     }
 
-    /// 사용자가 지갑을 직접 고름 — 자동 선택 상태를 푼다
+    /// 사용자가 지갑을 직접 고름 — 이후 자동 선택이 손대지 않는다
     func pickWallet(_ id: UUID?) {
         tempWishItemId = id
-        walletAutoSelected = false
+        walletManuallyPicked = true
     }
 
     /// 여행에 지갑이 있고 잔액이 내 부담액을 덮으면 지갑을 미리 고른다. 부족하면 예산에서.
     private func autoSelectWallet(for trip: TripModel) {
-        guard let wishId = trip.wishItemId, tempWishItemId == nil else { return }
+        guard !walletManuallyPicked, let wishId = trip.wishItemId, tempWishItemId == nil else { return }
         let limit = CoreDataManager.shared.wishSpendableLimit(for: wishId, excluding: editingRecordId)
-        if previewRecord.budgetAmount <= limit {
-            tempWishItemId = wishId
-            walletAutoSelected = true
-        }
+        if previewRecord.budgetAmount <= limit { tempWishItemId = wishId }
     }
 
-    /// 금액·인원·결제자가 바뀐 뒤 — 자동으로 골라둔 지갑이 더는 못 덮으면 조용히 예산으로 돌린다
+    /// 금액·인원·결제자가 바뀐 뒤 자동 선택을 다시 판정한다.
+    /// 잔액을 넘기면 조용히 예산으로 돌리고, 다시 덮을 수 있게 되면 지갑으로 되돌린다.
+    /// 사용자가 직접 고른 지갑은 건드리지 않는다.
     func revalidateAutoWallet() {
-        guard walletAutoSelected else { return }
-        if !wishCoversAmount { tempWishItemId = nil; walletAutoSelected = false }
-        else if tempWishItemId == nil, let trip = selectedTrip { autoSelectWallet(for: trip) }
+        guard !walletManuallyPicked, let trip = selectedTrip, trip.wishItemId != nil else { return }
+        if tempWishItemId != nil, !wishCoversAmount {
+            tempWishItemId = nil
+        } else if tempWishItemId == nil {
+            autoSelectWallet(for: trip)
+        }
     }
 ```
+
+> **구현 시 변경**: 위 `walletAutoSelected` 플래그로는 "잔액 초과로 지갑이 풀렸다가, 금액을 다시 줄이면 지갑으로 돌아온다" 방향이 막힌다 — 플래그가 이미 `false`라 `revalidateAutoWallet`의 가드를 통과하지 못한다. 대신 "사용자가 지갑을 직접 골랐는가"를 추적하는 `walletManuallyPicked`로 바꿨다: 자동 선택 로직은 이 플래그가 꺼져 있는 한 계속 재판정하므로 양방향(풀림 ↔ 복귀)이 다 동작하고, 사용자가 한 번이라도 직접 고르면 그 뒤로는 손대지 않는다.
 
 `updateAmountFromText` 끝에 `revalidateAutoWallet()` 호출 추가:
 
@@ -2027,7 +2031,7 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
         tempTripId = record.tripId
         tempParticipants = record.participants
         tempPaidByMe = record.paidByMe
-        walletAutoSelected = false
+        walletManuallyPicked = false
         loadActiveTrips()
 ```
 
@@ -2038,7 +2042,7 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
         tempParticipants = 1
         tempPaidByMe = true
         tripAutoSelectDismissed = false
-        walletAutoSelected = false
+        walletManuallyPicked = false
 ```
 
 그리고 `clearForm` 맨 끝(`model = ...` 뒤)에 `autoSelectTrip()` — 저장 직후 같은 날 두 번째 소비도 자동으로 여행에 묶이게.

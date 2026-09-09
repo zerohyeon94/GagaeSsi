@@ -65,7 +65,11 @@ struct SpendView: View {
             viewModel.fetchSpending(on: today)
             viewModel.loadSuggestions()
             viewModel.loadSpendableWishes()
+            viewModel.loadActiveTrips()
         }
+        .onChange(of: viewModel.tempDate) { _, _ in viewModel.autoSelectTrip() }
+        .onChange(of: viewModel.tempParticipants) { _, _ in viewModel.revalidateAutoWallet() }
+        .onChange(of: viewModel.tempPaidByMe) { _, _ in viewModel.revalidateAutoWallet() }
         .alert("오류", isPresented: $viewModel.showErrorAlert) {
             Button("확인", role: .cancel) { }
         } message: {
@@ -133,8 +137,9 @@ extension SpendView {
                 categoryField
                 contentField
                 amountField
-                paybackField
+                if !viewModel.isSharedSpending { paybackField }
                 dateField
+                if !viewModel.activeTrips.isEmpty { tripField }
                 if !viewModel.spendableWishes.isEmpty { wishWalletField }
             }
             .padding(.horizontal, 16)
@@ -337,6 +342,81 @@ extension SpendView {
         }
     }
 
+    /// ⑥ 여행 — 같이 쓴 돈이면 인원과 결제자를 표시한다. 내 몫은 여행이 계산한다
+    private var tripField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldLabel("🧳", "여행")
+
+            VStack(spacing: 0) {
+                walletRow(title: "여행 아님", detail: "평소 소비예요",
+                          selected: viewModel.tempTripId == nil) {
+                    viewModel.selectTrip(nil)
+                }
+                ForEach(viewModel.activeTrips) { trip in
+                    Rectangle().fill(Color.gagaeDivider).frame(height: 0.5).padding(.leading, 14)
+                    walletRow(title: trip.isSettled ? "\(trip.title) (정산 완료)" : trip.title,
+                              detail: "\(FormatterUtils.shortDateRange(trip.startDate, trip.endDate)) · \(trip.defaultParticipants)명",
+                              selected: viewModel.tempTripId == trip.id) {
+                        viewModel.selectTrip(trip.id)
+                    }
+                }
+            }
+            .background(Color.gagaeSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.gagaeDivider, lineWidth: 1.5)
+            )
+            .disabled(viewModel.isTripLocked)
+
+            if viewModel.tempTripId != nil { tripShareFields }
+        }
+    }
+
+    /// 인원 · 누가 냈나 · 미리보기
+    private var tripShareFields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("나누는 인원")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.gagaeText)
+                Spacer()
+                Stepper(value: $viewModel.tempParticipants, in: 1...20) {
+                    Text(viewModel.tempParticipants == 1 ? "내 개인 소비" : "\(viewModel.tempParticipants)명")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                }
+                .fixedSize()
+            }
+
+            if viewModel.tempParticipants > 1 {
+                Picker("누가 냈나", selection: $viewModel.tempPaidByMe) {
+                    Text("내가 냈어요").tag(true)
+                    Text("다른 사람이 냈어요").tag(false)
+                }
+                .pickerStyle(.segmented)
+
+                if !viewModel.tripPreviewText.isEmpty {
+                    Text(viewModel.tripPreviewText)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeGood)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if viewModel.isTripLocked {
+                Text("정산이 끝난 여행이라 여행·인원·결제자는 바꿀 수 없어요. 여행 상세에서 정산을 다시 열면 돼요.")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(Color.gagaeSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .disabled(viewModel.isTripLocked)
+    }
+
     /// ⑤ 모아둔 위시 지갑에서 쓰기 — 고르면 그날 예산에서 빠지지 않는다
     private var wishWalletField: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -345,14 +425,14 @@ extension SpendView {
             VStack(spacing: 0) {
                 walletRow(title: "예산에서 쓰기", detail: "평소처럼 오늘 예산에서 빠져요",
                           selected: viewModel.tempWishItemId == nil) {
-                    viewModel.tempWishItemId = nil
+                    viewModel.pickWallet(nil)
                 }
                 ForEach(viewModel.spendableWishes) { wish in
                     Rectangle().fill(Color.gagaeDivider).frame(height: 0.5).padding(.leading, 14)
                     walletRow(title: wish.title,
                               detail: "남은 \(FormatterUtils.currencyString(from: wish.balance))",
                               selected: viewModel.tempWishItemId == wish.id) {
-                        viewModel.tempWishItemId = wish.id
+                        viewModel.pickWallet(wish.id)
                     }
                 }
             }

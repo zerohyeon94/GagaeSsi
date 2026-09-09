@@ -35,16 +35,57 @@ final class SpendViewModel {
     var selectedWish: WishItemModel? {
         spendableWishes.first { $0.id == tempWishItemId }
     }
-    /// 고른 지갑으로 이 금액을 감당할 수 있는지
+    /// 고른 지갑으로 이 소비의 부담액을 감당할 수 있는지 (친구가 낸 소비는 내 몫만)
     var wishCoversAmount: Bool {
         guard let wishId = tempWishItemId else { return true }
-        return tempAmount <= CoreDataManager.shared.wishSpendableLimit(for: wishId,
-                                                                      excluding: editingRecordId)
+        return previewRecord.budgetAmount <= CoreDataManager.shared.wishSpendableLimit(for: wishId,
+                                                                                      excluding: editingRecordId)
     }
     /// 고른 지갑에서 이 소비에 쓸 수 있는 금액 (안내 문구용)
     var selectedWishLimit: Int {
         guard let wishId = tempWishItemId else { return 0 }
         return CoreDataManager.shared.wishSpendableLimit(for: wishId, excluding: editingRecordId)
+    }
+
+    // MARK: 여행
+    /// 이 소비를 묶을 여행 (nil이면 평소 소비)
+    var tempTripId: UUID?
+    /// 나누는 인원 (1 = 내 개인 소비)
+    var tempParticipants: Int = 1
+    /// 내가 냈는지
+    var tempPaidByMe: Bool = true
+    /// 고를 수 있는 여행들 — 진행 중 + (편집 중이면) 그 기록이 묶인 정산 완료 여행
+    var activeTrips: [TripModel] = []
+    /// 사용자가 "여행 아님"을 직접 골랐으면 날짜를 바꿔도 다시 자동 선택하지 않는다
+    private var tripAutoSelectDismissed = false
+    /// 사용자가 지갑을 직접 골랐으면 자동 선택이 더는 손대지 않는다
+    private var walletManuallyPicked = false
+
+    var selectedTrip: TripModel? {
+        activeTrips.first { $0.id == tempTripId }
+    }
+    /// 정산 완료 여행의 소비는 여행·인원·결제자를 못 바꾼다
+    var isTripLocked: Bool { selectedTrip?.isSettled == true }
+    /// 공용 소비면 환급 필드를 숨긴다 — 정산과 겹치면 이중 반영
+    var isSharedSpending: Bool { tempTripId != nil && tempParticipants > 1 }
+
+    /// 지금 입력값으로 만든 임시 기록 — 내 몫·부담액 미리보기용
+    var previewRecord: SpendingRecordModel {
+        SpendingRecordModel(title: tempTitle, amount: tempAmount, date: tempDate,
+                            tripId: tempTripId,
+                            participants: tempTripId == nil ? 1 : tempParticipants,
+                            paidByMe: tempTripId == nil ? true : tempPaidByMe)
+    }
+
+    /// 인원·결제자에 따라 이 소비가 어떻게 잡히는지 한 줄
+    var tripPreviewText: String {
+        let p = previewRecord
+        guard p.isShared, p.amount > 0 else { return "" }
+        let share = FormatterUtils.currencyString(from: p.myShare)
+        if p.paidByMe {
+            return "내 몫 \(share) · 정산 때 \(FormatterUtils.currencyString(from: p.receivable)) 돌아와요"
+        }
+        return "내 몫 \(share)만 오늘 예산에서 빠져요"
     }
 
     /// 편집 중인 지출 기록 id (nil이면 추가 모드)
@@ -101,6 +142,7 @@ final class SpendViewModel {
             tempAmount = result.plainNumber
             tempAmountText = result.formatted
         }
+        revalidateAutoWallet()
     }
     
     func saveSpending(eventBus: AppEventBus, completion: @escaping (Bool) -> Void) {
@@ -120,6 +162,11 @@ final class SpendViewModel {
         model.category = tempCategory
         model.expectedPayback = tempHasPayback ? tempExpectedPayback : 0
         model.paybackReceived = (editingRecordId != nil) ? editingPaybackReceived : false
+        model.tripId = tempTripId
+        model.participants = tempTripId == nil ? 1 : tempParticipants
+        model.paidByMe = tempTripId == nil ? true : tempPaidByMe
+        // 공용 소비는 정산이 환급 역할을 하므로 환급 필드를 비운다
+        if model.isShared { model.expectedPayback = 0 }
 
         let success: Bool
         if let editingId = editingRecordId {
@@ -169,7 +216,12 @@ final class SpendViewModel {
         tempHasPayback = record.expectedPayback > 0
         editingPaybackReceived = record.paybackReceived
         tempWishItemId = record.wishItemId
+        tempTripId = record.tripId
+        tempParticipants = record.participants
+        tempPaidByMe = record.paidByMe
+        walletManuallyPicked = false
         loadSpendableWishes()
+        loadActiveTrips()
     }
 
     /// 잔액이 남은 지갑 목록을 불러온다 (화면 진입·편집 시작 시)
@@ -181,6 +233,65 @@ final class SpendViewModel {
             wishes.append(linked)
         }
         spendableWishes = wishes
+    }
+
+    /// 고를 수 있는 여행을 불러온다 (화면 진입·편집 시작·저장 후)
+    func loadActiveTrips() {
+        var trips = CoreDataManager.shared.fetchActiveTrips()
+        // 편집 중인 기록이 정산 완료 여행에 묶여 있으면 그 여행도 보여야 한다 (잠긴 채로)
+        if let id = tempTripId, !trips.contains(where: { $0.id == id }),
+           let linked = CoreDataManager.shared.fetchTrip(id: id) {
+            trips.append(linked)
+        }
+        activeTrips = trips
+        autoSelectTrip()
+    }
+
+    /// 소비 날짜가 진행 중 여행 하나의 기간 안이면 그 여행을 미리 고른다
+    func autoSelectTrip() {
+        guard !isEditing, tempTripId == nil, !tripAutoSelectDismissed,
+              let trip = CoreDataManager.shared.trip(containing: tempDate) else { return }
+        selectTrip(trip.id)
+    }
+
+    /// 여행을 고르거나(id) 푼다(nil). 고르면 인원 기본값과 지갑을 채운다.
+    func selectTrip(_ id: UUID?) {
+        tempTripId = id
+        if let trip = activeTrips.first(where: { $0.id == id }) {
+            tempParticipants = max(1, trip.defaultParticipants)
+            tempPaidByMe = true
+            autoSelectWallet(for: trip)
+        } else {
+            tripAutoSelectDismissed = true
+            tempParticipants = 1
+            tempPaidByMe = true
+            if !walletManuallyPicked { tempWishItemId = nil }
+        }
+    }
+
+    /// 사용자가 지갑을 직접 고름 — 이후 자동 선택이 손대지 않는다
+    func pickWallet(_ id: UUID?) {
+        tempWishItemId = id
+        walletManuallyPicked = true
+    }
+
+    /// 여행에 지갑이 있고 잔액이 내 부담액을 덮으면 지갑을 미리 고른다. 부족하면 예산에서.
+    private func autoSelectWallet(for trip: TripModel) {
+        guard !walletManuallyPicked, let wishId = trip.wishItemId, tempWishItemId == nil else { return }
+        let limit = CoreDataManager.shared.wishSpendableLimit(for: wishId, excluding: editingRecordId)
+        if previewRecord.budgetAmount <= limit { tempWishItemId = wishId }
+    }
+
+    /// 금액·인원·결제자가 바뀐 뒤 자동 선택을 다시 판정한다.
+    /// 잔액을 넘기면 조용히 예산으로 돌리고, 다시 덮을 수 있게 되면 지갑으로 되돌린다.
+    /// 사용자가 직접 고른 지갑은 건드리지 않는다.
+    func revalidateAutoWallet() {
+        guard !walletManuallyPicked, let trip = selectedTrip, trip.wishItemId != nil else { return }
+        if tempWishItemId != nil, !wishCoversAmount {
+            tempWishItemId = nil
+        } else if tempWishItemId == nil {
+            autoSelectWallet(for: trip)
+        }
     }
 
     /// 저장 직후, 오늘 예산이 음수이고 모아둔 이월금이 있으면 충당 가능액을 반환한다.
@@ -233,7 +344,13 @@ final class SpendViewModel {
         tempExpectedPaybackText = ""
         editingPaybackReceived = false
         tempWishItemId = nil
+        tempTripId = nil
+        tempParticipants = 1
+        tempPaidByMe = true
+        tripAutoSelectDismissed = false
+        walletManuallyPicked = false
         editingRecordId = nil
         model = SpendingRecordModel(id: UUID(), title: "", amount: 0, date: Date())
+        autoSelectTrip()
     }
 }

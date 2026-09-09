@@ -73,4 +73,14 @@ enum FormatterUtils {
             return formattedDate(date)
         }
     }
+
+    /// 여행 기간 표시 (예: 9.12–9.14). 같은 날이면 한 번만.
+    static func shortDateRange(_ from: Date, _ to: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.dateFormat = "M.d"
+        let start = formatter.string(from: from)
+        let end = formatter.string(from: to)
+        return start == end ? start : "\(start)–\(end)"
+    }
 }
