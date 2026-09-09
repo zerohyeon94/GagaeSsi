@@ -137,10 +137,17 @@ extension SpendView {
                 categoryField
                 contentField
                 amountField
+                    .disabled(viewModel.isTripLocked)
                 if !viewModel.isSharedSpending { paybackField }
                 dateField
                 if !viewModel.activeTrips.isEmpty { tripField }
-                if !viewModel.spendableWishes.isEmpty { wishWalletField }
+                // 분담 블록은 여행 선택과 무관하게 뜬다 — 여행이 지워져도(deleteTrip) 분담은
+                // 그대로 남으므로, activeTrips가 비어 있어도 분담 값이 있으면 보여줘야 한다.
+                if viewModel.tempTripId != nil || viewModel.tempParticipants > 1 { tripShareFields }
+                if !viewModel.spendableWishes.isEmpty {
+                    wishWalletField
+                        .disabled(viewModel.isTripLocked)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -348,6 +355,9 @@ extension SpendView {
             fieldLabel("🧳", "여행")
 
             VStack(spacing: 0) {
+                // "여행 아님"은 잠긴 상태에서도 항상 눌러야 한다 — 이게 유일한 탈출구다.
+                // 정산 완료 여행이 add 모드엔 취소 버튼이 없어, 이 행마저 잠기면 저장하거나
+                // 화면을 나가는 것 말고는 빠져나갈 길이 없다.
                 walletRow(title: "여행 아님", detail: "평소 소비예요",
                           selected: viewModel.tempTripId == nil) {
                     viewModel.selectTrip(nil)
@@ -359,6 +369,7 @@ extension SpendView {
                               selected: viewModel.tempTripId == trip.id) {
                         viewModel.selectTrip(trip.id)
                     }
+                    .disabled(viewModel.isTripLocked)
                 }
             }
             .background(Color.gagaeSurface)
@@ -367,13 +378,13 @@ extension SpendView {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.gagaeDivider, lineWidth: 1.5)
             )
-            .disabled(viewModel.isTripLocked)
-
-            if viewModel.tempTripId != nil { tripShareFields }
         }
     }
 
-    /// 인원 · 누가 냈나 · 미리보기
+    /// 인원 · 누가 냈나 · 미리보기.
+    /// 여행을 고르지 않아도(`tempTripId == nil`) 인원이 1보다 크면 뜬다 — `deleteTrip`은 소비의
+    /// 분담(participants·paidByMe)은 그대로 두고 여행 연결만 끊으므로, 여행 없이도 분담 소비는
+    /// 존재할 수 있다. 숨기면 이 화면이 그 값을 못 보여주고, 못 보여준 값을 저장이 뭉갤 위험이 생긴다.
     private var tripShareFields: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -381,12 +392,15 @@ extension SpendView {
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(.gagaeText)
                 Spacer()
-                Stepper(value: $viewModel.tempParticipants, in: 1...20) {
+                // 여행 defaultParticipants는 최대 999명까지 허용한다 — 범위를 좁히면
+                // 999명짜리 여행에서 온 값을 아래로도 위로도 조정할 수 없는 값이 생긴다.
+                Stepper(value: $viewModel.tempParticipants, in: 1...999) {
                     Text(viewModel.tempParticipants == 1 ? "내 개인 소비" : "\(viewModel.tempParticipants)명")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(.gagaePinkDark)
                 }
                 .fixedSize()
+                .disabled(viewModel.isTripLocked)
             }
 
             if viewModel.tempParticipants > 1 {
@@ -395,6 +409,7 @@ extension SpendView {
                     Text("다른 사람이 냈어요").tag(false)
                 }
                 .pickerStyle(.segmented)
+                .disabled(viewModel.isTripLocked)
 
                 if !viewModel.tripPreviewText.isEmpty {
                     Text(viewModel.tripPreviewText)
@@ -404,8 +419,15 @@ extension SpendView {
                 }
             }
 
+            if viewModel.willClearPaybackOnSave {
+                Text("환급 예정 \(FormatterUtils.currencyString(from: viewModel.tempExpectedPayback))은 정산이 대신해요 — 저장하면 지워져요")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if viewModel.isTripLocked {
-                Text("정산이 끝난 여행이라 여행·인원·결제자는 바꿀 수 없어요. 여행 상세에서 정산을 다시 열면 돼요.")
+                Text("정산이 끝난 여행이라 여행·인원·결제자·금액·지갑은 바꿀 수 없어요. 바꾸려면 여행 상세에서 정산을 먼저 다시 열어주세요.")
                     .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(.gagaeTextTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -414,7 +436,6 @@ extension SpendView {
         .padding(12)
         .background(Color.gagaeSurface)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .disabled(viewModel.isTripLocked)
     }
 
     /// ⑤ 모아둔 위시 지갑에서 쓰기 — 고르면 그날 예산에서 빠지지 않는다

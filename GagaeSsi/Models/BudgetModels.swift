@@ -469,9 +469,8 @@ struct SpendingRecordModel: Identifiable {
     /// 저장 뒤 `linkSpendingToWish`로 따로 연결한다. 그래서 이 값을 설정하고 저장·재조회하면 nil로 보일 수 있다.
     var wishItemId: UUID?
     /// 여행에 묶인 소비면 그 여행 id. nil이면 평소 소비.
-    /// `createSpendingRecord`/`updateSpendingRecord`는 이 관계도 저장하지 않는다 —
-    /// 전용 연결 API(여행판 `linkSpendingToWish` 격)로 따로 연결한다. 마찬가지로 설정만 하고
-    /// 저장·재조회하면 nil로 보일 수 있다.
+    /// `wishItemId`와 달리 `createSpendingRecord`/`updateSpendingRecord`가 이 값을 바로
+    /// 저장한다(`trip` 관계에 직접 반영) — 별도 연결 API 없이 설정·저장·재조회가 일관된다.
     var tripId: UUID?
     /// 이 소비를 나누는 인원. 1이면 공용이 아닌 내 소비.
     var participants: Int

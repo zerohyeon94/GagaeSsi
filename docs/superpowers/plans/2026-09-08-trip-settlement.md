@@ -1859,8 +1859,14 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `GagaeSsi/Core/Utils/FormatterUtils.swift` (`shortDateRange` 추가)
 - Modify: `GagaeSsi/Features/Spend/SpendViewModel.swift`
 - Modify: `GagaeSsi/Features/Spend/SpendView.swift`
+- Modify: `GagaeSsi/Models/BudgetModels.swift` (`tripId` 주석만 — `createSpendingRecord`/`updateSpendingRecord`가 실제로 이 관계를 저장한다)
+- Create: `GagaeSsiTests/SpendViewModelTests.swift`
 
-UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 검증한다. 모델·데이터 계층은 앞 태스크에서 이미 테스트됐다.
+**지배 규칙**: 폼은 화면에 실제로 보여준 값만 덮어쓴다 — 숨겨진 필드가 저장된 데이터를 조용히 바꾸면 안 된다. `tempTripId == nil`이라는 이유만으로 인원·결제자·지갑을 강제로 되돌리는 코드는 전부 이 규칙을 어긴다 (`deleteTrip`은 `trip` 연결만 끊고 분담은 그대로 두므로, 여행 없이도 분담 소비는 존재할 수 있다).
+
+이 태스크는 첫 시도(코드 리뷰 전)에서 Critical 3건 + Important 4건 + Minor 4건이 나왔다. 아래 단계는 그 리뷰를 반영해 처음부터 바르게 구현하도록 다시 쓴 버전이다 — 재실행해도 같은 버그가 재현되지 않는다.
+
+`SpendViewModel`이 `CoreDataManager.shared`를 직접 참조해 원래는 단위 테스트 seam이 없었다. Critical 버그는 순수 `SpendViewModel` 상태 버그이므로, 매니저를 주입 가능하게 바꾸고(Step 2) 그 seam으로 회귀 테스트를 추가한다(Step 5). 나머지는 빌드 + 시뮬레이터 확인으로 검증한다.
 
 - [ ] **Step 1: 기간 포맷터**
 
@@ -1878,9 +1884,28 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
     }
 ```
 
-- [ ] **Step 2: `SpendViewModel` 여행 상태**
+- [ ] **Step 2: `SpendViewModel` — 매니저 주입 seam + 여행 상태**
 
-`spendableWishes` 선언 뒤에 추가:
+클래스 선언 바로 뒤, `model` 선언 앞에 매니저 seam 추가:
+
+```swift
+    // MARK: - Properties
+    /// 테스트에서 인메모리 매니저를 주입할 수 있는 seam. 기본값은 앱 전역 싱글톤이라 기존 호출부는 그대로다.
+    private let manager: CoreDataManager
+    var model: SpendingRecordModel
+```
+
+`init()`을 다음으로 교체하고, 파일 안의 `CoreDataManager.shared`를 전부 `manager`로 바꾼다 (단순 치환 — 동작은 그대로다):
+
+```swift
+    // MARK: - Init
+    init(manager: CoreDataManager = .shared) {
+        self.manager = manager
+        self.model = SpendingRecordModel(id: UUID(), title: "", amount: 0, date: Date())
+    }
+```
+
+`spendableWishes` 선언 뒤에 여행 상태 추가:
 
 ```swift
     // MARK: 여행
@@ -1902,15 +1927,19 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
     }
     /// 정산 완료 여행의 소비는 여행·인원·결제자를 못 바꾼다
     var isTripLocked: Bool { selectedTrip?.isSettled == true }
-    /// 공용 소비면 환급 필드를 숨긴다 — 정산과 겹치면 이중 반영
-    var isSharedSpending: Bool { tempTripId != nil && tempParticipants > 1 }
+    /// 공용 소비면 환급 필드를 숨긴다 — 정산과 겹치면 이중 반영.
+    /// `tempTripId`와는 무관하게 `previewRecord.isShared`(= participants > 1)만 본다 — 여행이
+    /// 지워진 뒤(`deleteTrip`은 분담을 그대로 둔다)에도 분담 소비는 계속 분담 소비다.
+    var isSharedSpending: Bool { previewRecord.isShared }
 
-    /// 지금 입력값으로 만든 임시 기록 — 내 몫·부담액 미리보기용
+    /// 지금 입력값으로 만든 임시 기록 — 내 몫·부담액 미리보기용.
+    /// `tempTripId == nil`이라고 1/true로 강제하지 않는다 — 여행이 지워진 분담 소비를 편집할 때
+    /// 폼이 보여주지도 않은 인원·결제자를 저장 때 조용히 덮어쓰게 되기 때문이다.
     var previewRecord: SpendingRecordModel {
         SpendingRecordModel(title: tempTitle, amount: tempAmount, date: tempDate,
                             tripId: tempTripId,
-                            participants: tempTripId == nil ? 1 : tempParticipants,
-                            paidByMe: tempTripId == nil ? true : tempPaidByMe)
+                            participants: tempParticipants,
+                            paidByMe: tempPaidByMe)
     }
 
     /// 인원·결제자에 따라 이 소비가 어떻게 잡히는지 한 줄
@@ -1921,32 +1950,39 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
         if p.paidByMe {
             return "내 몫 \(share) · 정산 때 \(FormatterUtils.currencyString(from: p.receivable)) 돌아와요"
         }
-        return "내 몫 \(share)만 오늘 예산에서 빠져요"
+        return "내 몫 \(share)만큼만 오늘 예산에서 빠져요"
+    }
+
+    /// 공용 전환으로 환급 필드가 숨겨졌는데 저장하면 실제로 지워지는지 — 안내 문구용.
+    /// 이미 받은 환급(`editingPaybackReceived`)은 저장해도 지우지 않으므로(아래 `saveSpending`
+    /// 참고) 그때는 안내하지 않는다 — 지운다고 말해놓고 안 지우면 더 헷갈린다.
+    var willClearPaybackOnSave: Bool {
+        isSharedSpending && tempExpectedPayback > 0 && !editingPaybackReceived
     }
 ```
 
-`wishCoversAmount`와 `selectedWishLimit`을 부담액 기준으로 교체:
+`wishCoversAmount`와 `selectedWishLimit`을 부담액 기준으로 교체 (`manager`를 쓴다):
 
 ```swift
     /// 고른 지갑으로 이 소비의 부담액을 감당할 수 있는지 (친구가 낸 소비는 내 몫만)
     var wishCoversAmount: Bool {
         guard let wishId = tempWishItemId else { return true }
-        return previewRecord.budgetAmount <= CoreDataManager.shared.wishSpendableLimit(for: wishId,
-                                                                                      excluding: editingRecordId)
+        return previewRecord.budgetAmount <= manager.wishSpendableLimit(for: wishId,
+                                                                          excluding: editingRecordId)
     }
 ```
 
-(`selectedWishLimit`은 그대로.)
+(`selectedWishLimit`은 그대로, `CoreDataManager.shared` → `manager`만.)
 
 `loadSpendableWishes()` 뒤에 여행 메서드들 추가:
 
 ```swift
     /// 고를 수 있는 여행을 불러온다 (화면 진입·편집 시작·저장 후)
     func loadActiveTrips() {
-        var trips = CoreDataManager.shared.fetchActiveTrips()
+        var trips = manager.fetchActiveTrips()
         // 편집 중인 기록이 정산 완료 여행에 묶여 있으면 그 여행도 보여야 한다 (잠긴 채로)
         if let id = tempTripId, !trips.contains(where: { $0.id == id }),
-           let linked = CoreDataManager.shared.fetchTrip(id: id) {
+           let linked = manager.fetchTrip(id: id) {
             trips.append(linked)
         }
         activeTrips = trips
@@ -1956,12 +1992,23 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
     /// 소비 날짜가 진행 중 여행 하나의 기간 안이면 그 여행을 미리 고른다
     func autoSelectTrip() {
         guard !isEditing, tempTripId == nil, !tripAutoSelectDismissed,
-              let trip = CoreDataManager.shared.trip(containing: tempDate) else { return }
+              let trip = manager.trip(containing: tempDate) else { return }
         selectTrip(trip.id)
     }
 
     /// 여행을 고르거나(id) 푼다(nil). 고르면 인원 기본값과 지갑을 채운다.
+    ///
+    /// id가 `activeTrips`에 없으면 손대지 않고 돌아간다 — 검증 없이 커밋하면 `tempTripId`가
+    /// 화면에 나오지도 않는 여행을 가리킨 채로 저장될 수 있다.
+    ///
+    /// "여행 아님"으로 풀 때 `tempParticipants`/`tempPaidByMe`는 일부러 그대로 둔다. 편집 중인
+    /// 기록이 이미 분담(participants > 1) 상태였다면 — 예: 여행이 지워졌지만 분담은 남은 기록 —
+    /// 여기서 1/true로 되돌리면 화면엔 안 보이던 값이 저장 때 조용히 바뀐다. 대신 (이제 여행과
+    /// 무관하게 뜨는) 분담 블록이 현재 값을 그대로 보여주므로 사용자가 직접 확인하고 고칠 수 있다.
     func selectTrip(_ id: UUID?) {
+        guard id == nil || activeTrips.contains(where: { $0.id == id }) else { return }
+        // 여행이 바뀌면 자동으로 골라뒀던 지갑은 놓아준다 — 다른 여행의 지갑에서 돈이 나가면 안 된다
+        if id != tempTripId, !walletManuallyPicked { tempWishItemId = nil }
         tempTripId = id
         if let trip = activeTrips.first(where: { $0.id == id }) {
             tempParticipants = max(1, trip.defaultParticipants)
@@ -1969,9 +2016,6 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
             autoSelectWallet(for: trip)
         } else {
             tripAutoSelectDismissed = true
-            tempParticipants = 1
-            tempPaidByMe = true
-            if !walletManuallyPicked { tempWishItemId = nil }
         }
     }
 
@@ -1983,8 +2027,11 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
 
     /// 여행에 지갑이 있고 잔액이 내 부담액을 덮으면 지갑을 미리 고른다. 부족하면 예산에서.
     private func autoSelectWallet(for trip: TripModel) {
-        guard !walletManuallyPicked, let wishId = trip.wishItemId, tempWishItemId == nil else { return }
-        let limit = CoreDataManager.shared.wishSpendableLimit(for: wishId, excluding: editingRecordId)
+        guard !walletManuallyPicked, let wishId = trip.wishItemId, tempWishItemId == nil,
+              // 지갑 피커는 `spendableWishes`만 그린다 — 그 목록에 없는 지갑을 골라버리면
+              // 화면엔 선택된 행이 하나도 없는데 값만 채워진 상태가 된다.
+              spendableWishes.contains(where: { $0.id == wishId }) else { return }
+        let limit = manager.wishSpendableLimit(for: wishId, excluding: editingRecordId)
         if previewRecord.budgetAmount <= limit { tempWishItemId = wishId }
     }
 
@@ -2002,6 +2049,8 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
 ```
 
 > **구현 시 변경**: 위 `walletAutoSelected` 플래그로는 "잔액 초과로 지갑이 풀렸다가, 금액을 다시 줄이면 지갑으로 돌아온다" 방향이 막힌다 — 플래그가 이미 `false`라 `revalidateAutoWallet`의 가드를 통과하지 못한다. 대신 "사용자가 지갑을 직접 골랐는가"를 추적하는 `walletManuallyPicked`로 바꿨다: 자동 선택 로직은 이 플래그가 꺼져 있는 한 계속 재판정하므로 양방향(풀림 ↔ 복귀)이 다 동작하고, 사용자가 한 번이라도 직접 고르면 그 뒤로는 손대지 않는다.
+>
+> **코드 리뷰 반영**: 처음 구현에서 Critical 3건이 나왔다 — (1) `selectTrip`이 여행을 바꿀 때 이전 여행의 자동 선택 지갑을 놓아주지 않아, 두 번째 여행의 소비가 첫 번째 여행 지갑에서 빠져나가는 문제. (2) `saveSpending`/`previewRecord`가 `tempTripId == nil`이면 인원·결제자를 무조건 1/true로 덮어써서, `deleteTrip`으로 여행 연결만 끊긴(분담은 그대로인) 기록을 제목만 고쳐 저장해도 인원이 조용히 무너지는 문제. (3) `beginEdit`이 저장된 지갑 연결이 있어도 `walletManuallyPicked = false`로 시작해, 편집 중 "여행 아님"을 누르면 그 지갑이 조용히 풀리는 문제. 위 스니펫은 세 가지를 다 반영한 버전이다.
 
 `updateAmountFromText` 끝에 `revalidateAutoWallet()` 호출 추가:
 
@@ -2019,10 +2068,15 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
 
 ```swift
         model.tripId = tempTripId
-        model.participants = tempTripId == nil ? 1 : tempParticipants
-        model.paidByMe = tempTripId == nil ? true : tempPaidByMe
-        // 공용 소비는 정산이 환급 역할을 하므로 환급 필드를 비운다
-        if model.isShared { model.expectedPayback = 0 }
+        // 폼이 실제로 보여준 값만 쓴다 — tempTripId == nil이라고 1/true로 되돌리면, 여행이
+        // 지워진(deleteTrip) 분담 소비를 제목만 고쳐 저장해도 인원이 조용히 1로 무너진다.
+        model.participants = max(1, tempParticipants)
+        model.paidByMe = tempPaidByMe
+        // 공용 소비는 정산이 환급 역할을 하므로 환급 필드를 비운다 — 단, 이미 받은 환급은
+        // 예외다. `receivePayback`이 이미 CarryOverSource 크레딧을 올려놨는데 여기서 0으로
+        // 지우면 그 크레딧을 설명할 근거가 사라져 장부가 조용히 어긋난다. 받은 적 없는
+        // 환급만 비운다.
+        if model.isShared && !model.paybackReceived { model.expectedPayback = 0 }
 ```
 
 `beginEdit`에서 `tempWishItemId = record.wishItemId` 뒤에:
@@ -2031,7 +2085,11 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
         tempTripId = record.tripId
         tempParticipants = record.participants
         tempPaidByMe = record.paidByMe
-        walletManuallyPicked = false
+        // 저장돼 있던 지갑은 사용자 소유다 — 자동 선택 로직이 "아무도 안 골랐다"고 착각해
+        // 편집 중 다른 여행을 고르는 순간 이 지갑을 가로채거나, "여행 아님"으로 되돌아갈 때
+        // 조용히 풀어버리면 안 된다.
+        walletManuallyPicked = (record.wishItemId != nil)
+        loadSpendableWishes()
         loadActiveTrips()
 ```
 
@@ -2045,7 +2103,13 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
         walletManuallyPicked = false
 ```
 
-그리고 `clearForm` 맨 끝(`model = ...` 뒤)에 `autoSelectTrip()` — 저장 직후 같은 날 두 번째 소비도 자동으로 여행에 묶이게.
+그리고 `clearForm` 맨 끝(`model = ...` 뒤)에 `autoSelectTrip()`이 아니라 `loadActiveTrips()`를 부른다 — 저장/취소 직후 정산 완료된 여행을 목록에서 걷어내야 하고(그래야 그 여행이 다음 소비 입력에서도 계속 고를 수 있는 상태로 남지 않는다), `loadActiveTrips()`가 끝에서 `autoSelectTrip()`을 이미 부르므로 따로 또 부르지 않는다:
+
+```swift
+        editingRecordId = nil
+        model = SpendingRecordModel(id: UUID(), title: "", amount: 0, date: Date())
+        loadActiveTrips()
+```
 
 - [ ] **Step 3: `SpendView` — 여행 필드**
 
@@ -2057,23 +2121,30 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
         .onChange(of: viewModel.tempPaidByMe) { _, _ in viewModel.revalidateAutoWallet() }
 ```
 
-`inputCard`의 필드 목록을 다음으로 (환급 필드는 공용 소비에서 숨김, 여행 필드는 날짜 뒤):
+`inputCard`의 필드 목록을 다음으로 (환급 필드는 공용 소비에서 숨김, 분담 블록은 여행 선택과 무관하게 뜨고, 정산 완료 여행이면 금액·지갑도 잠근다):
 
 ```swift
             VStack(spacing: 18) {
                 categoryField
                 contentField
                 amountField
+                    .disabled(viewModel.isTripLocked)
                 if !viewModel.isSharedSpending { paybackField }
                 dateField
                 if !viewModel.activeTrips.isEmpty { tripField }
-                if !viewModel.spendableWishes.isEmpty { wishWalletField }
+                // 분담 블록은 여행 선택과 무관하게 뜬다 — 여행이 지워져도(deleteTrip) 분담은
+                // 그대로 남으므로, activeTrips가 비어 있어도 분담 값이 있으면 보여줘야 한다.
+                if viewModel.tempTripId != nil || viewModel.tempParticipants > 1 { tripShareFields }
+                if !viewModel.spendableWishes.isEmpty {
+                    wishWalletField
+                        .disabled(viewModel.isTripLocked)
+                }
             }
 ```
 
 `wishWalletField`의 두 `walletRow` 액션을 `viewModel.pickWallet(nil)` / `viewModel.pickWallet(wish.id)`로 바꾼다.
 
-`wishWalletField` 앞에 여행 필드 추가:
+`wishWalletField` 앞에 여행 필드 추가. `tripShareFields`는 더 이상 `tripField` 안에 중첩하지 않고(위에서 독립적으로 그린다), "여행 아님" 행은 `isTripLocked`로도 잠그지 않는다 — 정산 완료 여행이 add 모드에 잘못 노출되더라도 탈출구는 항상 있어야 한다:
 
 ```swift
     /// ⑥ 여행 — 같이 쓴 돈이면 인원과 결제자를 표시한다. 내 몫은 여행이 계산한다
@@ -2082,6 +2153,9 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
             fieldLabel("🧳", "여행")
 
             VStack(spacing: 0) {
+                // "여행 아님"은 잠긴 상태에서도 항상 눌러야 한다 — 이게 유일한 탈출구다.
+                // 정산 완료 여행이 add 모드엔 취소 버튼이 없어, 이 행마저 잠기면 저장하거나
+                // 화면을 나가는 것 말고는 빠져나갈 길이 없다.
                 walletRow(title: "여행 아님", detail: "평소 소비예요",
                           selected: viewModel.tempTripId == nil) {
                     viewModel.selectTrip(nil)
@@ -2093,6 +2167,7 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
                               selected: viewModel.tempTripId == trip.id) {
                         viewModel.selectTrip(trip.id)
                     }
+                    .disabled(viewModel.isTripLocked)
                 }
             }
             .background(Color.gagaeSurface)
@@ -2101,13 +2176,13 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.gagaeDivider, lineWidth: 1.5)
             )
-            .disabled(viewModel.isTripLocked)
-
-            if viewModel.tempTripId != nil { tripShareFields }
         }
     }
 
-    /// 인원 · 누가 냈나 · 미리보기
+    /// 인원 · 누가 냈나 · 미리보기.
+    /// 여행을 고르지 않아도(`tempTripId == nil`) 인원이 1보다 크면 뜬다 — `deleteTrip`은 소비의
+    /// 분담(participants·paidByMe)은 그대로 두고 여행 연결만 끊으므로, 여행 없이도 분담 소비는
+    /// 존재할 수 있다. 숨기면 이 화면이 그 값을 못 보여주고, 못 보여준 값을 저장이 뭉갤 위험이 생긴다.
     private var tripShareFields: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -2115,12 +2190,15 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(.gagaeText)
                 Spacer()
-                Stepper(value: $viewModel.tempParticipants, in: 1...20) {
+                // 여행 defaultParticipants는 최대 999명까지 허용한다 — 범위를 좁히면
+                // 999명짜리 여행에서 온 값을 아래로도 위로도 조정할 수 없는 값이 생긴다.
+                Stepper(value: $viewModel.tempParticipants, in: 1...999) {
                     Text(viewModel.tempParticipants == 1 ? "내 개인 소비" : "\(viewModel.tempParticipants)명")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(.gagaePinkDark)
                 }
                 .fixedSize()
+                .disabled(viewModel.isTripLocked)
             }
 
             if viewModel.tempParticipants > 1 {
@@ -2129,6 +2207,7 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
                     Text("다른 사람이 냈어요").tag(false)
                 }
                 .pickerStyle(.segmented)
+                .disabled(viewModel.isTripLocked)
 
                 if !viewModel.tripPreviewText.isEmpty {
                     Text(viewModel.tripPreviewText)
@@ -2138,8 +2217,15 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
                 }
             }
 
+            if viewModel.willClearPaybackOnSave {
+                Text("환급 예정 \(FormatterUtils.currencyString(from: viewModel.tempExpectedPayback))은 정산이 대신해요 — 저장하면 지워져요")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if viewModel.isTripLocked {
-                Text("정산이 끝난 여행이라 여행·인원·결제자는 바꿀 수 없어요. 여행 상세에서 정산을 다시 열면 돼요.")
+                Text("정산이 끝난 여행이라 여행·인원·결제자·금액·지갑은 바꿀 수 없어요. 바꾸려면 여행 상세에서 정산을 먼저 다시 열어주세요.")
                     .font(.system(size: 11, design: .rounded))
                     .foregroundStyle(.gagaeTextTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2148,8 +2234,18 @@ UI 로직이라 단위 테스트 대신 빌드 + 시뮬레이터 확인으로 �
         .padding(12)
         .background(Color.gagaeSurface)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .disabled(viewModel.isTripLocked)
     }
+```
+
+> **코드 리뷰 반영**: 정산 완료 여행이 `activeTrips`에 남아 add 모드에서도 선택 가능했고(→ `clearForm`이 `loadActiveTrips()`를 부르도록 고쳤다), 선택되면 "여행 아님" 행까지 잠겨 탈출구가 없었고(→ 그 행만 `disabled`에서 뺐다), 잠긴 상태에서도 금액·지갑은 그대로 바꿀 수 있어 정산을 재오픈 못 하는 상태로 편집할 수 있었다(→ 금액·지갑 필드에도 `isTripLocked`를 걸고 안내 문구에 추가했다).
+
+`GagaeSsi/Models/BudgetModels.swift`의 `tripId` 주석도 고친다 — 원래 `createSpendingRecord`/`updateSpendingRecord`가 `trip` 관계를 저장하지 않는다고 적혀 있었는데, 실제로는 저장한다 (`wishItemId`만 별도 연결 API를 쓴다):
+
+```swift
+    /// 여행에 묶인 소비면 그 여행 id. nil이면 평소 소비.
+    /// `wishItemId`와 달리 `createSpendingRecord`/`updateSpendingRecord`가 이 값을 바로
+    /// 저장한다(`trip` 관계에 직접 반영) — 별도 연결 API 없이 설정·저장·재조회가 일관된다.
+    var tripId: UUID?
 ```
 
 - [ ] **Step 4: 빌드 확인**
@@ -2160,14 +2256,33 @@ xcodebuild -project GagaeSsi.xcodeproj -scheme GagaeSsi -destination 'platform=i
 
 Expected: `** BUILD SUCCEEDED **`
 
-- [ ] **Step 5: 시뮬레이터 수동 확인 (여행 화면은 아직 없으니 테스트 데이터로)**
+- [ ] **Step 5: `SpendViewModelTests` — Critical 회귀 테스트**
+
+`TripTests`와 같은 패턴(`CoreDataManager(inMemory: true)`, `resetAllData()`, 예산 설정, day(0) 생성)으로 `GagaeSsiTests/SpendViewModelTests.swift`를 만들고, 각 테스트는 **고치기 전에 실패해야 한다** — 먼저 돌려서 실패를 확인하고 구현을 고친 뒤 다시 돌려서 통과를 확인한다.
+
+1. 여행 A·지갑A, 여행 B·지갑B를 만들고 `selectTrip(A)` 뒤 `selectTrip(B)` — `tempWishItemId`가 A의 지갑이면 안 된다.
+2. `tripId == nil, participants == 3, paidByMe == false`인 기록을 `beginEdit` → 제목만 바꾸고 `saveSpending` — 저장된 기록의 `participants`·`paidByMe`가 그대로여야 한다.
+3. 저장된 `wishItemId`가 있고 `tripId == nil`인 기록을 `beginEdit` → `selectTrip(nil)` — `tempWishItemId`가 그대로여야 한다.
+4. `activeTrips`에 없는 `UUID()`로 `selectTrip` — `tempTripId`가 `nil`로 남아야 한다.
+
+`saveSpending`은 `eventBus: AppEventBus`와 completion을 받는다 — 테스트에서는 `AppEventBus()`를 새로 만들어 넘긴다 (내부는 동기 실행이라 completion을 바로 캡처하면 된다).
+
+- [ ] **Step 6: 전체 테스트 확인**
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0'
+```
+
+Expected: 기존 테스트 수 + 이 태스크에서 추가한 4개가 전부 통과.
+
+- [ ] **Step 7: 시뮬레이터 수동 확인 (여행 화면은 아직 없으니 테스트 데이터로)**
 
 여행 목록 화면이 Task 9에서 생기므로, 지금은 여행이 없을 때 **여행 필드가 아예 안 보이는지**와 기존 소비 저장이 그대로 되는지만 확인한다. 이후 Task 9 완료 후 Task 9 Step 6에서 전체 흐름을 확인한다.
 
-- [ ] **Step 6: 커밋**
+- [ ] **Step 8: 커밋**
 
 ```bash
-git add GagaeSsi/Core/Utils/FormatterUtils.swift GagaeSsi/Features/Spend/SpendViewModel.swift GagaeSsi/Features/Spend/SpendView.swift
+git add GagaeSsi/Core/Utils/FormatterUtils.swift GagaeSsi/Features/Spend/SpendViewModel.swift GagaeSsi/Features/Spend/SpendView.swift GagaeSsi/Models/BudgetModels.swift GagaeSsiTests/SpendViewModelTests.swift
 git commit -m "feat: 소비 입력에 여행 — 인원·결제자만 적으면 내 몫은 앱이 계산
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
