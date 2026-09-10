@@ -2536,6 +2536,10 @@ Task 7의 버그(여행 연결된 기록을 열자마자 `participants`/`paidByM
 
 ---
 
+> **Task 9–10 코드 리뷰 반영 (2026-09-10):** 아래 스니펫은 최초 구현이 아니라 리뷰에서 나온 수정까지 반영된 최종 상태다. 재작업이 이 문서를 다시 베끼더라도 같은 결함이 재발하지 않도록, 고친 지점을 스니펫에 그대로 남겨둔다 — 삭제 확인 문구가 미정산 받을 돈을 경고하는 것, 정산 다시 열기 실패 알림이 두 원인(잔액 부족/지갑 삭제)을 모두 말하고 처방을 주는 것, `settleTrip`/`deleteTrip`/`TripEditView` 저장의 `false` 반환에 `errorMessage` 알림이 붙는 것, 여행 편집이 `eventBus.notifySpendingAdded()`를 부르는 것과 정산·재오픈이 `notifyWishChanged()`도 같이 부르는 것, 지갑 연결 문구에 "잔액이 모자라면 평소처럼 하루 예산에서 빠져요" 가 붙는 것, 정산 완료 카드가 정산 이후 소비 변경을 감지해 경고하는 것, `TripSettleSheet`가 `init`에서 `amount`/`amountText`를 채워 경고 깜빡임을 없앤 것 등.
+>
+> **이 리뷰에서 나온 규칙:** 화면이 약속하는 문장은 코드가 실제로 하는 일보다 더 단정적이면 안 된다 — 특히 돈이 어디로 갔는지 말하는 문장. `nil`이나 `false`가 "그런 일 없음"과 "확인할 수 없음"을 동시에 가리킬 때, 문구는 후자 쪽 불확실성을 숨기지 않아야 한다.
+
 ### Task 9: 여행 목록 · 추가/편집 시트 · 설정 진입점
 
 **Files:**
@@ -2574,6 +2578,7 @@ struct TripEditView: View {
     @State private var participants = 2
     @State private var wishItemId: UUID?
     @State private var wallets: [WishItemModel] = []
+    @State private var errorMessage: String?
     @FocusState private var focused: Bool
 
     private var isValid: Bool { !title.isEmpty && endDate >= startDate && participants >= 1 }
@@ -2595,6 +2600,11 @@ struct TripEditView: View {
 
                             DatePicker("시작일", selection: $startDate, displayedComponents: .date)
                                 .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary).tint(.gagaePinkDark)
+                                .onChange(of: startDate) { _, new in
+                                    // 시작일이 종료일보다 뒤로 가면 저장하기가 이유 없이 꺼진 것처럼
+                                    // 보인다 — 종료일도 같이 밀어준다.
+                                    if endDate < new { endDate = new }
+                                }
                             DatePicker("종료일", selection: $endDate, in: startDate..., displayedComponents: .date)
                                 .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary).tint(.gagaePinkDark)
 
@@ -2623,7 +2633,7 @@ struct TripEditView: View {
                             }
                             .pickerStyle(.menu).tint(.gagaePinkDark)
                             if let w = selectedWallet {
-                                Text("이 여행에서 내가 내는 소비는 \(w.title) 지갑(남은 \(FormatterUtils.currencyString(from: w.balance)))에서 먼저 빠지고, 정산으로 돌아온 돈도 지갑으로 와요.")
+                                Text("이 여행에서 내가 내는 소비는 \(w.title) 지갑(남은 \(FormatterUtils.currencyString(from: w.balance)))에서 먼저 빠지고, 정산으로 돌아온 돈도 지갑으로 와요. 잔액이 모자라면 평소처럼 하루 예산에서 빠져요.")
                                     .font(.gagaeCaption).foregroundStyle(.gagaeGood)
                                     .fixedSize(horizontal: false, vertical: true)
                             } else {
@@ -2646,6 +2656,14 @@ struct TripEditView: View {
                 }
             }
             .onAppear { load() }
+            .alert("오류", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("확인", role: .cancel) { }
+            } message: {
+                Text(errorMessage ?? "")
+            }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -2685,7 +2703,17 @@ struct TripEditView: View {
                 id: t.id, title: title, startDate: startDate, endDate: endDate,
                 defaultParticipants: participants, wishItemId: wishItemId)
         }
-        if ok { onSave(); dismiss() }
+        if ok {
+            onSave()
+            dismiss()
+        } else {
+            switch mode {
+            case .add:
+                errorMessage = "여행을 저장하지 못했어요. 다시 시도해 주세요."
+            case .edit:
+                errorMessage = "저장하지 못했어요. 여행이 그 사이에 지워진 것 같아요."
+            }
+        }
     }
 }
 ```
@@ -2744,7 +2772,12 @@ struct TripListView: View {
         }
         .onAppear { load() }
         .onChange(of: eventBus.spendingAddedTrigger) { _, _ in load() }
-        .sheet(isPresented: $showAdd) { TripEditView(mode: .add) { load() } }
+        .sheet(isPresented: $showAdd) {
+            TripEditView(mode: .add) {
+                eventBus.notifySpendingAdded()
+                load()
+            }
+        }
     }
 
     private var infoCard: some View {
@@ -2786,7 +2819,7 @@ struct TripListView: View {
                     Text("\(FormatterUtils.shortDateRange(trip.startDate, trip.endDate)) · \(trip.defaultParticipants)명")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
                     if trip.isSettled, let at = trip.settledAt {
-                        Text("\(FormatterUtils.shortDateRange(at, at)) 정산 · +\(FormatterUtils.currencyString(from: trip.settledAmount)) 돌아옴")
+                        Text("\(FormatterUtils.formattedDate(at)) 정산 · +\(FormatterUtils.currencyString(from: trip.settledAmount)) 돌아옴")
                             .font(.gagaeCaption).foregroundStyle(.gagaeGood)
                     }
                 }
@@ -2859,10 +2892,22 @@ struct TripSettleSheet: View {
     let onSettle: (Int) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var amountText = ""
-    @State private var amount = 0
+    @State private var amountText: String
+    @State private var amount: Int
 
     private var differsFromComputed: Bool { amount != settlement.receivable }
+
+    init(trip: TripModel, settlement: TripSettlementModel, walletTitle: String?, onSettle: @escaping (Int) -> Void) {
+        self.trip = trip
+        self.settlement = settlement
+        self.walletTitle = walletTitle
+        self.onSettle = onSettle
+        // 첫 body 패스에서 amount가 0으로 잡혀 "계산과 다른 금액이에요" 경고가
+        // 잠깐 깜빡이는 걸 막는다 — .onAppear를 기다리지 않고 선언 시점에 채운다.
+        _amount = State(initialValue: settlement.receivable)
+        _amountText = State(initialValue: settlement.receivable > 0
+            ? FormatterUtils.inputAmountString(from: settlement.receivable) : "")
+    }
 
     var body: some View {
         NavigationStack {
@@ -2897,7 +2942,7 @@ struct TripSettleSheet: View {
                                     .onChange(of: amountText) { _, v in
                                         if let r = FormatterUtils.formatCurrencyInput(v) {
                                             amount = r.plainNumber; amountText = r.formatted
-                                        } else if v.isEmpty { amount = 0 }
+                                        }
                                     }
                             }
                             .padding(GagaeSpacing.md).background(Color.gagaeSurface)
@@ -2930,10 +2975,6 @@ struct TripSettleSheet: View {
             }
             .navigationTitle("정산").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("취소") { dismiss() }.foregroundStyle(.gagaePinkDark) } }
-            .onAppear {
-                amount = settlement.receivable
-                amountText = settlement.receivable > 0 ? FormatterUtils.inputAmountString(from: settlement.receivable) : ""
-            }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -2975,6 +3016,7 @@ struct TripDetailView: View {
     @State private var showDeleteConfirm = false
     @State private var showReopenFailed = false
     @State private var editingRecord: SpendingRecordModel?
+    @State private var errorMessage: String?
 
     private let cal = Calendar.current
 
@@ -3013,13 +3055,22 @@ struct TripDetailView: View {
         .onAppear { load() }
         .onChange(of: eventBus.spendingAddedTrigger) { _, _ in load() }
         .sheet(isPresented: $showEdit) {
-            if let trip { TripEditView(mode: .edit(trip)) { load() } }
+            if let trip {
+                TripEditView(mode: .edit(trip)) {
+                    eventBus.notifySpendingAdded()
+                    load()
+                }
+            }
         }
         .sheet(isPresented: $showSettle) {
             if let trip {
                 TripSettleSheet(trip: trip, settlement: settlement, walletTitle: walletTitle) { amount in
                     if CoreDataManager.shared.settleTrip(id: trip.id, actualAmount: amount) {
                         eventBus.notifySpendingAdded()   // 예산·지갑 크레딧 → 홈 갱신
+                        eventBus.notifyWishChanged()     // 지갑 잔액 변경
+                        load()
+                    } else {
+                        errorMessage = "정산에 실패했어요. 여행이 이미 정산됐거나 다른 곳에서 상태가 바뀐 것 같아요."
                         load()
                     }
                 }
@@ -3036,16 +3087,35 @@ struct TripDetailView: View {
                 if CoreDataManager.shared.deleteTrip(id: tripId) {
                     eventBus.notifySpendingAdded()
                     dismiss()
+                } else {
+                    errorMessage = "여행을 삭제하지 못했어요. 이미 지워진 것 같아요."
+                    load()
                 }
             }
             Button("취소", role: .cancel) { }
         } message: {
-            Text("소비 기록은 그대로 남고 여행 연결만 풀려요. 이미 정산한 돈은 돌려받지 않아요.")
+            if let trip, !trip.isSettled, settlement.receivable > 0 {
+                Text("소비 기록은 그대로 남지만, 아직 정산하지 않은 받을 돈 \(FormatterUtils.currencyString(from: settlement.receivable))은 돌려받을 수 없게 돼요. 먼저 정산하고 지우는 걸 권해요.")
+            } else {
+                Text("소비 기록은 그대로 남고 여행 연결만 풀려요. 이미 정산한 돈은 돌려받지 않아요.")
+            }
         }
         .alert("되돌릴 수 없어요", isPresented: $showReopenFailed) {
             Button("확인", role: .cancel) { }
         } message: {
-            Text("지갑으로 돌아온 정산금을 이미 다른 소비에 써서 정산을 다시 열 수 없어요.")
+            if let trip {
+                Text("정산금이 지갑에 그대로 있어야 되돌릴 수 있어요. 지갑 잔액이 모자라거나 지갑을 지웠다면 다시 열 수 없어요. 지갑에 \(FormatterUtils.currencyString(from: trip.settledAmount))을 다시 채우면 열 수 있어요.")
+            } else {
+                Text("정산금이 지갑에 그대로 있어야 되돌릴 수 있어요. 지갑 잔액이 모자라거나 지갑을 지웠다면 다시 열 수 없어요.")
+            }
+        }
+        .alert("오류", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("확인", role: .cancel) { }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -3063,12 +3133,24 @@ struct TripDetailView: View {
                     cell(settlement.receivable > 0 ? "받을 돈" : "받을 돈 없음", settlement.receivable,
                          settlement.receivable > 0 ? .gagaeGood : .gagaeTextTertiary)
                 }
-                if walletTitle != nil {
+                if settlement.fromWallet > 0 {
                     Text("🎁 지갑에서 \(FormatterUtils.currencyString(from: settlement.fromWallet)) · 예산에서 \(FormatterUtils.currencyString(from: settlement.fromBudget))")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
                 }
             }
         }
+    }
+
+    /// 정산 완료 카드의 "받은 돈이 어디로 갔는지" 문구.
+    /// `walletTitle`은 여행이 *지금* 연결된 지갑만 안다 — 정산 당시엔 지갑이 있었는데
+    /// 그 뒤 지갑이 지워졌다면 `walletTitle`은 nil이지만 돈은 예산이 아니라 지갑으로 갔었다.
+    /// `settlementEntryId`가 불투명해 실제 목적지를 다시 알아낼 수 없으므로, 여행에
+    /// 지갑 연결 이력이 전혀 없을 때만 "예산"이라 단정한다.
+    private func settledDestinationText(_ trip: TripModel) -> String {
+        if let walletTitle {
+            return "🎁 \(walletTitle) 지갑으로 돌아감"
+        }
+        return trip.wishItemId == nil ? "오늘 예산으로 들어옴" : "정산 당시 연결된 지갑으로 돌아감"
     }
 
     private func cell(_ label: String, _ value: Int, _ color: Color) -> some View {
@@ -3095,15 +3177,21 @@ struct TripDetailView: View {
                     Text("내 몫 \(FormatterUtils.currencyString(from: settlement.myShareTotal))")
                         .font(.gagaeSubheadline).foregroundStyle(.gagaeText)
                 }
-                Text("받은 돈 \(FormatterUtils.currencyString(from: trip.settledAmount)) · \(walletTitle.map { "🎁 \($0) 지갑으로 돌아감" } ?? "오늘 예산으로 들어옴")")
+                Text("받은 돈 \(FormatterUtils.currencyString(from: trip.settledAmount)) · \(settledDestinationText(trip))")
                     .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if trip.settledAmount != settlement.receivable {
+                    Text("정산 이후 소비가 바뀌었어요 — 지금 기준으로는 \(FormatterUtils.currencyString(from: settlement.receivable))이에요. 정산을 다시 열면 새로 정산할 수 있어요.")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeWarning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let at = trip.settledAt {
                     Text(FormatterUtils.formattedDate(at)).font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
                 }
                 GagaeSecondaryButton(title: "정산 다시 열기") {
                     if CoreDataManager.shared.reopenTrip(id: trip.id) {
                         eventBus.notifySpendingAdded()
+                        eventBus.notifyWishChanged()
                         load()
                     } else {
                         showReopenFailed = true

@@ -24,6 +24,7 @@ struct TripEditView: View {
     @State private var participants = 2
     @State private var wishItemId: UUID?
     @State private var wallets: [WishItemModel] = []
+    @State private var errorMessage: String?
     @FocusState private var focused: Bool
 
     private var isValid: Bool { !title.isEmpty && endDate >= startDate && participants >= 1 }
@@ -45,6 +46,11 @@ struct TripEditView: View {
 
                             DatePicker("시작일", selection: $startDate, displayedComponents: .date)
                                 .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary).tint(.gagaePinkDark)
+                                .onChange(of: startDate) { _, new in
+                                    // 시작일이 종료일보다 뒤로 가면 저장하기가 이유 없이 꺼진 것처럼
+                                    // 보인다 — 종료일도 같이 밀어준다.
+                                    if endDate < new { endDate = new }
+                                }
                             DatePicker("종료일", selection: $endDate, in: startDate..., displayedComponents: .date)
                                 .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary).tint(.gagaePinkDark)
 
@@ -73,7 +79,7 @@ struct TripEditView: View {
                             }
                             .pickerStyle(.menu).tint(.gagaePinkDark)
                             if let w = selectedWallet {
-                                Text("이 여행에서 내가 내는 소비는 \(w.title) 지갑(남은 \(FormatterUtils.currencyString(from: w.balance)))에서 먼저 빠지고, 정산으로 돌아온 돈도 지갑으로 와요.")
+                                Text("이 여행에서 내가 내는 소비는 \(w.title) 지갑(남은 \(FormatterUtils.currencyString(from: w.balance)))에서 먼저 빠지고, 정산으로 돌아온 돈도 지갑으로 와요. 잔액이 모자라면 평소처럼 하루 예산에서 빠져요.")
                                     .font(.gagaeCaption).foregroundStyle(.gagaeGood)
                                     .fixedSize(horizontal: false, vertical: true)
                             } else {
@@ -96,6 +102,14 @@ struct TripEditView: View {
                 }
             }
             .onAppear { load() }
+            .alert("오류", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("확인", role: .cancel) { }
+            } message: {
+                Text(errorMessage ?? "")
+            }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -135,6 +149,16 @@ struct TripEditView: View {
                 id: t.id, title: title, startDate: startDate, endDate: endDate,
                 defaultParticipants: participants, wishItemId: wishItemId)
         }
-        if ok { onSave(); dismiss() }
+        if ok {
+            onSave()
+            dismiss()
+        } else {
+            switch mode {
+            case .add:
+                errorMessage = "여행을 저장하지 못했어요. 다시 시도해 주세요."
+            case .edit:
+                errorMessage = "저장하지 못했어요. 여행이 그 사이에 지워진 것 같아요."
+            }
+        }
     }
 }

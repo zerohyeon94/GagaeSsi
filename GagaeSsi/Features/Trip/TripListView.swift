@@ -49,7 +49,12 @@ struct TripListView: View {
         }
         .onAppear { load() }
         .onChange(of: eventBus.spendingAddedTrigger) { _, _ in load() }
-        .sheet(isPresented: $showAdd) { TripEditView(mode: .add) { load() } }
+        .sheet(isPresented: $showAdd) {
+            TripEditView(mode: .add) {
+                eventBus.notifySpendingAdded()
+                load()
+            }
+        }
     }
 
     private var infoCard: some View {
@@ -91,7 +96,7 @@ struct TripListView: View {
                     Text("\(FormatterUtils.shortDateRange(trip.startDate, trip.endDate)) · \(trip.defaultParticipants)명")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
                     if trip.isSettled, let at = trip.settledAt {
-                        Text("\(FormatterUtils.shortDateRange(at, at)) 정산 · +\(FormatterUtils.currencyString(from: trip.settledAmount)) 돌아옴")
+                        Text("\(FormatterUtils.formattedDate(at)) 정산 · +\(FormatterUtils.currencyString(from: trip.settledAmount)) 돌아옴")
                             .font(.gagaeCaption).foregroundStyle(.gagaeGood)
                     }
                 }

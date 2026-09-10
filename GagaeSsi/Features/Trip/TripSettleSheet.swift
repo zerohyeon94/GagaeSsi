@@ -15,10 +15,22 @@ struct TripSettleSheet: View {
     let onSettle: (Int) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var amountText = ""
-    @State private var amount = 0
+    @State private var amountText: String
+    @State private var amount: Int
 
     private var differsFromComputed: Bool { amount != settlement.receivable }
+
+    init(trip: TripModel, settlement: TripSettlementModel, walletTitle: String?, onSettle: @escaping (Int) -> Void) {
+        self.trip = trip
+        self.settlement = settlement
+        self.walletTitle = walletTitle
+        self.onSettle = onSettle
+        // 첫 body 패스에서 amount가 0으로 잡혀 "계산과 다른 금액이에요" 경고가
+        // 잠깐 깜빡이는 걸 막는다 — .onAppear를 기다리지 않고 선언 시점에 채운다.
+        _amount = State(initialValue: settlement.receivable)
+        _amountText = State(initialValue: settlement.receivable > 0
+            ? FormatterUtils.inputAmountString(from: settlement.receivable) : "")
+    }
 
     var body: some View {
         NavigationStack {
@@ -53,7 +65,7 @@ struct TripSettleSheet: View {
                                     .onChange(of: amountText) { _, v in
                                         if let r = FormatterUtils.formatCurrencyInput(v) {
                                             amount = r.plainNumber; amountText = r.formatted
-                                        } else if v.isEmpty { amount = 0 }
+                                        }
                                     }
                             }
                             .padding(GagaeSpacing.md).background(Color.gagaeSurface)
@@ -86,10 +98,6 @@ struct TripSettleSheet: View {
             }
             .navigationTitle("정산").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("취소") { dismiss() }.foregroundStyle(.gagaePinkDark) } }
-            .onAppear {
-                amount = settlement.receivable
-                amountText = settlement.receivable > 0 ? FormatterUtils.inputAmountString(from: settlement.receivable) : ""
-            }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
