@@ -262,6 +262,15 @@ extension SettingsView {
 
                 rowDivider
                 NavigationLink {
+                    TripListView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#4FB0C6"), iconContent: AnyView(Text("🧳").font(.system(size: 15))),
+                               label: "여행")
+                }
+                .buttonStyle(.plain)
+
+                rowDivider
+                NavigationLink {
                     CarryOverModeSettingView()
                 } label: {
                     settingRow(iconBg: Color(hex: "#7BC67B"), iconContent: AnyView(Text("💰").font(.system(size: 15))),
