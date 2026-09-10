@@ -691,6 +691,15 @@ extension SpendView {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(.gagaeText)
                     .lineLimit(1)
+                if record.isShared {
+                    Text("🧳 결제 \(FormatterUtils.currencyString(from: record.amount)) · \(record.participants)명 · \(record.paidByMe ? "내가 냄" : "친구가 냄")")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                } else if record.tripId != nil {
+                    Text("🧳 여행 개인 소비")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                }
                 if record.expectedPayback > 0 {
                     Text(record.paybackReceived
                          ? "✅ 환급 완료 \(FormatterUtils.currencyString(from: record.expectedPayback))"
@@ -706,7 +715,7 @@ extension SpendView {
 
             Spacer()
 
-            Text("-" + FormatterUtils.currencyString(from: record.amount))
+            Text("-" + FormatterUtils.currencyString(from: record.myShare))
                 .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundStyle(.gagaeDanger)
 

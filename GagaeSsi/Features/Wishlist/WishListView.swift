@@ -168,6 +168,10 @@ private extension WishListView {
                     }
                     Text("모은 \(FormatterUtils.currencyString(from: item.savedAmount)) 중 \(FormatterUtils.currencyString(from: item.spentAmount)) 썼어요")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
+                    if item.returnedAmount > 0 {
+                        Text("🧳 여행 정산으로 \(FormatterUtils.currencyString(from: item.returnedAmount)) 돌아왔어요")
+                            .font(.gagaeCaption).foregroundStyle(.gagaeGood)
+                    }
                 } else {
                     Text("모은 금액 \(FormatterUtils.currencyString(from: item.savedAmount))")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)

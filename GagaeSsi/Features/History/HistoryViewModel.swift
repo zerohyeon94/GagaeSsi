@@ -16,6 +16,8 @@ final class HistoryViewModel {
     /// 날짜(startOfDay) -> 그날 총소비
     private(set) var dayTotals: [Date: Int] = [:]
     private(set) var monthTotal: Int = 0
+    /// 여행 배지용 — 기록의 tripId → 여행 이름
+    private(set) var tripTitles: [UUID: String] = [:]
     private(set) var selectedRecords: [SpendingRecordModel] = []
     /// 그 달 하루 기본 예산 (기록이 없는 날의 대체 기준)
     private(set) var baseDailyBudget: Int = 0
@@ -59,6 +61,7 @@ final class HistoryViewModel {
                 from: config, installments: CoreDataManager.shared.fetchInstallments(), for: selectedMonth)
         }
 
+        tripTitles = Dictionary(uniqueKeysWithValues: CoreDataManager.shared.fetchTrips().map { ($0.id, $0.title) })
         let records = CoreDataManager.shared.fetchSpendingRecords(year: year, month: month)
         monthTotal = records.reduce(0) { $0 + $1.myShare }
         var totals: [Date: Int] = [:]

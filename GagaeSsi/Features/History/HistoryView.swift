@@ -193,9 +193,25 @@ private extension HistoryView {
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(.gagaeGood)
                 }
+                // 여행 소비 — 배지는 여행 상세로, 공용이면 결제 정보를 한 줄 더
+                if let tripId = record.tripId {
+                    NavigationLink {
+                        TripDetailView(tripId: tripId)
+                    } label: {
+                        Text("🧳 \(viewModel.tripTitles[tripId] ?? "여행")")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.gagaePinkDark)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if record.isShared {
+                    Text("결제 \(FormatterUtils.currencyString(from: record.amount)) · \(record.participants)명 · \(record.paidByMe ? "내가 냄" : "친구가 냄")")
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                }
             }
             Spacer()
-            Text("-" + FormatterUtils.currencyString(from: record.amount))
+            Text("-" + FormatterUtils.currencyString(from: record.myShare))
                 .font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gagaeDanger)
             Menu {
                 Button("수정") { editingRecord = record }

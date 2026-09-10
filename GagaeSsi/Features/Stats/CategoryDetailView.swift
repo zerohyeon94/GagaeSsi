@@ -173,9 +173,15 @@ struct CategoryDetailView: View {
                         Text(dayLabel(record.date))
                             .font(.system(size: 11, design: .rounded))
                             .foregroundStyle(.gagaeTextTertiary)
+                        // 공용 소비는 내 몫만 합계에 들어가므로, 실제 결제 전액을 한 줄 더 보여준다
+                        if record.isShared {
+                            Text("결제 \(FormatterUtils.currencyString(from: record.amount)) · \(record.participants)명 · \(record.paidByMe ? "내가 냄" : "친구가 냄")")
+                                .font(.gagaeCaption)
+                                .foregroundStyle(.gagaeTextTertiary)
+                        }
                     }
                     Spacer()
-                    Text("-" + FormatterUtils.currencyString(from: record.amount))
+                    Text("-" + FormatterUtils.currencyString(from: record.myShare))
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(.gagaeDanger)
                 }

@@ -3307,7 +3307,33 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
                 }
 ```
 
-- [ ] **Step 4: `WishListView` — 정산으로 돌아온 돈**
+- [ ] **Step 4: `CategoryDetailView` — "전체 기록" 행도 같은 규칙**
+
+계획에는 빠져 있었지만 Task 4에서 이 화면의 `total`·`items`는 이미 `myShare` 렌즈로 맞췄고,
+"전체 기록" 아래 개별 행만 여전히 `record.amount`를 보여줘 헤더 합계와 어긋난다. 다른 두 화면과
+같은 규칙(주 표시는 `myShare`, 공용 소비는 결제 전액·인원·결제자를 보조 줄로) 적용하되, 이 파일의
+기존 타이포그래피(`.gagaeCaption` 등)를 따른다 — `HistoryView`의 픽셀 크기를 그대로 베끼지 않는다.
+
+`recordListCard`의 `record.title` / `dayLabel(record.date)` 다음, 공용 소비면 보조 줄을 하나 더:
+
+```swift
+                        // 공용 소비는 내 몫만 합계에 들어가므로, 실제 결제 전액을 한 줄 더 보여준다
+                        if record.isShared {
+                            Text("결제 \(FormatterUtils.currencyString(from: record.amount)) · \(record.participants)명 · \(record.paidByMe ? "내가 냄" : "친구가 냄")")
+                                .font(.gagaeCaption)
+                                .foregroundStyle(.gagaeTextTertiary)
+                        }
+```
+
+금액 표시를 내 몫으로:
+
+```swift
+                    Text("-" + FormatterUtils.currencyString(from: record.myShare))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaeDanger)
+```
+
+- [ ] **Step 5: `WishListView` — 정산으로 돌아온 돈**
 
 `Text("모은 \(...) 중 \(...) 썼어요")` 줄 뒤에:
 
@@ -3318,7 +3344,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
                     }
 ```
 
-- [ ] **Step 5: 빌드 + 전체 테스트**
+- [ ] **Step 6: 빌드 + 전체 테스트**
 
 ```bash
 xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' -quiet
@@ -3326,20 +3352,21 @@ xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests -destination '
 
 Expected: `** TEST SUCCEEDED **` — 전체 스위트.
 
-- [ ] **Step 6: 시뮬레이터 확인**
+- [ ] **Step 7: 시뮬레이터 확인**
 
 1. 기록 탭 오늘 목록: 공용 소비 행이 내 몫 금액 + "🧳 결제 90,000 · 3명 · 내가 냄"
-2. 내역 탭: 같은 행에 `🧳 제주` 배지 → 탭하면 여행 상세로 이동
+2. 내역 탭: 같은 행에 `🧳 제주` 배지 → 탭하면 여행 상세로 이동; 행 탭은 그대로 수정 시트, ⋯ 메뉴도 그대로 동작하는지 확인
 3. 캘린더 일별 합계가 내 몫 합(40,000)
-4. 지갑 연결 여행을 정산한 뒤 설정 › 위시리스트: "🧳 여행 정산으로 X 돌아왔어요"
+4. 통계 → 카테고리 → 전체 기록: 행이 내 몫으로 표시되고 헤더 합계와 일치
+5. 지갑 연결 여행을 정산한 뒤 설정 › 위시리스트: "🧳 여행 정산으로 X 돌아왔어요"
 
-- [ ] **Step 7: 커밋**
+- [ ] **Step 8: 커밋**
 
 ```bash
-git add GagaeSsi/Features/History/HistoryViewModel.swift GagaeSsi/Features/History/HistoryView.swift GagaeSsi/Features/Spend/SpendView.swift GagaeSsi/Features/Wishlist/WishListView.swift
+git add GagaeSsi/Features/History/HistoryViewModel.swift GagaeSsi/Features/History/HistoryView.swift GagaeSsi/Features/Spend/SpendView.swift GagaeSsi/Features/Stats/CategoryDetailView.swift GagaeSsi/Features/Wishlist/WishListView.swift
 git commit -m "feat: 내역엔 내 몫과 여행 배지, 지갑엔 정산으로 돌아온 돈
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
