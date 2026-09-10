@@ -97,9 +97,16 @@ final class SpendViewModel {
     /// 공용 전환으로 환급 필드가 숨겨졌는데 저장하면 실제로 지워지는지 — 안내 문구용.
     /// 이미 받은 환급(`editingPaybackReceived`)은 저장해도 지우지 않으므로(아래 `saveSpending`
     /// 참고) 그때는 안내하지 않는다 — 지운다고 말해놓고 안 지우면 더 헷갈린다.
+    /// `tempHasPayback`도 같이 봐야 한다 — 사용자가 토글을 이미 꺼놨으면(값은 남아있어도)
+    /// "지워져요"라고 알릴 게 없다.
     var willClearPaybackOnSave: Bool {
-        isSharedSpending && tempExpectedPayback > 0 && !editingPaybackReceived
+        isSharedSpending && tempHasPayback && tempExpectedPayback > 0 && !editingPaybackReceived
     }
+
+    /// 이미 받은 환급은 편집 화면에서 고칠 수 없다 — 토글·금액 필드를 잠그는 데 쓴다.
+    /// `receivePayback`이 이미 CarryOverSource 크레딧을 올려놨으므로, 그 근거인
+    /// `expectedPayback`을 편집으로 건드리게 두면 장부가 조용히 어긋난다.
+    var isPaybackLocked: Bool { editingPaybackReceived }
 
     /// 편집 중인 지출 기록 id (nil이면 추가 모드)
     var editingRecordId: UUID?
@@ -167,33 +174,31 @@ final class SpendViewModel {
             return
         }
 
-        // 모델 업데이트 (내용 비우면 카테고리명 사용)
-        model.title = tempTitle.isEmpty ? tempCategory.rawValue : tempTitle
-        model.amount = tempAmount
-        // 시간대 리포트를 위해 실제 시각을 보존한다. DatePicker가 date-only라
-        // tempDate는 시각 성분(생성=현재 시각, 편집=원래 시각)을 유지한다.
-        model.date = tempDate
-        model.category = tempCategory
-        model.expectedPayback = tempHasPayback ? tempExpectedPayback : 0
-        model.paybackReceived = (editingRecordId != nil) ? editingPaybackReceived : false
-        model.tripId = tempTripId
-        // 폼이 실제로 보여준 값만 쓴다 — tempTripId == nil이라고 1/true로 되돌리면, 여행이
-        // 지워진(deleteTrip) 분담 소비를 제목만 고쳐 저장해도 인원이 조용히 1로 무너진다.
-        model.participants = max(1, tempParticipants)
-        model.paidByMe = tempPaidByMe
-        // 공용 소비는 정산이 환급 역할을 하므로 환급 필드를 비운다 — 단, 이미 받은 환급은
-        // 예외다. `receivePayback`이 이미 CarryOverSource 크레딧을 올려놨는데 여기서 0으로
-        // 지우면 그 크레딧을 설명할 근거가 사라져 장부가 조용히 어긋난다. 받은 적 없는
-        // 환급만 비운다.
-        if model.isShared && !model.paybackReceived { model.expectedPayback = 0 }
+        // 폼→기록 규칙은 `SpendingEditDraft` 하나에 있다(내역 편집 시트와 공유) — 항목명 빈칸
+        // 대체, 시각 보존, 인원 클램프, 환급 잠금 규칙이 여기 갈라지면 다시 어긋난다.
+        // 지갑 연결(tempWishItemId)은 이 드래프트가 다루지 않는다 — 아래에서 저장 후
+        // linkSpendingToWish/unlinkSpendingFromWish로 따로 붙인다(여행이 아니라 지갑
+        // 피커가 있는 화면은 이쪽뿐이라, "옮겨 붙이는" 동작까지 있어야 한다).
+        let draft = SpendingEditDraft(title: tempTitle, amount: tempAmount, category: tempCategory,
+                                      date: tempDate, tripId: tempTripId, participants: tempParticipants,
+                                      paidByMe: tempPaidByMe, hasPayback: tempHasPayback,
+                                      payback: tempExpectedPayback)
 
         let success: Bool
         if let editingId = editingRecordId {
-            // 편집 모드: 기존 기록 수정
+            // 편집 모드: `model`은 `beginEdit`이 실어둔 원본 기록이다 — 그 위에 드래프트를
+            // 얹어야 `paybackReceived`(그리고 그에 따른 환급 잠금 규칙)가 지켜진다.
+            model.paybackReceived = editingPaybackReceived
+            model = draft.applied(to: model)
             model.id = editingId
             success = manager.updateSpendingRecord(model)
         } else {
-            // 추가 모드: 신규 기록 생성
+            // 추가 모드: 원본이 없으므로 새 id를 가진 빈 기록을 시드로 만들고 같은 규칙을
+            // 태운다 — 편집 모드와 저장 규칙이 갈라지지 않게 한다. 시드의 date를 tempDate로
+            // 주는 이유는, 드래프트가 "원래 기록의 시각 성분"을 시드에서 읽어 새 날짜에
+            // 다시 입히기 때문 — 시드와 드래프트의 date를 같게 두면 결과가 tempDate 그대로다.
+            let seed = SpendingRecordModel(id: model.id, title: "", amount: 0, date: tempDate)
+            model = draft.applied(to: seed)
             success = manager.createSpendingRecord(model)
         }
 

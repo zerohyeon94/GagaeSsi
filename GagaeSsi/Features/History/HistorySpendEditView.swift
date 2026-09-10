@@ -4,56 +4,12 @@
 //
 //  내역에서 과거 소비 수정 (저장 시 이월 체인 재계산 트리거)
 //
+//  폼→기록 규칙(`SpendingEditDraft`)은 `Models/SpendingEditDraft.swift`에 있다 — 소비 입력
+//  탭(SpendViewModel)의 편집 모드도 같은 타입을 거친다. **폼은 보여준 값은 반드시 쓰고,
+//  보여주지 않은 값은 절대 건드리지 않는다.**
+//
 
 import SwiftUI
-
-/// 내역 편집 시트가 폼 값을 기록에 얹는 규칙.
-///
-/// **폼은 화면에 실제로 보여준 값만 덮어쓴다 — 숨겨진 필드가 저장된 데이터를 조용히
-/// 바꾸면 안 된다.** `CoreDataManager.deleteTrip`은 `trip` 연결만 끊고 `participants`/
-/// `paidByMe`는 그대로 두므로, `tripId == nil && participants == 3` 같은 상태가 정상일 수
-/// 있다. 여행을 고르지 않았다고 인원·결제자를 1/true로 되돌리면 그 기록을 제목만 고쳐도
-/// `budgetAmount`가 조용히 3배로 뛰고 그날 이후 이월 체인이 통째로 틀어진다.
-///
-/// 폼이 다루지 않는 필드(지갑 연결, 환급 수령 여부, id)는 원본에서 그대로 가져온다 —
-/// 화면에 보여주지 않은 값을 저장 때 기본값으로 되돌리면 사용자가 모르는 사이 데이터가 바뀐다.
-struct SpendingEditDraft {
-    var title: String
-    var amount: Int
-    var category: SpendingCategory
-    var date: Date
-    var tripId: UUID?
-    var participants: Int
-    var paidByMe: Bool
-    var hasPayback: Bool
-    var payback: Int
-
-    func applied(to record: SpendingRecordModel) -> SpendingRecordModel {
-        var result = record
-        result.title = title.isEmpty ? category.rawValue : title
-        result.amount = amount
-        result.category = category
-        // date-only 피커라 시각 성분은 원래 기록의 것을 유지하려면 날짜만 교체
-        let cal = Calendar.current
-        let timeComps = cal.dateComponents([.hour, .minute, .second], from: record.date)
-        result.date = cal.date(bySettingHour: timeComps.hour ?? 0, minute: timeComps.minute ?? 0,
-                               second: timeComps.second ?? 0, of: cal.startOfDay(for: date)) ?? date
-        result.tripId = tripId
-        // 화면에 보여준 값을 그대로 쓴다 — tripId == nil이라고 1/true로 강제하지 않는다
-        result.participants = max(1, participants)
-        result.paidByMe = paidByMe
-        // 공용 소비는 정산이 환급 역할을 하므로 환급 필드를 비운다 — 단, 이미 받은 환급은
-        // 예외다. `receivePayback`이 이미 CarryOverSource 크레딧을 올려놨는데 여기서 0으로
-        // 지우면 그 크레딧을 설명할 근거가 사라져 장부가 조용히 어긋난다.
-        if record.paybackReceived {
-            result.expectedPayback = record.expectedPayback
-        } else {
-            result.expectedPayback = (hasPayback && !result.isShared) ? payback : 0
-        }
-        // id, wishItemId, paybackReceived는 폼이 다루지 않으므로 record 값 그대로 유지된다
-        return result
-    }
-}
 
 struct HistorySpendEditView: View {
     let record: SpendingRecordModel
@@ -80,16 +36,39 @@ struct HistorySpendEditView: View {
     private var selectedTrip: TripModel? { trips.first { $0.id == tripId } }
     /// 정산 완료 여행의 소비는 여행·인원·결제자·금액을 못 바꾼다
     private var isTripLocked: Bool { selectedTrip?.isSettled == true }
+    /// 공용 소비인지 — `SpendingRecordModel.isShared`와 같은 규칙(participants > 1)을
+    /// 화면 상태에서 직접 판정한다. `preview.isShared`로 우회하면 `draft.applied(to:)`
+    /// 하나(Calendar 연산 3회 + 구조체 복사 2회)를 이 값 하나 보자고 매번 돌리게 된다.
+    private var isShared: Bool { participants > 1 }
+
+    /// 여행을 바꿔 예전 여행의 지갑 연결을 놓아줘야 하는지. `record.tripId`가 가리키던
+    /// (원래) 여행의 지갑과 `record.wishItemId`가 같을 때만 — 여행과 무관하게 고른 지갑까지
+    /// 건드리면 안 된다.
+    private var clearsWallet: Bool {
+        guard tripId != record.tripId, let wishId = record.wishItemId else { return false }
+        let oldTripWallet = trips.first { $0.id == record.tripId }?.wishItemId
+        return wishId == oldTripWallet
+    }
     private var draft: SpendingEditDraft {
         SpendingEditDraft(title: title, amount: amount, category: category, date: date,
                           tripId: tripId, participants: participants, paidByMe: paidByMe,
-                          hasPayback: hasPayback, payback: payback)
+                          hasPayback: hasPayback, payback: payback, clearsWallet: clearsWallet)
     }
     /// 지금 입력값 미리보기 — 내 몫·분담 여부 판정용
     private var preview: SpendingRecordModel { draft.applied(to: record) }
-    private var isShared: Bool { preview.isShared }
 
-    private var isValid: Bool { amount > 0 }
+    /// 지갑이 연결돼 있고(그리고 이번 저장으로 풀리는 게 아니고) 새 금액이 지갑 잔액을
+    /// 넘으면 그 한도. `SpendView`는 이 경우 저장 버튼 자체를 막는다 — 여기도 같은 기준을 쓴다.
+    private var wishLimit: Int? {
+        guard !clearsWallet, let wishId = record.wishItemId else { return nil }
+        return CoreDataManager.shared.wishSpendableLimit(for: wishId, excluding: record.id)
+    }
+    private var wishExceeded: Bool {
+        guard let limit = wishLimit else { return false }
+        return preview.budgetAmount > limit
+    }
+
+    private var isValid: Bool { amount > 0 && !wishExceeded }
 
     var body: some View {
         NavigationStack {
@@ -137,6 +116,16 @@ struct HistorySpendEditView: View {
                             }
                             .padding(GagaeSpacing.md).background(Color.gagaeSurface)
                             .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
+                            // 금액 잠금·초과 안내는 금액 필드 바로 옆에 둔다 — 분담 블록 안에
+                            // 묻어두면(예전 위치) 스크롤해야 보인다.
+                            if isTripLocked {
+                                Text("정산 완료 여행이라 금액을 바꿀 수 없어요")
+                                    .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                            } else if wishExceeded {
+                                Text("지갑에 \(FormatterUtils.currencyString(from: wishLimit ?? 0))만 남았어요. 금액을 줄여야 저장할 수 있어요.")
+                                    .font(.gagaeCaption).foregroundStyle(.gagaeDanger)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
 
                             // 날짜
                             DatePicker("날짜", selection: $date, displayedComponents: .date)
@@ -145,6 +134,17 @@ struct HistorySpendEditView: View {
                             // 여행 (진행 중 여행이 있거나 이미 묶여 있을 때만)
                             if !trips.isEmpty {
                                 tripField
+                            }
+                            // 연결됐던 여행을 찾을 수 없는(삭제된) 경우 — 피커가 안 보여도 알려준다
+                            if tripId != nil && selectedTrip == nil {
+                                Text("연결됐던 여행을 찾을 수 없어요. 저장하면 여행 연결이 풀려요")
+                                    .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            if clearsWallet {
+                                Text("여행을 바꿔서 지갑 연결은 풀렸어요 — 이 소비는 예산에서 빠져요")
+                                    .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             // 분담 블록은 여행 선택과 무관하게 뜬다 — `deleteTrip`은 소비의
                             // participants/paidByMe는 그대로 두고 여행 연결만 끊으므로, trips가
@@ -156,9 +156,15 @@ struct HistorySpendEditView: View {
                             // 환급 예정 — 공용 소비는 정산이 환급 역할을 하므로 숨긴다 (이중 반영 방지)
                             if !isShared {
                                 Toggle(isOn: $hasPayback.animation()) {
-                                    Text("💳 환급·페이백 예정")
+                                    Text(record.paybackReceived ? "✅ 환급 완료" : "💳 환급·페이백 예정")
                                         .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
-                                }.tint(.gagaePinkDark)
+                                }
+                                .tint(.gagaePinkDark)
+                                .disabled(record.paybackReceived)
+                                if record.paybackReceived {
+                                    Text("이미 받은 환급이라 금액은 바꿀 수 없어요")
+                                        .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
+                                }
                                 if hasPayback {
                                     HStack(spacing: GagaeSpacing.sm) {
                                         Text("₩").font(.gagaeCalloutMedium).foregroundStyle(.gagaePinkDark)
@@ -167,13 +173,16 @@ struct HistorySpendEditView: View {
                                             .onChange(of: paybackText) { _, v in
                                                 if let r = FormatterUtils.formatCurrencyInput(v) { payback = r.plainNumber; paybackText = r.formatted }
                                             }
+                                            .disabled(record.paybackReceived)
                                     }
                                     .padding(GagaeSpacing.md).background(Color.gagaeSurface)
                                     .clipShape(RoundedRectangle(cornerRadius: GagaeRadius.md))
                                 }
-                            } else if payback > 0 && !record.paybackReceived {
+                            } else if hasPayback && payback > 0 && !record.paybackReceived {
                                 // 공용으로 바뀌어 환급 필드가 숨겨졌는데 저장하면 실제로 지워지는 경우만 안내한다.
                                 // 이미 받은 환급(record.paybackReceived)은 저장해도 지우지 않으므로 안내하지 않는다.
+                                // hasPayback도 같이 봐야 한다 — 사용자가 토글을 이미 꺼놨으면(payback 값은
+                                // 남아있어도) "지워져요"라고 알릴 게 없다.
                                 Text("환급 예정 \(FormatterUtils.currencyString(from: payback))은 정산이 대신해요 — 저장하면 지워져요")
                                     .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -223,9 +232,32 @@ struct HistorySpendEditView: View {
         trips = active
     }
 
+    /// 여행을 고르거나(id) 푼다(nil). 피커의 selection Binding에서만 호출된다(아래 `tripField`) —
+    /// `onChange(of: tripId)`를 쓰지 않는 이유는, `loadRecord()`가 `onAppear`에서 `tripId`를
+    /// 직접 대입하는 것도 `onChange`엔 "변화"로 잡히기 때문이다(Task 7에서 실제로 재현된 버그:
+    /// `tripField`가 `if !trips.isEmpty`로 첫 렌더에는 없다가 나중에 나타나 우연히 안 걸렸을
+    /// 뿐, 레이아웃이 바뀌면 다시 터진다). 이 메서드는 사용자가 실제로 행을 탭했을 때만
+    /// 호출되므로 그 문제 자체가 없다.
+    private func selectTrip(_ newValue: UUID?) {
+        tripId = newValue
+        // 여행을 고르면 인원 기본값과 결제자를 채운다. "여행 아님"으로 풀 때는
+        // participants/paidByMe를 건드리지 않는다 — 여행이 지워져(deleteTrip) 이미
+        // 분담 상태였던 기록을 여기서 1/true로 되돌리면, 화면엔 안 보이던 값이 저장 때
+        // 조용히 바뀐다. 분담 블록이 그 값을 그대로 보여주므로 사용자가 직접 고칠 수 있다.
+        if let t = trips.first(where: { $0.id == newValue }) {
+            participants = max(1, t.defaultParticipants)
+            paidByMe = true
+        }
+    }
+
     private func save() {
         guard isValid else { return }
-        if CoreDataManager.shared.updateSpendingRecord(draft.applied(to: record)) {
+        let d = draft
+        if CoreDataManager.shared.updateSpendingRecord(d.applied(to: record)) {
+            // `updateSpendingRecord`는 `wishItemId`를 읽지 않으므로 지갑 연결 해제는 따로 한다
+            if d.clearsWallet {
+                CoreDataManager.shared.unlinkSpendingFromWish(recordId: record.id)
+            }
             onSaved()
             dismiss()
         }
@@ -239,7 +271,9 @@ extension HistorySpendEditView {
         VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
             Label("여행", systemImage: "suitcase.fill")
                 .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
-            Picker("여행", selection: $tripId) {
+            // selection을 커스텀 Binding으로 감싸 `selectTrip(_:)`을 통해서만 바뀌게 한다 —
+            // 실제 사용자 선택 때만 인원·결제자 기본값을 채우기 위해서다 (위 selectTrip 주석 참고)
+            Picker("여행", selection: Binding(get: { tripId }, set: { selectTrip($0) })) {
                 Text("여행 아님").tag(UUID?.none)
                 ForEach(trips) { t in
                     Text(t.isSettled ? "\(t.title) (정산 완료)" : t.title).tag(UUID?.some(t.id))
@@ -247,16 +281,6 @@ extension HistorySpendEditView {
             }
             .pickerStyle(.menu).tint(.gagaePinkDark)
             .disabled(isTripLocked)
-            .onChange(of: tripId) { _, newValue in
-                // 여행을 고르면 인원 기본값과 결제자를 채운다. "여행 아님"으로 풀 때는
-                // participants/paidByMe를 건드리지 않는다 — 여행이 지워져(deleteTrip) 이미
-                // 분담 상태였던 기록을 여기서 1/true로 되돌리면, 화면엔 안 보이던 값이 저장 때
-                // 조용히 바뀐다. 분담 블록이 그 값을 그대로 보여주므로 사용자가 직접 고칠 수 있다.
-                if let t = trips.first(where: { $0.id == newValue }) {
-                    participants = max(1, t.defaultParticipants)
-                    paidByMe = true
-                }
-            }
         }
     }
 
@@ -286,9 +310,10 @@ extension HistorySpendEditView {
                 .disabled(isTripLocked)
 
                 if amount > 0 {
-                    let share = FormatterUtils.currencyString(from: preview.myShare)
+                    let p = preview
+                    let share = FormatterUtils.currencyString(from: p.myShare)
                     Text(paidByMe
-                         ? "내 몫 \(share) · 정산 때 \(FormatterUtils.currencyString(from: preview.receivable)) 돌아와요"
+                         ? "내 몫 \(share) · 정산 때 \(FormatterUtils.currencyString(from: p.receivable)) 돌아와요"
                          : "내 몫 \(share)만큼만 그날 예산에서 빠져요")
                         .font(.gagaeCaption).foregroundStyle(.gagaeGood)
                         .fixedSize(horizontal: false, vertical: true)

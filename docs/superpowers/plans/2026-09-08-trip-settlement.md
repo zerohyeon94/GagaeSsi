@@ -1862,7 +1862,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `GagaeSsi/Models/BudgetModels.swift` (`tripId` 주석만 — `createSpendingRecord`/`updateSpendingRecord`가 실제로 이 관계를 저장한다)
 - Create: `GagaeSsiTests/SpendViewModelTests.swift`
 
-**지배 규칙**: 폼은 화면에 실제로 보여준 값만 덮어쓴다 — 숨겨진 필드가 저장된 데이터를 조용히 바꾸면 안 된다. `tempTripId == nil`이라는 이유만으로 인원·결제자·지갑을 강제로 되돌리는 코드는 전부 이 규칙을 어긴다 (`deleteTrip`은 `trip` 연결만 끊고 분담은 그대로 두므로, 여행 없이도 분담 소비는 존재할 수 있다).
+**지배 규칙 (양방향, Task 8 리뷰에서 정정)**: **폼은 보여준 값은 반드시 쓰고, 보여주지 않은 값은 절대 건드리지 않는다.** `tempTripId == nil`이라는 이유만으로 인원·결제자·지갑을 강제로 되돌리는 코드는 뒤쪽 방향("보여주지 않은 값은 절대 건드리지 않는다")을 어긴다 (`deleteTrip`은 `trip` 연결만 끊고 분담은 그대로 두므로, 여행 없이도 분담 소비는 존재할 수 있다). 처음엔 이 뒤쪽 방향만 규칙으로 적었는데, 그것만으로는 앞쪽 방향("보여준 값은 반드시 쓴다")이 깨져도 못 잡는다 — Task 8 리뷰에서 실제로, 화면에 버젓이 보이는 환급 필드가 저장 때 버려지는 버그가 나왔다(아래 "Task 8 정정" 참고).
 
 이 태스크는 첫 시도(코드 리뷰 전)에서 Critical 3건 + Important 4건 + Minor 4건이 나왔다. 아래 단계는 그 리뷰를 반영해 처음부터 바르게 구현하도록 다시 쓴 버전이다 — 재실행해도 같은 버그가 재현되지 않는다.
 
@@ -2292,9 +2292,11 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ### Task 8: 내역 편집 시트에 여행 필드
 
-**지배 규칙 (Task 7 리뷰에서 나온, 반드시 지켜야 하는 것):**
+**지배 규칙 (Task 7 리뷰에서 나온, 반드시 지켜야 하는 것 — Task 8 리뷰에서 양방향으로 정정):**
 
-> **폼은 화면에 실제로 보여준 값만 덮어쓴다 — 숨겨진 필드가 저장된 데이터를 조용히 바꾸면 안 된다.**
+> **폼은 보여준 값은 반드시 쓰고, 보여주지 않은 값은 절대 건드리지 않는다.**
+
+원래는 "폼은 화면에 실제로 보여준 값만 덮어쓴다 — 숨겨진 필드가 저장된 데이터를 조용히 바꾸면 안 된다"였다. 이 뒤쪽 방향만으로 아래 스텝을 처음 구현했더니, 화면에 뻔히 보이는 환급 필드(`paybackReceived`가 이미 true인데도 토글·금액이 활성 상태로 렌더되던)가 저장 때 조용히 버려지는 버그가 났다 — "숨긴 값을 안 건드린다"만 지키면 "보여준 값을 반드시 쓴다"는 저절로 지켜지지 않는다. 아래는 두 방향 모두 반영한 버전이다.
 
 `CoreDataManager.deleteTrip`은 `trip` 연결만 Nullify하고 `participants`/`paidByMe`는 그대로 둔다(그래서 여행을 지워도 예산이 안 움직인다). 즉 `tripId == nil && participants == 3`은 정상 상태일 수 있다. `updated.participants = tripId == nil ? 1 : participants`처럼 쓰면, 그런 기록을 제목만 고쳐 저장해도 인원이 조용히 1로 무너지고 `budgetAmount`가 갑자기 3배로 뛰며 그날 이후 이월 체인이 통째로 틀어진다. 아래 스텝은 이 문제를 피하도록 다시 쓴 버전이다 — Task 7의 버그 패턴(위 스니펫)을 반복하지 않는다.
 
@@ -2445,6 +2447,92 @@ git commit -m "feat: 내역에서 소비를 고칠 때도 여행·인원·결제
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
+
+#### Task 8 정정 (코드 리뷰 반영, 2026-09-10)
+
+Task 8 구현을 뮤테이션 테스트로 리뷰했더니 Critical 3건 + Important 3건 + Minor 4건이 나왔다.
+핵심은 위 지배 규칙이 **한쪽 방향으로만** 지켜지고 있었다는 것 — "숨긴 값은 안 건드린다"는
+테스트까지 있었지만 "보여준 값은 반드시 쓴다"는 구현도 테스트도 없었다.
+
+**1. `SpendingEditDraft`를 `Models/SpendingEditDraft.swift`로 옮기고, 두 편집 화면
+모두(`SpendViewModel.saveSpending`의 편집 분기, `HistorySpendEditView.save()`) 이 타입 하나를
+거치게 했다.** `View` 파일 안에 있는 한 `SpendViewModel`은 이 규칙에 절대 손이 안 닿는다 —
+실제로 두 화면이 같은 커밋에서부터 환급 잠금·지갑 정리·저장 검증에서 어긋나 있었다.
+추가 모드는 원본 기록이 없으므로 `SpendingRecordModel(id: 새id, title: "", amount: 0, date:
+tempDate)`를 시드로 만들어 같은 `draft.applied(to:)`를 태운다 — 시드의 `date`를 `tempDate`와
+같게 주면, 드래프트가 "원래 기록의 시각 성분"을 시드에서 읽어 새 날짜에 다시 입히는 과정을
+거쳐도 결과가 `tempDate` 그대로다(밀리초 단위 미만의 반올림 차이만 있을 수 있다 — 무해하다).
+지갑 연결(`tempWishItemId` → `linkSpendingToWish`/`unlinkSpendingFromWish`)은 드래프트가
+다루지 않는다 — 여행이 아니라 지갑 피커가 있는 화면은 소비 입력 탭뿐이라 "옮겨 붙이는" 동작이
+그쪽에만 필요하기 때문이다.
+
+**2. "이미 받은 환급은 편집 화면에서 고칠 수 없다"로 결정했다.** 환급을 실제로 받으면
+(`receivePayback`) 이미 `CarryOverSource` 크레딧이 올라간 뒤라, 그 근거인 `expectedPayback`을
+편집 화면이 바꿀 방법이 둘뿐이다 — 사용자가 고친 값을 버리거나(당시 `HistorySpendEditView`),
+크레딧의 근거를 조용히 지우거나(당시 `SpendViewModel`). 둘 다 나쁘다. 대신 두 화면 모두
+`paybackReceived`면 환급 토글·금액 필드를 `.disabled`로 잠그고 "이미 받은 환급이라 금액은
+바꿀 수 없어요"를 보여준다. `SpendingEditDraft.applied(to:)`도 `record.paybackReceived`면
+폼이 무엇을 싣고 있든(`hasPayback`/`payback`이 원본과 달라도) `expectedPayback`을 그대로
+지킨다 — 화면의 잠금을 우회하는 경로가 생겨도 장부가 안 어긋나게. 토글 라벨도
+`paybackReceived`면 "✅ 환급 완료"(HistoryView와 같은 wording), 아니면 "💳 환급·페이백
+예정"으로 갈린다.
+
+**3. 여행이 바뀌면 예전 여행에 물려있던 지갑 연결을 놓아준다 (내역 편집 시트만).**
+`SpendingEditDraft`에 `clearsWallet: Bool`(기본 `false`) 필드를 추가했다 — `wishItemId:
+UUID??` 오버라이드 대신 이 플래그를 고른 이유는, 이 폼엔 지갑 피커가 없어 "어느 지갑으로
+옮길지"는 애초에 결정할 게 없고 "이 지갑과의 연결을 놓아줄지"만 결정하면 되기 때문이다.
+`HistorySpendEditView`는 `tripId != record.tripId && record.wishItemId == (record.tripId가
+가리키던 원래 여행의 wishItemId)`일 때만 `clearsWallet = true`를 세운다 — 여행과 무관하게
+고른 지갑까지 건드리면 안 된다. `applied(to:)`는 `clearsWallet`이면 반환 모델의
+`wishItemId`를 nil로 비우지만, `CoreDataManager.updateSpendingRecord`는 `model.wishItemId`를
+읽지 않으므로(지갑 연결은 `linkSpendingToWish`/`unlinkSpendingFromWish`로 따로 관리) 그것만
+으론 실제 연결이 안 끊긴다 — `HistorySpendEditView.save()`가 저장 성공 뒤 `clearsWallet`이면
+`unlinkSpendingFromWish(recordId:)`를 직접 부른다. 화면엔 "여행을 바꿔서 지갑 연결은
+풀렸어요 — 이 소비는 예산에서 빠져요" 한 줄을 띄운다(이 폼엔 지갑 피커가 없어 사용자가
+스스로 되돌릴 수단이 없으므로, 조용히 옮기는 대신 명시적으로 알린다). `SpendViewModel` 쪽은
+건드리지 않았다 — 그쪽은 지갑 피커가 있고 `selectTrip`이 이미 자동 선택 지갑을 놓아주므로
+사용자가 화면에서 확인·수정할 수 있다.
+
+**4. 내역 편집 시트에도 `SpendView`와 같은 저장 검증(지갑 잔액 초과 시 저장 차단)을 걸었다.**
+`updateSpendingRecord`는 금액이 지갑 잔액을 넘으면 지갑 연결을 조용히 끊는데,
+`HistorySpendEditView.isValid`는 원래 `amount > 0`뿐이라 이 경로를 못 막았다. 이제
+`record.wishItemId != nil && !clearsWallet`이면(이번 저장으로 지갑이 풀릴 예정이면 이 검사가
+무의미하므로 뺀다) `wishSpendableLimit(for:excluding:)`과 비교해 넘으면 저장 버튼을 막고
+`SpendView`와 같은 톤으로 안내한다("지갑에 X만 남았어요. 금액을 줄여야 저장할 수 있어요.").
+
+**5. 여행 선택을 `onChange(of: tripId)` 대신 명시적 경로로 바꿨다.** `tripField`가
+`if !trips.isEmpty`로 게이팅돼 있어 `onChange`가 설치되기 전에 `loadRecord()`가
+`onAppear`에서 `tripId`를 직접 대입하는 바람에 우연히 안 걸렸을 뿐 — 레이아웃이 바뀌면
+Task 7의 버그(여행 연결된 기록을 열자마자 `participants`/`paidByMe`가 조용히 덮이는)가
+그대로 재현될 수 있는 구조였다. `Picker`의 `selection`을 커스텀 `Binding(get:set:)`으로
+감싸 `set`에서만 `selectTrip(_:)`을 부르게 했다 — 사용자가 실제로 행을 탭했을 때만
+호출되고, `loadRecord()`의 직접 대입은 이 Binding의 setter를 거치지 않으므로 그 자체로
+문제가 없어진다(`didLoad` 플래그 없이 해결).
+
+**Minor**: `result.participants = max(1, participants)` → `min(999, max(1, participants))`로
+`SpendingRecordModel.init`과 같은 완전한 클램프를 쓰게 했다. "환급 예정 …은 정산이
+대신해요 — 저장하면 지워져요" 안내 조건에 `hasPayback`/`tempHasPayback`을 추가해, 토글을
+이미 꺼놨는데도 뜨던 걸 고쳤다(`SpendingEditDraft`와 `SpendViewModel.willClearPaybackOnSave`
+둘 다). 연결된 여행이 삭제돼 `tripId`는 남아있는데 `selectedTrip`이 nil인 경우 "연결됐던
+여행을 찾을 수 없어요. 저장하면 여행 연결이 풀려요" 한 줄을 추가했다(두 화면 모두). 금액
+필드 잠금·초과 안내를 분담 블록 안(스크롤해야 보이던 위치)에서 금액 필드 바로 아래로
+옮겼다(두 화면 모두). `HistorySpendEditView`의 `isShared`를 `preview.isShared`(매번
+`draft.applied(to:)` — Calendar 연산 3회 + 구조체 복사 2회)에서 `participants > 1`
+직접 판정으로 바꿨고, `tripShareFields`에서 `preview`를 두 번 읽던 걸 `let p = preview`로
+한 번만 읽게 했다.
+
+**테스트**: `GagaeSsiTests/SpendingEditDraftTests.swift`에 8건 추가 — 금액·카테고리·여행
+(다른 여행으로)·결제자가 각각 record와 다른 값으로 저장되는지(뮤테이션 테스트가 실제로
+잡아낸, "네 줄을 `record.<x>`로 되돌려도 기존 테스트는 다 통과하던" 구멍), 이미 받은
+환급은 폼이 무엇을 싣고 있든 안 바뀌는지, `clearsWallet` true/false 각각의 `wishItemId`
+결과. `applied(to:)`의 `amount`/`category`/`tripId`/`paidByMe` 대입 네 줄을 각각
+`result.<x> = record.<x>`로 바꾼 뮤턴트를 넣어보면 새 테스트 4건(금액·카테고리·여행·결제자)
+이 정확히 실패하고, 되돌리면 다시 전부 통과한다 — 새 테스트가 실제로 이 네 줄을 지킨다.
+
+**Files**: `GagaeSsi/Models/SpendingEditDraft.swift`(신규, `HistorySpendEditView.swift`에서
+이동), `GagaeSsi/Features/History/HistorySpendEditView.swift`,
+`GagaeSsi/Features/Spend/SpendViewModel.swift`, `GagaeSsi/Features/Spend/SpendView.swift`,
+`GagaeSsiTests/SpendingEditDraftTests.swift`.
 
 ---
 

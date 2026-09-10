@@ -138,9 +138,23 @@ extension SpendView {
                 contentField
                 amountField
                     .disabled(viewModel.isTripLocked)
+                // 금액 잠금 안내는 금액 필드 바로 옆에 둔다 — 분담 블록 안(예전 위치)은
+                // 스크롤해야 보인다. 지갑 초과 안내는 지갑 섹션 쪽에 이미 있다(wishWalletField).
+                if viewModel.isTripLocked {
+                    Text("정산 완료 여행이라 금액을 바꿀 수 없어요")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                }
                 if !viewModel.isSharedSpending { paybackField }
                 dateField
                 if !viewModel.activeTrips.isEmpty { tripField }
+                // 연결됐던 여행을 찾을 수 없는(삭제된) 경우 — 피커가 안 보여도 알려준다
+                if viewModel.tempTripId != nil && viewModel.selectedTrip == nil {
+                    Text("연결됐던 여행을 찾을 수 없어요. 저장하면 여행 연결이 풀려요")
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.gagaeTextTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 // 분담 블록은 여행 선택과 무관하게 뜬다 — 여행이 지워져도(deleteTrip) 분담은
                 // 그대로 남으므로, activeTrips가 비어 있어도 분담 값이 있으면 보여줘야 한다.
                 if viewModel.tempTripId != nil || viewModel.tempParticipants > 1 { tripShareFields }
@@ -302,18 +316,27 @@ extension SpendView {
         }
     }
 
-    /// ③-2 환급/페이백 예정 (선택)
+    /// ③-2 환급/페이백 예정 (선택). 이미 받은 환급(`isPaybackLocked`)은 편집 화면에서
+    /// 고칠 수 없다 — `receivePayback`이 이미 올려놓은 CarryOverSource 크레딧의 근거이므로,
+    /// 여기서 건드리게 두면 장부가 조용히 어긋난다.
     private var paybackField: some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle(isOn: $viewModel.tempHasPayback.animation()) {
                 HStack(spacing: 6) {
-                    Text("💳").font(.system(size: 15))
-                    Text("환급·페이백 예정")
+                    Text(viewModel.isPaybackLocked ? "✅" : "💳").font(.system(size: 15))
+                    Text(viewModel.isPaybackLocked ? "환급·페이백 완료" : "환급·페이백 예정")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundStyle(.gagaeText)
                 }
             }
             .tint(.gagaePinkDark)
+            .disabled(viewModel.isPaybackLocked)
+
+            if viewModel.isPaybackLocked {
+                Text("이미 받은 환급이라 금액은 바꿀 수 없어요")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+            }
 
             if viewModel.tempHasPayback {
                 HStack(spacing: 0) {
@@ -332,6 +355,7 @@ extension SpendView {
                                 viewModel.tempExpectedPaybackText = r.formatted
                             }
                         }
+                        .disabled(viewModel.isPaybackLocked)
                 }
                 .frame(height: 44)
                 .background(Color.gagaeSurface)

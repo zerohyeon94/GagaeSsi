@@ -137,4 +137,81 @@ final class SpendingEditDraftTests: XCTestCase {
                                       hasPayback: false, payback: 0)
         XCTAssertEqual(draft.applied(to: record).title, SpendingCategory.food.rawValue)
     }
+
+    // MARK: - Fix 3 (리뷰): 화면이 보여준 값은 반드시 써야 한다 — 네 필드 모두 개별 확인
+    //
+    // 기존 테스트는 전부 tripId: nil, paidByMe/amount/category가 record와 같은 드래프트만
+    // 만들었다. `result.<x> = record.<x>`(원본 값 그대로 되돌리는 뮤턴트)를 넣어도 그 값이
+    // 안 바뀐 테스트는 통과한다 — 네 필드 모두 record와 다른 값을 하나씩 확인한다.
+
+    func test_금액이_바뀌면_저장된다() {
+        let record = SpendingRecordModel(title: "커피", amount: 5_000, date: Date())
+        let draft = SpendingEditDraft(title: record.title, amount: 9_999, category: record.category,
+                                      date: record.date, tripId: nil, participants: 1, paidByMe: true,
+                                      hasPayback: false, payback: 0)
+        XCTAssertEqual(draft.applied(to: record).amount, 9_999, "화면에 보여준 금액이 저장 때 원본으로 되돌아가면 안 된다")
+    }
+
+    func test_카테고리가_바뀌면_저장된다() {
+        let record = SpendingRecordModel(title: "커피", amount: 5_000, date: Date(), category: .food)
+        let draft = SpendingEditDraft(title: record.title, amount: record.amount, category: .transport,
+                                      date: record.date, tripId: nil, participants: 1, paidByMe: true,
+                                      hasPayback: false, payback: 0)
+        XCTAssertEqual(draft.applied(to: record).category, .transport, "화면에 보여준 카테고리가 저장 때 원본으로 되돌아가면 안 된다")
+    }
+
+    func test_여행을_다른_여행으로_바꾸면_저장된다() {
+        let tripA = UUID()
+        let tripB = UUID()
+        let record = SpendingRecordModel(title: "숙소", amount: 100_000, date: Date(), tripId: tripA)
+        let draft = SpendingEditDraft(title: record.title, amount: record.amount, category: record.category,
+                                      date: record.date, tripId: tripB, participants: 1, paidByMe: true,
+                                      hasPayback: false, payback: 0)
+        XCTAssertEqual(draft.applied(to: record).tripId, tripB,
+                       "내역 편집 시트의 핵심 기능(여행 재배정)이 저장 때 원본 여행으로 되돌아가면 안 된다")
+    }
+
+    func test_결제자가_바뀌면_저장된다() {
+        let record = SpendingRecordModel(title: "저녁", amount: 30_000, date: Date(),
+                                         participants: 3, paidByMe: false)
+        let draft = SpendingEditDraft(title: record.title, amount: record.amount, category: record.category,
+                                      date: record.date, tripId: nil, participants: 3, paidByMe: true,
+                                      hasPayback: false, payback: 0)
+        XCTAssertEqual(draft.applied(to: record).paidByMe, true, "화면에 보여준 결제자가 저장 때 원본으로 되돌아가면 안 된다")
+    }
+
+    /// Fix 1: 이미 받은 환급은 폼이 무엇을 싣고 있든(토글·금액이 원본과 달라도) 건드리지 않는다.
+    /// 두 화면 모두 이 경우 토글·금액 필드를 잠그지만, 그 잠금을 화면이 아니라 규칙 자체가
+    /// 지켜야 한다 — 잠금을 우회하는 경로가 생겨도 장부가 어긋나지 않도록.
+    func test_이미_받은_환급은_폼이_다른_값을_실어도_바뀌지_않는다() {
+        let record = SpendingRecordModel(title: "저녁", amount: 90_000, date: Date(),
+                                         expectedPayback: 20_000, paybackReceived: true)
+        let draft = SpendingEditDraft(title: record.title, amount: record.amount, category: record.category,
+                                      date: record.date, tripId: nil, participants: 1, paidByMe: true,
+                                      hasPayback: false, payback: 999_999)
+        let result = draft.applied(to: record)
+        XCTAssertEqual(result.expectedPayback, 20_000,
+                       "이미 받은 환급의 근거 금액은 폼이 무엇을 싣고 있든 그대로 유지돼야 한다")
+        XCTAssertTrue(result.paybackReceived)
+    }
+
+    // MARK: - Fix 4: 여행이 바뀌면 예전 여행에 물려있던 지갑 연결을 놓아준다
+
+    func test_지갑을_놓아주면_wishItemId가_비워진다() {
+        let wishId = UUID()
+        let record = SpendingRecordModel(title: "숙소", amount: 100_000, date: Date(), wishItemId: wishId)
+        let draft = SpendingEditDraft(title: record.title, amount: record.amount, category: record.category,
+                                      date: record.date, tripId: nil, participants: 1, paidByMe: true,
+                                      hasPayback: false, payback: 0, clearsWallet: true)
+        XCTAssertNil(draft.applied(to: record).wishItemId)
+    }
+
+    func test_clearsWallet가_false면_지갑연결은_그대로다() {
+        let wishId = UUID()
+        let record = SpendingRecordModel(title: "숙소", amount: 100_000, date: Date(), wishItemId: wishId)
+        let draft = SpendingEditDraft(title: record.title, amount: record.amount, category: record.category,
+                                      date: record.date, tripId: nil, participants: 1, paidByMe: true,
+                                      hasPayback: false, payback: 0, clearsWallet: false)
+        XCTAssertEqual(draft.applied(to: record).wishItemId, wishId)
+    }
 }
