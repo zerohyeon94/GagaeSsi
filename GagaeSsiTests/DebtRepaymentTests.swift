@@ -428,22 +428,34 @@ final class DebtRepaymentTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(afterBase, 0, "하루 예산이 음수가 되면 안 된다")
     }
 
+    /// 흡수는 흡수한 급여 기간의 하루 예산만 줄이고, 다음 기간으로 넘어가지 않는다.
+    ///
+    /// **두 기간의 하루 단가를 직접 비교하면 안 된다.** 주말 보정 때문에 급여 기간 길이가
+    /// 달라질 수 있어(예: 2026-09-11 금요일 기준 이번 기간 28일 / 다음 기간 33일) 길이 차이가
+    /// 흡수액보다 커지면 단가 대소가 뒤집힌다 — 기능은 멀쩡한데 실행 날짜에 따라 깨진다.
+    /// 그래서 **같은 날짜를 흡수 설정 유무로만** 비교해 기간 길이를 상쇄시킨다.
     func test_흡수는_해당_급여기간에만_적용된다() {
         let todayDom = cal.component(.day, from: Date())
-        let periodStart = DailyBudgetCalculator.payPeriod(payday: todayDom, containing: day(0)).start
-        let config = BudgetConfigModel(
+        let period = DailyBudgetCalculator.payPeriod(payday: todayDom, containing: day(0))
+
+        let absorbed = BudgetConfigModel(
             salary: 3_000_000, payday: todayDom, fixedCosts: [],
             carryOverMode: .full, debtPlanEnabled: true,
             absorbedDebtAmount: 300_000,
-            absorbedDebtPeriodStart: periodStart)
+            absorbedDebtPeriodStart: period.start)
+        // 흡수만 빠진 같은 설정 — 다른 변수를 모두 고정한다
+        let plain = BudgetConfigModel(
+            salary: 3_000_000, payday: todayDom, fixedCosts: [],
+            carryOverMode: .full, debtPlanEnabled: true)
 
-        let thisPeriod = DailyBudgetCalculator.calculate(from: config, for: day(0))
+        XCTAssertLessThan(DailyBudgetCalculator.calculate(from: absorbed, for: day(0)),
+                          DailyBudgetCalculator.calculate(from: plain, for: day(0)),
+                          "흡수한 기간에는 그만큼 하루 예산이 줄어야 한다")
 
-        // 다음 급여 기간에는 흡수가 적용되지 않아야 한다
-        let nextPeriodDate = DailyBudgetCalculator.payPeriod(payday: todayDom, containing: day(0)).end
-        let nextPeriod = DailyBudgetCalculator.calculate(from: config, for: nextPeriodDate)
-
-        XCTAssertLessThan(thisPeriod, nextPeriod, "흡수는 해당 기간에만 적용된다")
+        // `period.end`는 다음 급여일(배타적) — 다음 기간의 시작일이다
+        XCTAssertEqual(DailyBudgetCalculator.calculate(from: absorbed, for: period.end),
+                       DailyBudgetCalculator.calculate(from: plain, for: period.end),
+                       "흡수는 다음 급여 기간으로 넘어가지 않는다")
     }
 
     func test_흡수는_기간당_한번만_일어난다_멱등성() throws {
