@@ -166,19 +166,24 @@ private extension WishListView {
                             .font(.system(size: 15, weight: .heavy, design: .rounded))
                             .foregroundStyle(.gagaePinkDark)
                     }
-                    Text("모은 \(FormatterUtils.currencyString(from: item.savedAmount)) 중 \(FormatterUtils.currencyString(from: item.spentAmount)) 썼어요")
+                    // 내가 모은 돈만 센다 — 정산으로 돌아온 돈은 아래 줄에서 따로 말한다
+                    Text("모은 \(FormatterUtils.currencyString(from: item.goalContribution)) 중 \(FormatterUtils.currencyString(from: item.spentAmount)) 썼어요")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
-                    if item.returnedAmount > 0 {
-                        Text("🧳 여행 정산으로 \(FormatterUtils.currencyString(from: item.returnedAmount)) 돌아왔어요")
-                            .font(.gagaeCaption).foregroundStyle(.gagaeGood)
-                    }
                 } else {
-                    Text("모은 금액 \(FormatterUtils.currencyString(from: item.savedAmount))")
+                    Text("모은 금액 \(FormatterUtils.currencyString(from: item.goalContribution))")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
                     Text("기록 탭에서 소비를 적을 때 이 위시를 고르면 여기서 빠져요")
                         .font(.system(size: 11, design: .rounded))
                         .foregroundStyle(.gagaeTextTertiary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // 정산 회수는 쓴 적이 있든 없든 보여야 한다.
+                // 정산 직후 지갑은 아직 쓴 적이 없는 게 보통이라, `hasSpending` 안에 두면
+                // 사용자가 가장 확인하고 싶은 순간에 오히려 안 보인다.
+                if item.returnedAmount > 0 {
+                    Text("🧳 여행 정산으로 \(FormatterUtils.currencyString(from: item.returnedAmount)) 돌아왔어요")
+                        .font(.gagaeCaption).foregroundStyle(.gagaeGood)
                 }
 
                 GagaePrimaryButton(title: "구매 완료", isEnabled: true) {
