@@ -1,7 +1,7 @@
 # 여행 — 같이 쓴 돈을 묶고, 내 몫만 예산에서 빼고, 나중에 정산하기
 
 - **작성일**: 2026-09-08
-- **상태**: 설계 (구현 전)
+- **상태**: 구현 완료 (2026-09-11)
 - **브랜치**: develop
 - **관련 문서**: [위시 지갑](2026-08-28-wish-wallet-design.md), [페이백](2026-07-30-payback-design.md), [할부](2026-07-30-installment-design.md), [하루 사용 가능 금액 계산 규칙](../../2026-07-08-daily-budget-calculation-rules.md)
 - **관련 코드**: `Core/CoreDataManager.swift`, `Models/BudgetModels.swift`, `Models/WishModels.swift`, `Features/Spend/`, `Features/History/`, `Features/Stats/`, `Features/Settings/`
