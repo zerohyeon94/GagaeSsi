@@ -1,7 +1,7 @@
 # 부채 수명주기 & 과거 날짜 초과 자동 전환 설계
 
 - **작성일**: 2026-08-26
-- **상태**: 설계 (구현 전)
+- **상태**: 구현 완료 (2026-08-27)
 - **브랜치**: develop
 - **관련 문서**: [초과 소비 상환 계획 설계](2026-08-07-overspend-repayment-plan-design.md), [할부 설계](2026-07-30-installment-design.md), [하루 사용 가능 금액 계산 규칙](../../2026-07-08-daily-budget-calculation-rules.md)
 - **관련 코드**: `Core/CoreDataManager.swift` (부채·이월 섹션), `Models/DebtModels.swift`, `Features/Home/HomeView.swift`(debtCard), `Features/History/OverspendHistoryView.swift`

@@ -1,7 +1,7 @@
 # 위시 지갑 — 모은 돈으로 쓴 소비는 예산에서 빼지 않기
 
 - **작성일**: 2026-08-28
-- **상태**: 설계 (구현 전)
+- **상태**: 구현 완료 (2026-08-29)
 - **브랜치**: develop
 - **관련 문서**: [위시리스트 저금 설계](2026-07-15-wishlist-saving-design.md), [부채 수명주기 & 과거 초과 전환](2026-08-26-debt-lifecycle-and-past-overspend-design.md) (7절에서 분리된 항목)
 - **관련 코드**: `Core/CoreDataManager.swift`(위시 섹션), `Models/WishModels.swift`, `Models/BudgetModels.swift`, `Models/OverspendModels.swift`, `Features/Spend/`
