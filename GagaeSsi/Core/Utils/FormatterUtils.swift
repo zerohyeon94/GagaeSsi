@@ -38,6 +38,20 @@ enum FormatterUtils {
         return value == 0 ? "" : "\(currencyFormatter.string(from: NSNumber(value: value)) ?? "")"
     }
     
+    /// 차트 Y축용 축약 금액 표시 (1000 → 1k, 10000 → 1만)
+    static func shortCurrencyString(from amount: Int) -> String {
+        if amount == 0 { return "0" }
+        if amount >= 10_000 {
+            let man = amount / 10_000
+            return "\(man)만"
+        }
+        if amount >= 1_000 {
+            let k = amount / 1_000
+            return "\(k)천"
+        }
+        return "\(amount)"
+    }
+
     // MARK: - Date Formatter
     /// "yyyy-MM-dd" 형식으로 날짜를 문자열로 변환
     static func formattedDate(_ date: Date = Date()) -> String {
@@ -58,5 +72,15 @@ enum FormatterUtils {
         } else {
             return formattedDate(date)
         }
+    }
+
+    /// 여행 기간 표시 (예: 9.12–9.14). 같은 날이면 한 번만.
+    static func shortDateRange(_ from: Date, _ to: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.dateFormat = "M.d"
+        let start = formatter.string(from: from)
+        let end = formatter.string(from: to)
+        return start == end ? start : "\(start)–\(end)"
     }
 }

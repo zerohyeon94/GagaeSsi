@@ -29,6 +29,8 @@ struct GagaeSsiApp: App {
 @Observable
 final class AppState {
     var isSetupCompleted: Bool = false
+    /// 메인 탭 선택 (0: 홈, 1: 기록, 2: 통계, 3: 설정)
+    var selectedTab: Int = 0
     
     init() {
         checkSetupStatus()
@@ -52,7 +54,11 @@ final class AppState {
 /// 앱 상태에 따라 Setup 또는 Main 화면 표시
 struct RootView: View {
     @Environment(AppState.self) private var appState
-    
+    @Environment(AppEventBus.self) private var eventBus
+    @Environment(\.scenePhase) private var scenePhase
+    /// 앱 테마 (기기 설정 / 밝게 / 어둡게)
+    @State private var themeMode: ThemeMode = .system
+
     var body: some View {
         Group {
             if appState.isSetupCompleted {
@@ -65,7 +71,33 @@ struct RootView: View {
                 }
             }
         }
+        .task {
+            // 앱 실행 시 변동 고정비 지출일 알림 + 소비 기록 리마인더를 현재 상태로 재설정
+            CoreDataManager.shared.refreshVariableCostReminders()
+            CoreDataManager.shared.refreshSpendReminders()
+            CoreDataManager.shared.refreshPaybackReminders()
+            loadTheme()
+        }
+        .onChange(of: scenePhase) {
+            if scenePhase == .active {
+                CoreDataManager.shared.refreshVariableCostReminders()
+                CoreDataManager.shared.refreshSpendReminders()
+                CoreDataManager.shared.refreshPaybackReminders()
+            }
+        }
+        .onChange(of: eventBus.spendingAddedTrigger) {
+            // 오늘 소비를 기록하면 오늘 리마인더를 취소하고, 삭제하면 다시 복구한다
+            CoreDataManager.shared.refreshSpendReminders()
+        }
+        .onChange(of: eventBus.budgetChangedTrigger) { loadTheme() }
         .animation(.easeInOut(duration: 0.3), value: appState.isSetupCompleted)
+        // 디자인 토큰이 라이트/다크 양쪽 값을 갖게 되어 고정 해제 (2026-08-08).
+        // nil이면 기기 설정을 따른다.
+        .preferredColorScheme(themeMode.colorScheme)
+    }
+
+    private func loadTheme() {
+        themeMode = CoreDataManager.shared.fetchBudgetConfig()?.themeMode ?? .system
     }
 }
 

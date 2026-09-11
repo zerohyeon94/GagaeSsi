@@ -2,56 +2,68 @@
 //  ContentView.swift
 //  GagaeSsi
 //
-//  메인 탭 뷰 (MainTabBarController 대체)
+//  메인 탭 뷰
 //
 
 import SwiftUI
 
 struct ContentView: View {
-    @State private var selectedTab = 0
-    
+    @Environment(AppState.self) private var appState
+
     var body: some View {
-        TabView(selection: $selectedTab) {
+        @Bindable var appState = appState
+        TabView(selection: $appState.selectedTab) {
             // 홈 탭
             NavigationStack {
                 HomeView()
             }
             .tabItem {
-                Label("홈", systemImage: "house")
+                Label("홈", systemImage: appState.selectedTab == 0 ? "house.fill" : "house")
             }
             .tag(0)
-            
+
             // 소비 탭
             NavigationStack {
                 SpendView()
             }
             .tabItem {
-                Label("소비", systemImage: "creditcard")
+                Label("기록", systemImage: appState.selectedTab == 1 ? "pencil.circle.fill" : "pencil.circle")
             }
             .tag(1)
-            
+
+            // 내역 탭 (기존 탭 인덱스 유지 위해 tag는 4)
+            NavigationStack {
+                HistoryView()
+            }
+            .tabItem {
+                Label("내역", systemImage: appState.selectedTab == 4 ? "calendar.circle.fill" : "calendar")
+            }
+            .tag(4)
+
             // 통계 탭
             NavigationStack {
                 StatsView()
             }
             .tabItem {
-                Label("통계", systemImage: "chart.bar")
+                Label("통계", systemImage: appState.selectedTab == 2 ? "chart.bar.fill" : "chart.bar")
             }
             .tag(2)
-            
+
             // 설정 탭
             NavigationStack {
                 SettingsView()
             }
             .tabItem {
-                Label("설정", systemImage: "gearshape")
+                Label("설정", systemImage: appState.selectedTab == 3 ? "gearshape.fill" : "gearshape")
             }
             .tag(3)
         }
+        .tint(.gagaePinkDark)
     }
 }
 
 #Preview {
     ContentView()
         .environment(AppEventBus())
+        .environment(AppState())
 }

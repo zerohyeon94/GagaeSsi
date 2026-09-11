@@ -2,135 +2,257 @@
 //  SetupSalaryView.swift
 //  GagaeSsi
 //
-//  초기 설정 - 월급 입력 화면 (SetupSalaryViewController 대체)
+//  초기 설정 - 월급 & 급여일 입력 (Claude Design 적용)
 //
 
 import SwiftUI
 
+// MARK: - Progress Dots (공용)
+struct SetupProgressDots: View {
+    let step: Int  // 1 또는 2
+    var body: some View {
+        HStack(spacing: 7) {
+            ForEach(1...2, id: \.self) { i in
+                Capsule()
+                    .fill(i == step ? Color.gagaePinkDark : Color.gagaePinkLight)
+                    .frame(width: i == step ? 20 : 7, height: 7)
+                    .animation(.easeInOut(duration: 0.3), value: step)
+            }
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+}
+
 struct SetupSalaryView: View {
     // MARK: - Properties
     @State private var viewModel = SetupViewModel()
-    @FocusState private var focusedField: Field?
-    
-    enum Field {
-        case salary
-    }
-    
+    @FocusState private var isSalaryFocused: Bool
+    @State private var pigBouncing = false
+
     // MARK: - Body
     var body: some View {
-        VStack(spacing: 0) {
-            // 헤더
-            headerSection
-                .padding(.top, 40)
-            
-            // 입력 폼
-            inputForm
-                .padding(.top, 40)
-                .padding(.horizontal, 20)
-            
-            Spacer()
-            
-            // 다음 버튼
-            nextButton
-                .padding(.horizontal, 20)
-                .padding(.bottom, 32)
+        ZStack {
+            GagaeBackground()
+
+            VStack(spacing: 0) {
+                SetupProgressDots(step: 1)
+
+                heroSection
+                    .padding(.top, 28)
+                    .padding(.bottom, 32)
+
+                inputCard
+
+                Spacer()
+
+                nextButton
+                Text("설정은 나중에 언제든 바꿀 수 있어요")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+                    .padding(.top, 12)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 28)
         }
-        .navigationTitle("예산 설정")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarHidden(true)
         .onAppear {
-            // 화면 진입 시 키보드 포커스
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                pigBouncing = true
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                focusedField = .salary
+                isSalaryFocused = true
             }
         }
-        .onTapGesture {
-            focusedField = nil
-        }
+        .onTapGesture { isSalaryFocused = false }
     }
 }
 
 // MARK: - Subviews
 extension SetupSalaryView {
-    /// 헤더 섹션
-    private var headerSection: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "wonsign.circle.fill")
-                .font(.system(size: 60))
-                .foregroundStyle(.blue)
-            
-            Text("월급 정보를 입력해주세요")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            Text("매월 예산을 자동으로 계산하는 데 사용됩니다")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+
+    private var heroSection: some View {
+        VStack(spacing: 0) {
+            pigContent
+                .font(.system(size: 72))
+                .offset(y: pigBouncing ? -6 : 0)
+                .padding(.bottom, 18)
+
+            Text("안녕하세요!")
+                .font(.system(size: 28, weight: .heavy, design: .rounded))
+                .foregroundStyle(.gagaePinkDark)
+                .padding(.bottom, 8)
+
+            Text("월급과 급여일을 알려주세요")
+                .font(.system(size: 17, design: .rounded))
+                .foregroundStyle(.gagaeTextSecondary)
         }
     }
-    
-    /// 입력 폼
-    private var inputForm: some View {
-        VStack(spacing: 24) {
-            // 월급 입력
+
+    @ViewBuilder
+    private var pigContent: some View {
+        if UIImage(named: "characterPig") != nil {
+            Image("characterPig").resizable().scaledToFit().frame(width: 90, height: 90)
+        } else {
+            Text("🐷")
+        }
+    }
+
+    private var inputCard: some View {
+        VStack(spacing: 0) {
+            // 월 급여
             VStack(alignment: .leading, spacing: 8) {
-                Text("월급")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                
-                TextField("예: 3,000,000", text: $viewModel.tempSalaryText)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
-                    .focused($focusedField, equals: .salary)
-                    .onChange(of: viewModel.tempSalaryText) { _, newValue in
-                        viewModel.updateSalaryFromText(newValue)
-                    }
+                setupLabel("월 급여")
+                salaryInput
             }
-            
-            // 급여일 선택
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 14)
+
+            Rectangle().fill(Color.gagaeDivider).frame(height: 0.5)
+                .padding(.horizontal, 16)
+
+            // 급여일
             VStack(alignment: .leading, spacing: 8) {
-                Text("급여일")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                
-                HStack {
+                setupLabel("급여일")
+                HStack(spacing: 8) {
                     Text("매월")
-                        .foregroundStyle(.secondary)
-                    
-                    Picker("급여일", selection: $viewModel.tempPayday) {
-                        ForEach(1...31, id: \.self) { day in
-                            Text("\(day)").tag(day)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.gagaeTextSecondary)
+                    // 기본 급여일(25일)처럼 뒤쪽 값이 선택돼 있으면 칩이 화면 밖에 있어
+                    // 보이지 않던 문제를 해결한다. 진입 시/선택 변경 시 해당 칩을 중앙으로 스크롤.
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 5) {
+                                ForEach(1...31, id: \.self) { day in
+                                    paydayChip(day)
+                                }
+                            }
+                            .padding(.vertical, 3)
+                        }
+                        .onAppear {
+                            proxy.scrollTo(viewModel.tempPayday, anchor: .center)
+                        }
+                        .onChange(of: viewModel.tempPayday) { _, newDay in
+                            withAnimation { proxy.scrollTo(newDay, anchor: .center) }
                         }
                     }
-                    .pickerStyle(.menu)
-                    .tint(.blue)
-                    
                     Text("일")
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.gagaeTextSecondary)
                 }
-                .padding()
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                HStack {
+                    Text("매월 \(viewModel.tempPayday)일에 급여 입금 📅")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.gagaePinkDark)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 5)
+                        .background(Color.gagaePinkLight)
+                        .clipShape(Capsule())
+                    Spacer()
+                }
+                .padding(.top, 4)
+
+                // 주말 급여일 보정 안내
+                Text("급여일이 주말이면 직전 평일에 입금돼요")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
+                    .padding(.top, 6)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 18)
+        }
+        .background(Color.gagaeCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .gagaeCardShadow()
+    }
+
+    private func setupLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+            .foregroundStyle(.gagaeTextSecondary)
+            .textCase(.uppercase)
+            .kerning(0.6)
+    }
+
+    private var salaryInput: some View {
+        HStack(spacing: 0) {
+            Text("₩")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(.gagaePinkDark)
+                .frame(width: 48, height: 48)
+                .overlay(alignment: .trailing) {
+                    Rectangle()
+                        .fill(isSalaryFocused ? Color.gagaePinkLight : Color.gagaeDivider)
+                        .frame(width: 1.5)
+                }
+
+            TextField("0", text: $viewModel.tempSalaryText)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(.gagaeText)
+                .keyboardType(.numberPad)
+                .focused($isSalaryFocused)
+                .padding(.horizontal, 12)
+                .onChange(of: viewModel.tempSalaryText) { _, newValue in
+                    viewModel.updateSalaryFromText(newValue)
+                }
+
+            if viewModel.tempSalary > 0 {
+                Text("원")
+                    .font(.system(size: 13, design: .rounded))
+                    .foregroundStyle(.gagaeTextSecondary)
+                    .padding(.trailing, 14)
             }
         }
+        .frame(height: 48)
+        .background(Color.gagaeSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isSalaryFocused ? Color.gagaePinkDark : Color.gagaeDivider,
+                        lineWidth: 1.8)
+        )
     }
-    
-    /// 다음 버튼
+
+    private func paydayChip(_ day: Int) -> some View {
+        let isOn = viewModel.tempPayday == day
+        return Button {
+            viewModel.tempPayday = day
+        } label: {
+            Text("\(day)")
+                .font(.system(size: 12, weight: isOn ? .heavy : .medium, design: .rounded))
+                .foregroundStyle(isOn ? .white : .gagaeTextSecondary)
+                .frame(width: 34, height: 34)
+                .background(isOn ? Color.gagaePinkDark : Color.gagaeSurfaceAlt)
+                .clipShape(Circle())
+                .gagaeShadow(color: isOn ? .gagaePinkDark.opacity(0.38) : .clear, radius: 5, y: 3)
+        }
+        .buttonStyle(.plain)
+    }
+
     private var nextButton: some View {
         NavigationLink {
             SetupFixedCostView(viewModel: viewModel)
         } label: {
             Text("다음")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(.white)
+                .font(.system(size: 17, weight: .heavy, design: .rounded))
+                .foregroundStyle(viewModel.isValid ? .white : .gagaeTextTertiary)
                 .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(viewModel.isValid ? Color.blue : Color.gray)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .frame(height: 54)
+                .background(
+                    viewModel.isValid
+                        ? AnyShapeStyle(LinearGradient(colors: [.gagaePinkDark, .gagaePink],
+                                                       startPoint: .topLeading, endPoint: .bottomTrailing))
+                        : AnyShapeStyle(Color.gagaeDivider)
+                )
+                .clipShape(Capsule())
+                .gagaeShadow(color: viewModel.isValid ? .gagaePinkDark.opacity(0.32) : .clear, radius: 14, y: 10)
         }
         .disabled(!viewModel.isValid)
         .simultaneousGesture(TapGesture().onEnded {
-            // 다음 화면으로 이동하기 전에 월급 정보 확정
             viewModel.confirmSalaryInfo()
         })
     }
