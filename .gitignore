@@ -36,3 +36,11 @@ fastlane/test_output
 
 # Other
 *.DS_Store
+
+# App Store 제출용 스크린샷 (26MB) — 리포에 담지 않는다.
+# 스토어 등록 시에만 쓰는 산출물이고 바이너리라 diff도 안 된다.
+AppStoreScreenshots/
+
+# Claude Code 로컬 설정 — 절대경로와 기기별 권한 목록이 들어간다
+.claude/settings.local.json
+.claude/worktrees/
