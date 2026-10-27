@@ -217,3 +217,18 @@ addSpend → createSpendingRecord → recalculateCarryOverChain(from:)
 - **임계값 비교를 `>`→`>=` 이외로 바꾸거나 주말 보정을 테스트에서 끄기**: 문서에 정해진 동작을 테스트에 맞춰
   바꾸는 것이라 기각 (Zero 결정: 앱 구현 불변).
 - **어제가 주말이면 `XCTSkip`**: 일주일에 이틀 커버리지가 사라진다. 실효 시작일 기준 입력으로 매일 검증할 수 있으므로 기각.
+
+## 8. 테스트 실행 환경 메모
+
+첫 자동 실행이 `Unable to find a device matching the provided destination specifier`로 실패했다.
+테스트 코드 문제가 아니라 destination 지정 문제다. `name=iPhone 16`은 iOS 18.0 런타임에 있어 현재 Xcode가
+eligible로 보지 않는다 (CLAUDE.md 2026-09-09 항목). 아래 destination으로 실행해야 이 설계의 검증이 의미가 있다.
+
+```bash
+xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests \
+  -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.0' \
+  -only-testing:GagaeSsiTests/PastOverspendConversionTests \
+  -only-testing:GagaeSsiTests/PastOverspendFixtureBoundaryTests
+```
+
+사용 가능한 기기는 `xcodebuild -showdestinations -project GagaeSsi.xcodeproj -scheme GagaeSsiTests`로 확인한다.
