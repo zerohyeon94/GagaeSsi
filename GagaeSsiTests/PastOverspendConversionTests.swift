@@ -258,3 +258,97 @@ final class PastOverspendConversionTests: XCTestCase {
         XCTAssertFalse(sut.reconcileDebtNow(), "이미 맞으므로 보정할 것이 없다")
     }
 }
+
+// MARK: - 입력 계산의 날짜 경계 회귀 (순수 계산, 고정 날짜)
+
+/// CoreData 테스트는 내부에서 `Date()`를 써서 날짜를 주입할 수 없다.
+/// 대신 테스트 입력을 만드는 `PastOverspendFixture`를 고정 날짜로 검증해, 주말·월말 경계에서
+/// 입력이 다시 날짜에 의존하지 않는지 확인한다.
+final class PastOverspendFixtureBoundaryTests: XCTestCase {
+    private let cal = Calendar.current
+    private typealias F = PastOverspendFixture
+
+    private func date(_ y: Int, _ m: Int, _ d: Int) -> Date {
+        cal.date(from: DateComponents(year: y, month: m, day: d))!
+    }
+
+    private func label(_ d: Date) -> String {
+        let c = cal.dateComponents([.year, .month, .day], from: d)
+        return "\(c.year!)-\(c.month!)-\(c.day!)"
+    }
+
+    /// 어느 날짜에 실행하든 지켜져야 하는 입력 불변식
+    private func assertInvariants(today: Date, file: StaticString = #filePath, line: UInt = #line) {
+        let name = label(today)
+        let day0 = F.day(0, from: today)
+
+        // 이전 기간 입력
+        let c = F.previousPeriodCase(today: today)
+        XCTAssertGreaterThanOrEqual(c.periodStart, F.day(-3, from: today), name, file: file, line: line)
+        XCTAssertLessThanOrEqual(c.periodStart, F.day(-1, from: today), name, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(c.spendDay, F.day(-5, from: today), "시드 범위 밖 \(name)", file: file, line: line)
+        XCTAssertLessThan(c.transferDay, c.periodStart, name, file: file, line: line)
+        XCTAssertEqual(c.periodStart,
+                       DailyBudgetCalculator.payPeriod(payday: c.payday, containing: day0).start,
+                       name, file: file, line: line)
+
+        // safePayday: 테스트 구간이 한 급여 기간 안이고, 임계값이 고정 초과분(2만 원)보다 작다
+        let sp = F.safePayday(today: today)
+        XCTAssertEqual(DailyBudgetCalculator.payPeriod(payday: sp, containing: F.day(-5, from: today)).start,
+                       DailyBudgetCalculator.payPeriod(payday: sp, containing: day0).start,
+                       "구간에 급여일이 걸림 \(name)", file: file, line: line)
+        for offset in -3...(-1) {
+            let base = F.dailyBase(payday: sp, on: F.day(offset, from: today))
+            XCTAssertLessThan(DebtRepaymentPlan.threshold(dailyBudget: base), 20_000,
+                              name, file: file, line: line)
+        }
+    }
+
+    // 2026-10-11(일)에 실제로 깨졌던 입력이 왜 깨졌는지 숫자로 남긴다
+    func test_2026_10_11_재현_옛_입력이_왜_깨졌나() {
+        let today = date(2026, 10, 11)
+
+        // ① 급여일 24(토) → 10/23으로 당겨져 29일 기간, 임계값이 옛 고정 초과분 10,000을 넘는다
+        XCTAssertEqual(F.safePayday(today: today), 24)
+        let period = DailyBudgetCalculator.payPeriod(payday: 24, containing: today)
+        XCTAssertEqual(period.start, date(2026, 9, 24))
+        XCTAssertEqual(period.end, date(2026, 10, 23))
+        XCTAssertEqual(cal.dateComponents([.day], from: period.start, to: period.end).day, 29)
+        let threshold = DebtRepaymentPlan.threshold(dailyBudget: F.dailyBase(payday: 24, on: today))
+        XCTAssertEqual(threshold, 10_344)
+        XCTAssertGreaterThan(threshold, 10_000)
+
+        // ② 어제 10/10(토)을 급여일로 잡으면 실효 시작일은 10/9 — day(-1)이 아니다
+        let c = F.previousPeriodCase(today: today)
+        XCTAssertEqual(c.payday, 10)
+        XCTAssertEqual(c.periodStart, date(2026, 10, 9))
+        XCTAssertNotEqual(c.periodStart, F.day(-1, from: today))
+        XCTAssertEqual(c.spendDay, date(2026, 10, 7))
+        XCTAssertEqual(c.transferDay, date(2026, 10, 8))
+    }
+
+    // 주말·월말 경계 — 기대 시작일을 하드코딩해 계산기와 독립적으로도 확인한다
+    func test_주말_월말_경계_사례() {
+        let cases: [(today: Date, start: Date)] = [
+            (date(2026, 10, 11), date(2026, 10, 9)),   // 어제 토 → day(-2)
+            (date(2026, 10, 12), date(2026, 10, 9)),   // 어제 일 → day(-3)
+            (date(2026, 11, 2), date(2026, 10, 30)),   // 어제 11/1(일) → 달을 거슬러 당겨짐
+            (date(2026, 3, 1), date(2026, 2, 27)),     // 어제 2/28(토): 2월 말일 + 주말
+            (date(2026, 8, 1), date(2026, 7, 31)),     // 어제 7/31(금): 보정 없음
+        ]
+        for c in cases {
+            XCTAssertEqual(F.previousPeriodCase(today: c.today).periodStart, c.start, label(c.today))
+            assertInvariants(today: c.today)
+        }
+    }
+
+    // 2년 치 매일 — 어느 날 깨졌는지 메시지에 날짜가 남는다
+    func test_2년_전수_스윕() {
+        var today = date(2026, 1, 1)
+        let end = date(2027, 12, 31)
+        while today <= end {
+            assertInvariants(today: today)
+            today = cal.date(byAdding: .day, value: 1, to: today)!
+        }
+    }
+}
