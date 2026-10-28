@@ -29,7 +29,7 @@ struct PaybackEditView: View {
     @State private var periodStart = Date()
     @State private var periodEnd = Date()
     /// 기간형에서 자동으로 묶을 카테고리 (nil이면 수동 입력)
-    @State private var linkedCategory: SpendingCategory?
+    @State private var linkedCategory: CategoryKey?
     @State private var refundRate = 0
 
     private var editingModel: PaybackModel? { if case .edit(let m) = mode { return m }; return nil }
@@ -101,9 +101,15 @@ struct PaybackEditView: View {
             Text("소비 자동 묶기 (선택)").font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: GagaeSpacing.sm) {
-                    categoryChip(nil, label: "안 씀")
-                    ForEach(SpendingCategory.allCases, id: \.self) { category in
-                        categoryChip(category, label: "\(category.emoji) \(category.rawValue)")
+                    CategoryChip(emoji: nil, name: "안 씀", color: .gagaePinkDark,
+                                 isSelected: linkedCategory == nil, style: .payback) {
+                        linkedCategory = nil
+                        refundRate = 0
+                    }
+                    ForEach(CategoryCatalog.shared.all) { info in
+                        CategoryChip(info: info, isSelected: linkedCategory == info.key, style: .payback) {
+                            linkedCategory = info.key
+                        }
                     }
                 }
                 .padding(.horizontal, 2)
@@ -111,22 +117,6 @@ struct PaybackEditView: View {
             Text("고른 카테고리의 기간 내 소비를 자동으로 합산해 보여줘요.")
                 .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
         }
-    }
-
-    private func categoryChip(_ category: SpendingCategory?, label: String) -> some View {
-        let selected = linkedCategory == category
-        return Button {
-            linkedCategory = category
-            if category == nil { refundRate = 0 }
-        } label: {
-            Text(label)
-                .font(.system(size: 12, weight: selected ? .heavy : .medium, design: .rounded))
-                .foregroundStyle(selected ? .white : Color.gagaeTextSecondary)
-                .padding(.horizontal, 12).padding(.vertical, 7)
-                .background(selected ? AnyShapeStyle(Color.gagaePinkDark) : AnyShapeStyle(Color.gagaeSurface))
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
     }
 
     /// 환급률 — 합산액 × 이 비율로 예상액을 자동 계산한다
@@ -184,7 +174,8 @@ struct PaybackEditView: View {
         if let ed = m.expectedDate { hasExpectedDate = true; expectedDate = ed }
         if let ps = m.periodStart { periodStart = ps }
         if let pe = m.periodEnd { periodEnd = pe }
-        linkedCategory = m.linkedCategory
+        // 지워진 카테고리를 가리키면 기타가 선택된 것으로 보인다
+        linkedCategory = m.linkedCategory.map { CategoryCatalog.shared.normalize($0) }
         refundRate = m.refundRatePercent
     }
 
