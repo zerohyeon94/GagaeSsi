@@ -284,7 +284,25 @@ Xcode 프로젝트가 `PBXFileSystemSynchronizedRootGroup`을 쓰므로 새 파�
 
 ---
 
-## 8. 구현 순서 (Epsilon 참고)
+## 8. 코드 대조 기록 (2026-10-29 재확인)
+
+설계의 전제가 지금 코드와 맞는지 다시 확인했다. 구현 전에 이 표와 달라졌으면 설계를 먼저 고친다.
+
+| 전제 | 확인 위치 | 결과 |
+|---|---|---|
+| 현재 모델 버전은 12 | `Resources/GagaeSsi.xcdatamodeld/.xccurrentversion` | `GagaeSsi 12.xcdatamodel` → 13 신설이 맞다 |
+| 기록 카테고리 쓰기 지점 2곳 | `CoreDataManager.swift:565`, `:642` (`model.category.rawValue`) | `storageValue`로 교체 대상 |
+| 페이백 연결 쓰기 지점 1곳 | `CoreDataManager.swift:428` (`m.linkedCategory?.rawValue`) | `storageValue`로 교체 대상 |
+| 연결 소비 필터 | `CoreDataManager.swift:434` `linkedSpending(for:)`, `:451` `linkedSpendingTotal(for:)` | `normalize` 비교로 교체. 합계는 앞 함수 결과를 쓰므로 한 곳만 고치면 된다 |
+| 초기화 대상 목록 | `CoreDataManager.swift:915` `entityNames` | `"UserCategory"` 추가 |
+| 저장 실패 시 rollback 없음 | `CoreDataManager.swift:44` `saveContext()` (로그 후 `false`만 반환) | 3-5의 "새 메서드만 rollback" 결정 유지. 기존 호출부 동작은 건드리지 않는다 |
+| 일괄 갱신 선례 | `CoreDataManager.swift:744` `renameSpendingTitles` | 삭제 시 기타 이동을 같은 fetch+대입 방식으로 작성 |
+| `SpendingCategory` 사용처 | 앱 13개 파일 + 테스트 4개 파일 | 7장 "약 20개 파일" 추정 범위 안 |
+| 마이그레이션 테스트 틀 | `CoreDataMigrationTests.swift:33` `model(named:)`, `:56` `container(with:)`, `:219` 최초→현재 일괄 테스트 | 12→13 테스트는 `:328`(11→12)과 같은 모양으로 추가. `:219`는 13을 자동으로 거치므로 함께 통과해야 한다 |
+
+---
+
+## 9. 구현 순서 (Epsilon 참고)
 
 1. 모델 13 + `UserCategory` 엔티티, 마이그레이션 테스트
 2. `UserCategoryModels.swift`(키·규칙·이모지) + `UserCategoryColor` + 순수 테스트
