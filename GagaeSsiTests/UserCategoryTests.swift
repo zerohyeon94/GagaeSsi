@@ -231,6 +231,37 @@ final class UserCategoryTests: XCTestCase {
         XCTAssertEqual(grouped.count, 1)
     }
 
+    /// 항목명을 비우고 저장한 기록은 제목을 굳히지 않아야 이름 변경이 행·CSV에 따라온다
+    func test_항목명을_비운_기록은_이름을_바꾸면_행과_CSV도_새_이름이다() throws {
+        var model = try makeCategory("반려동물")
+        let seed = SpendingRecordModel(title: "", amount: 0, date: Date())
+        let draft = SpendingEditDraft(title: "", amount: 7_000, category: .user(model.id),
+                                      date: Date(), tripId: nil, participants: 1, paidByMe: true,
+                                      hasPayback: false, payback: 0)
+        let record = draft.applied(to: seed)
+        XCTAssertEqual(record.title, "", "사용자 카테고리 이름을 제목으로 굳히면 안 된다")
+        _ = sut.fetchOrCreateTodayDailyBudget()
+        XCTAssertTrue(sut.createSpendingRecord(record))
+
+        model.name = "펫"
+        try sut.updateUserCategory(model)
+        CategoryCatalog.shared.reload(from: sut)
+
+        let saved = try XCTUnwrap(sut.fetchSpendingRecords(date: Date()).first)
+        XCTAssertEqual(saved.title.isEmpty ? saved.category.info.name : saved.title, "펫")
+        let csv = SpendingCSVExporter.makeCSV(from: [saved])
+        XCTAssertTrue(csv.contains("펫"))
+        XCTAssertFalse(csv.contains("반려동물"))
+    }
+
+    func test_내장_카테고리는_항목명을_비우면_카테고리명이_제목이다() {
+        let seed = SpendingRecordModel(title: "", amount: 0, date: Date())
+        let draft = SpendingEditDraft(title: "", amount: 1_000, category: .builtIn(.cafe),
+                                      date: Date(), tripId: nil, participants: 1, paidByMe: true,
+                                      hasPayback: false, payback: 0)
+        XCTAssertEqual(draft.applied(to: seed).title, "카페")
+    }
+
     func test_재조회해도_사용자_카테고리_기록이_유지된다() throws {
         let model = try makeCategory()
         spend(5_000, .user(model.id))

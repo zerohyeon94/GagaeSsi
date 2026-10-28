@@ -923,7 +923,13 @@ final class CoreDataManager {
     func fetchUserCategories() -> [UserCategoryModel] {
         let request: NSFetchRequest<UserCategory> = UserCategory.fetchRequest()
         request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
-        return ((try? context.fetch(request)) ?? []).map(UserCategoryModel.init)
+        do {
+            return try context.fetch(request).map(UserCategoryModel.init)
+        } catch {
+            // 조회 실패 시 사용자 카테고리 기록이 모두 기타로 보인다 — 오류 상태 화면은 후속 이슈
+            DebugLogger.log("❌ 사용자 카테고리 fetch 실패: \(error)")
+            return []
+        }
     }
 
     private func fetchUserCategoryEntity(id: UUID) -> UserCategory? {

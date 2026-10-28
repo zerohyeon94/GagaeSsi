@@ -169,7 +169,9 @@ struct CategoryDetailView: View {
             ForEach(records) { record in
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(record.title.isEmpty ? CategorySpendingAnalyzer.untitledLabel : record.title)
+                        Text(record.title.isEmpty
+                             ? (info.isBuiltIn ? CategorySpendingAnalyzer.untitledLabel : info.name)
+                             : record.title)
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                             .foregroundStyle(.gagaeText).lineLimit(1)
                         Text(dayLabel(record.date))

@@ -43,7 +43,16 @@ struct SpendingEditDraft {
         var result = record
 
         // 항목명 — 비우면 카테고리명으로 대체 (기존 동작)
-        result.title = title.isEmpty ? category.info.name : title
+        // 사용자 카테고리는 이름이 바뀔 수 있으므로 이름을 제목으로 굳히지 않고 비워 둔다
+        // (표시·CSV에서 현재 이름으로 대체). 내장은 이름이 고정이라 기존대로 채운다.
+        if title.isEmpty {
+            switch category {
+            case .builtIn: result.title = category.info.name
+            case .user: result.title = ""
+            }
+        } else {
+            result.title = title
+        }
         result.amount = amount
         result.category = category
 

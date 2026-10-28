@@ -11,6 +11,8 @@ struct CategoryManageView: View {
     @Environment(AppEventBus.self) private var eventBus
     @State private var viewModel = CategoryManageViewModel()
     @State private var editTarget: EditTarget?
+    /// 수정 시트에서 '카테고리 삭제'를 눌렀을 때, 시트가 닫힌 뒤 확인창을 띄우기 위한 대기 값
+    @State private var deleteAfterDismiss: UserCategoryModel?
 
     private enum EditTarget: Identifiable {
         case add
@@ -53,18 +55,19 @@ struct CategoryManageView: View {
         }
         .onAppear { viewModel.load() }
         .onChange(of: eventBus.categoryChangedTrigger) { viewModel.load() }
-        .sheet(item: $editTarget) { target in
+        .sheet(item: $editTarget, onDismiss: {
+            // 시트가 완전히 내려간 뒤에 확인창을 띄운다 (시간 지연에 기대지 않는다)
+            if let model = deleteAfterDismiss {
+                deleteAfterDismiss = nil
+                viewModel.requestDelete(model)
+            }
+        }) { target in
             switch target {
             case .add:
                 CategoryEditSheet(mode: .add) { _ in afterChange() }
             case .edit(let model):
                 CategoryEditSheet(mode: .edit(model), onSaved: { _ in afterChange() },
-                                  onRequestDelete: { model in
-                    // 시트가 완전히 내려간 뒤에 확인창을 띄운다
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        viewModel.requestDelete(model)
-                    }
-                })
+                                  onRequestDelete: { deleteAfterDismiss = $0 })
             }
         }
         .alert(deleteAlertTitle,

@@ -63,7 +63,7 @@ enum SpendingCSVExporter {
                 dateFormatter.string(from: record.date),
                 timeFormatter.string(from: record.date),
                 record.category.info.name,
-                record.title,
+                record.title.isEmpty ? record.category.info.name : record.title,
                 String(record.amount),
                 String(record.participants),
                 record.paidByMe ? "Y" : "N",
