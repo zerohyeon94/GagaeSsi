@@ -51,7 +51,7 @@ struct PaybackModel: Identifiable {
     var periodEnd: Date?
     var createdAt: Date
     /// 기간형에서 자동으로 묶을 소비 카테고리 (nil이면 수동 입력)
-    var linkedCategory: SpendingCategory?
+    var linkedCategory: CategoryKey?
     /// 환급률 % (0이면 미사용). 묶인 소비 합계 × 이 비율로 예상액을 계산한다.
     var refundRatePercent: Int
 
@@ -67,7 +67,7 @@ struct PaybackModel: Identifiable {
          estimatedAmount: Int = 0, confirmedAmount: Int = 0, receivedAmount: Int = 0,
          expectedDate: Date? = nil, receivedDate: Date? = nil,
          periodStart: Date? = nil, periodEnd: Date? = nil, createdAt: Date = Date(),
-         linkedCategory: SpendingCategory? = nil, refundRatePercent: Int = 0) {
+         linkedCategory: CategoryKey? = nil, refundRatePercent: Int = 0) {
         self.id = id
         self.title = title
         self.type = type
@@ -97,7 +97,7 @@ struct PaybackModel: Identifiable {
         self.periodStart = entity.periodStart
         self.periodEnd = entity.periodEnd
         self.createdAt = entity.createdAt ?? Date()
-        self.linkedCategory = entity.linkedCategory.flatMap { SpendingCategory(rawValue: $0) }
+        self.linkedCategory = entity.linkedCategory.flatMap { $0.isEmpty ? nil : CategoryKey(storageValue: $0) }
         self.refundRatePercent = Int(entity.refundRatePercent)
     }
 

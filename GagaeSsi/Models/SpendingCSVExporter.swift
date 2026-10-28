@@ -62,7 +62,7 @@ enum SpendingCSVExporter {
             let fields = [
                 dateFormatter.string(from: record.date),
                 timeFormatter.string(from: record.date),
-                record.category.rawValue,
+                record.category.info.name,
                 record.title,
                 String(record.amount),
                 String(record.participants),

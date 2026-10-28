@@ -241,11 +241,11 @@ struct TripDetailView: View {
     private func recordRow(_ r: SpendingRecordModel, locked: Bool) -> some View {
         HStack(spacing: 10) {
             ZStack {
-                Circle().fill(r.category.color.opacity(0.13)).frame(width: 34, height: 34)
-                Text(r.category.emoji).font(.system(size: 16))
+                Circle().fill(r.category.info.color.opacity(0.13)).frame(width: 34, height: 34)
+                Text(r.category.info.emoji).font(.system(size: 16))
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(r.title.isEmpty ? r.category.rawValue : r.title)
+                Text(r.title.isEmpty ? r.category.info.name : r.title)
                     .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(.gagaeText).lineLimit(1)
                 HStack(spacing: 4) {
                     if r.isShared {

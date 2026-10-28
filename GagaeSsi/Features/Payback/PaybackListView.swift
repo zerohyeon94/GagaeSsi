@@ -98,7 +98,7 @@ struct PaybackListView: View {
         if linked.count > 0, let category = item.linkedCategory {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
-                    Text("\(category.emoji) \(category.rawValue) \(linked.count)건")
+                    Text("\(category.info.emoji) \(category.info.name) \(linked.count)건")
                         .font(.gagaeCaption).foregroundStyle(.gagaeTextSecondary)
                     Spacer()
                     Text(FormatterUtils.currencyString(from: linked.total))

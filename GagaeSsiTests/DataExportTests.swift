@@ -16,7 +16,7 @@ final class DataExportTests: XCTestCase {
     }
     private func record(_ title: String, _ amount: Int, _ date: Date,
                         payback: Int = 0, received: Bool = false) -> SpendingRecordModel {
-        SpendingRecordModel(title: title, amount: amount, date: date, category: .cafe,
+        SpendingRecordModel(title: title, amount: amount, date: date, category: .builtIn(.cafe),
                             expectedPayback: payback, paybackReceived: received)
     }
 

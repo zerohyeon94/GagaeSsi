@@ -11,7 +11,7 @@ import Foundation
 struct SpendingSuggestion: Identifiable, Equatable {
     var id: String { title.lowercased() }
     let title: String
-    let category: SpendingCategory
+    let category: CategoryKey
     let lastAmount: Int
     let lastDate: Date
     let count: Int
@@ -28,7 +28,7 @@ enum SpendingSuggestionEngine {
 
     /// 소비 기록 → 고유 항목별 추천 (정규화·중복 제거, 최근 카테고리/금액 반영)
     static func build(from records: [SpendingRecordModel]) -> [SpendingSuggestion] {
-        struct Acc { var title: String; var category: SpendingCategory; var lastAmount: Int; var lastDate: Date; var count: Int }
+        struct Acc { var title: String; var category: CategoryKey; var lastAmount: Int; var lastDate: Date; var count: Int }
         var map: [String: Acc] = [:]
 
         for r in records {

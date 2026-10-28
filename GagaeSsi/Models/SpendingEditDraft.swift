@@ -18,7 +18,7 @@ import Foundation
 struct SpendingEditDraft {
     var title: String
     var amount: Int
-    var category: SpendingCategory
+    var category: CategoryKey
     var date: Date
     var tripId: UUID?
     var participants: Int
@@ -43,7 +43,7 @@ struct SpendingEditDraft {
         var result = record
 
         // 항목명 — 비우면 카테고리명으로 대체 (기존 동작)
-        result.title = title.isEmpty ? category.rawValue : title
+        result.title = title.isEmpty ? category.info.name : title
         result.amount = amount
         result.category = category
 

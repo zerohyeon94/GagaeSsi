@@ -131,8 +131,8 @@ final class SpendingEditDraftTests: XCTestCase {
     // MARK: - 항목명 빈칸은 카테고리명으로 대체된다 (기존 동작)
 
     func test_항목명이_비어있으면_카테고리명을_쓴다() {
-        let record = SpendingRecordModel(title: "저녁", amount: 5_000, date: Date(), category: .food)
-        let draft = SpendingEditDraft(title: "", amount: record.amount, category: .food,
+        let record = SpendingRecordModel(title: "저녁", amount: 5_000, date: Date(), category: .builtIn(.food))
+        let draft = SpendingEditDraft(title: "", amount: record.amount, category: .builtIn(.food),
                                       date: record.date, tripId: nil, participants: 1, paidByMe: true,
                                       hasPayback: false, payback: 0)
         XCTAssertEqual(draft.applied(to: record).title, SpendingCategory.food.rawValue)
@@ -153,11 +153,11 @@ final class SpendingEditDraftTests: XCTestCase {
     }
 
     func test_카테고리가_바뀌면_저장된다() {
-        let record = SpendingRecordModel(title: "커피", amount: 5_000, date: Date(), category: .food)
-        let draft = SpendingEditDraft(title: record.title, amount: record.amount, category: .transport,
+        let record = SpendingRecordModel(title: "커피", amount: 5_000, date: Date(), category: .builtIn(.food))
+        let draft = SpendingEditDraft(title: record.title, amount: record.amount, category: .builtIn(.transport),
                                       date: record.date, tripId: nil, participants: 1, paidByMe: true,
                                       hasPayback: false, payback: 0)
-        XCTAssertEqual(draft.applied(to: record).category, .transport, "화면에 보여준 카테고리가 저장 때 원본으로 되돌아가면 안 된다")
+        XCTAssertEqual(draft.applied(to: record).category, .builtIn(.transport), "화면에 보여준 카테고리가 저장 때 원본으로 되돌아가면 안 된다")
     }
 
     func test_여행을_다른_여행으로_바꾸면_저장된다() {

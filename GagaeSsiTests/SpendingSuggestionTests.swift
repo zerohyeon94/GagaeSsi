@@ -14,7 +14,7 @@ final class SpendingSuggestionTests: XCTestCase {
         cal.date(byAdding: .day, value: offset, to: Date())!
     }
     private func rec(_ title: String, _ amount: Int, _ dateOffset: Int, _ cat: SpendingCategory = .other) -> SpendingRecordModel {
-        SpendingRecordModel(title: title, amount: amount, date: date(dateOffset), category: cat)
+        SpendingRecordModel(title: title, amount: amount, date: date(dateOffset), category: .builtIn(cat))
     }
 
     // MARK: - normalize
@@ -42,7 +42,7 @@ final class SpendingSuggestionTests: XCTestCase {
             rec("점심", 9000, -1, .cafe),   // 최근
         ]
         let s = SpendingSuggestionEngine.build(from: items).first { $0.title == "점심" }!
-        XCTAssertEqual(s.category, .cafe)
+        XCTAssertEqual(s.category, .builtIn(.cafe))
         XCTAssertEqual(s.lastAmount, 9000)
     }
 
