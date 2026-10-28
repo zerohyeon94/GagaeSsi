@@ -425,7 +425,7 @@ final class CoreDataManager {
         e.receivedDate = m.receivedDate
         e.periodStart = m.periodStart
         e.periodEnd = m.periodEnd
-        e.linkedCategory = m.linkedCategory?.rawValue
+        e.linkedCategory = m.linkedCategory?.storageValue
         e.refundRatePercent = Int16(m.refundRatePercent)
     }
 
@@ -442,8 +442,15 @@ final class CoreDataManager {
         guard let to = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: end)) else {
             return []
         }
+        // 지워진 사용자 카테고리를 가리키는 값은 기타로 보고 비교한다
+        let validIds = Set(fetchUserCategories().map(\.id))
+        func resolved(_ key: CategoryKey) -> CategoryKey {
+            if case .user(let id) = key, !validIds.contains(id) { return .other }
+            return key
+        }
+        let target = resolved(category)
         return fetchSpendingRecords(from: from, to: to)
-            .filter { $0.category == category }
+            .filter { resolved($0.category) == target }
             .sorted { $0.date > $1.date }
     }
 
@@ -562,7 +569,7 @@ final class CoreDataManager {
         newSpendingRecord.title = model.title
         newSpendingRecord.amount = NSDecimalNumber(value: model.amount)
         newSpendingRecord.date = model.date
-        newSpendingRecord.category = model.category.rawValue
+        newSpendingRecord.category = model.category.storageValue
         newSpendingRecord.expectedPayback = Int32(model.expectedPayback)
         newSpendingRecord.paybackReceived = model.paybackReceived
         newSpendingRecord.participants = Int16(clamping: model.participants)
@@ -639,7 +646,7 @@ final class CoreDataManager {
         spendingRecord.title = model.title
         spendingRecord.amount = NSDecimalNumber(value: model.amount)
         spendingRecord.date = model.date   // 전체 타임스탬프 보존 (시간대 리포트용)
-        spendingRecord.category = model.category.rawValue
+        spendingRecord.category = model.category.storageValue
         spendingRecord.expectedPayback = Int32(model.expectedPayback)
         spendingRecord.paybackReceived = model.paybackReceived
         spendingRecord.participants = Int16(clamping: model.participants)
@@ -910,9 +917,100 @@ final class CoreDataManager {
         saveContext()
     }
 
+    // MARK: - UserCategory (사용자 소비 카테고리)
+
+    /// 만든 순서(createdAt 오름차순)
+    func fetchUserCategories() -> [UserCategoryModel] {
+        let request: NSFetchRequest<UserCategory> = UserCategory.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+        return ((try? context.fetch(request)) ?? []).map(UserCategoryModel.init)
+    }
+
+    private func fetchUserCategoryEntity(id: UUID) -> UserCategory? {
+        let request: NSFetchRequest<UserCategory> = UserCategory.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+
+    /// 저장하고, 실패하면 이번 변경을 모두 되돌린다 (반쯤 바뀐 상태가 다음 save에 섞이지 않게).
+    private func saveOrRollback() -> Bool {
+        if saveContext() { return true }
+        context.rollback()
+        return false
+    }
+
+    @discardableResult
+    func addUserCategory(name: String, emoji: String, color: UserCategoryColor) throws -> UserCategoryModel {
+        let existing = fetchUserCategories()
+        if let error = UserCategoryRules.validate(name: name, existingNames: existing.map(\.name),
+                                                  currentCount: existing.count) {
+            throw error
+        }
+        let model = UserCategoryModel(name: UserCategoryRules.normalizedName(name),
+                                      emoji: UserCategoryRules.firstEmoji(in: emoji) ?? UserCategoryRules.defaultEmoji,
+                                      color: color)
+        let entity = UserCategory(context: context)
+        entity.id = model.id
+        entity.name = model.name
+        entity.emoji = model.emoji
+        entity.colorKey = model.color.rawValue
+        entity.createdAt = model.createdAt
+        guard saveOrRollback() else { throw UserCategoryError.saveFailed }
+        return model
+    }
+
+    /// 이름·이모지·색만 바꾼다. 기록·페이백은 ID를 들고 있어 손대지 않는다.
+    func updateUserCategory(_ model: UserCategoryModel) throws {
+        guard let entity = fetchUserCategoryEntity(id: model.id) else { throw UserCategoryError.notFound }
+        let others = fetchUserCategories().filter { $0.id != model.id }
+        // others에 자기 자신이 이미 빠져 있다. excluding은 '수정 모드'(개수 한도 생략) 표시로만 쓴다.
+        if let error = UserCategoryRules.validate(name: model.name, existingNames: others.map(\.name),
+                                                  excluding: "", currentCount: others.count + 1) {
+            throw error
+        }
+        entity.name = UserCategoryRules.normalizedName(model.name)
+        entity.emoji = UserCategoryRules.firstEmoji(in: model.emoji) ?? UserCategoryRules.defaultEmoji
+        entity.colorKey = model.color.rawValue
+        guard saveOrRollback() else { throw UserCategoryError.saveFailed }
+    }
+
+    /// 이 카테고리를 쓰는 기록 수와 묶인 기간형 페이백 수
+    func userCategoryUsage(id: UUID) -> (records: Int, paybacks: Int) {
+        let key = CategoryKey.user(id).storageValue
+        let recordRequest: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        recordRequest.predicate = NSPredicate(format: "category == %@", key)
+        let paybackRequest: NSFetchRequest<Payback> = Payback.fetchRequest()
+        paybackRequest.predicate = NSPredicate(format: "linkedCategory == %@ AND type == %@",
+                                               key, PaybackType.period.rawValue)
+        return ((try? context.count(for: recordRequest)) ?? 0,
+                (try? context.count(for: paybackRequest)) ?? 0)
+    }
+
+    /// 카테고리를 지우고 그 ID의 기록·페이백 연결을 '기타'로 옮긴다. save 1회, 실패하면 rollback.
+    @discardableResult
+    func deleteUserCategory(id: UUID) throws -> (records: Int, paybacks: Int) {
+        guard let entity = fetchUserCategoryEntity(id: id) else { throw UserCategoryError.notFound }
+        let key = CategoryKey.user(id).storageValue
+        let other = CategoryKey.other.storageValue
+
+        let recordRequest: NSFetchRequest<SpendingRecord> = SpendingRecord.fetchRequest()
+        recordRequest.predicate = NSPredicate(format: "category == %@", key)
+        let records = (try? context.fetch(recordRequest)) ?? []
+        records.forEach { $0.category = other }
+
+        let paybackRequest: NSFetchRequest<Payback> = Payback.fetchRequest()
+        paybackRequest.predicate = NSPredicate(format: "linkedCategory == %@", key)
+        let paybacks = (try? context.fetch(paybackRequest)) ?? []
+        paybacks.forEach { $0.linkedCategory = other }
+
+        context.delete(entity)
+        guard saveOrRollback() else { throw UserCategoryError.saveFailed }
+        return (records.count, paybacks.count)
+    }
+
     // MARK: - Utilities
     func resetAllData() {
-        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "Payback", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry", "SpendingDebt", "DebtRepaymentEntry", "AssetTransfer", "Trip"]
+        let entityNames = ["BudgetConfig", "FixedCost", "MonthlyFixedCostEntry", "Installment", "Payback", "DailyBudget", "SpendingRecord", "CarryOverSource", "CarryOverPoolEntry", "WishItem", "WishSavingEntry", "SpendingDebt", "DebtRepaymentEntry", "AssetTransfer", "Trip", "UserCategory"]
 
         for entityName in entityNames {
             let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
