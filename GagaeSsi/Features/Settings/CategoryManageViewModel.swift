@@ -55,11 +55,20 @@ final class CategoryManageViewModel {
         self.catalog = catalog
     }
 
-    var canAdd: Bool { rows.count < UserCategoryRules.maxCount }
+    /// 목록을 읽지 못했는지 ('불러오지 못했어요 + 다시 시도' 상태)
+    private(set) var loadError = false
 
-    /// 카탈로그를 다시 읽고 행별 사용 건수를 센다.
+    /// 조회에 실패한 동안은 개수를 알 수 없으므로 추가를 막는다.
+    var canAdd: Bool { !loadError && rows.count < UserCategoryRules.maxCount }
+
+    /// 카탈로그를 다시 읽고 행별 사용 건수를 센다. 실패하면 오류 상태로 두고 목록은 비운다.
     func load() {
         catalog.reload(from: manager)
+        loadError = catalog.loadFailed
+        guard !loadError else {
+            rows = []
+            return
+        }
         rows = catalog.userCategories.map {
             Row(model: $0, usageCount: manager.userCategoryUsage(id: $0.id).records)
         }

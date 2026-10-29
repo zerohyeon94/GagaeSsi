@@ -398,6 +398,32 @@ final class UserCategoryTests: XCTestCase {
         XCTAssertEqual(catalog.normalize(.builtIn(.food)), .builtIn(.food))
     }
 
+    func test_조회가_실패한_카탈로그는_저장용_키를_기타로_덮어쓰지_않는다() {
+        let id = UUID()
+        let failed = CategoryCatalog(loadFailed: true)
+        XCTAssertEqual(failed.normalize(.user(id)), .user(id), "실패 중에는 원래 키를 보존해야 저장이 안전하다")
+        XCTAssertEqual(failed.info(for: .user(id)).name, "기타", "표시는 기타로 대체")
+        XCTAssertEqual(CategoryCatalog().normalize(.user(id)), .other, "정상 조회 뒤의 모르는 ID는 기타")
+    }
+
+    func test_정상_조회는_loadFailed가_꺼진다() {
+        let catalog = CategoryCatalog(loadFailed: true)
+        catalog.reload(from: sut)
+        XCTAssertFalse(catalog.loadFailed)
+    }
+
+    func test_항목명이_빈_기록은_카테고리_이름으로_묶는다() {
+        let records = [
+            SpendingRecordModel(title: "", amount: 3_000, date: Date(), category: .other),
+            SpendingRecordModel(title: "", amount: 2_000, date: Date(), category: .other),
+        ]
+        let named = CategorySpendingAnalyzer.itemSummaries(from: records, untitledName: "펫")
+        XCTAssertEqual(named.map(\.title), ["펫"])
+        XCTAssertEqual(named.first?.total, 5_000)
+        let plain = CategorySpendingAnalyzer.itemSummaries(from: records)
+        XCTAssertEqual(plain.map(\.title), [CategorySpendingAnalyzer.untitledLabel])
+    }
+
     func test_카탈로그는_20개가_차면_더_추가할_수_없다고_알린다() {
         let full = (1...UserCategoryRules.maxCount).map { UserCategoryModel(name: "c\($0)") }
         XCTAssertFalse(CategoryCatalog(userCategories: full).canAddMore)

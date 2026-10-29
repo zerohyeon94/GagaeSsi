@@ -196,7 +196,8 @@ struct PaybackEditView: View {
             periodStart: type == .period ? periodStart : nil,
             periodEnd: type == .period ? periodEnd : nil,
             createdAt: editingModel?.createdAt ?? Date(),
-            linkedCategory: type == .period ? linkedCategory : nil,
+            // 열려 있는 동안 지워진 카테고리면 고아 ID 대신 기타로 저장한다
+            linkedCategory: type == .period ? linkedCategory.map { CategoryCatalog.shared.normalize($0) } : nil,
             refundRatePercent: type == .period ? refundRate : 0)
 
         let ok = editingModel == nil

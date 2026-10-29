@@ -920,13 +920,19 @@ final class CoreDataManager {
     // MARK: - UserCategory (사용자 소비 카테고리)
 
     /// 만든 순서(createdAt 오름차순)
-    func fetchUserCategories() -> [UserCategoryModel] {
+    /// 조회 실패를 호출부가 알아야 할 때 쓴다 (카탈로그 로드). 실패를 빈 목록으로 오해하면
+    /// 사용자 카테고리 기록이 기타로 덮어써질 수 있다.
+    func loadUserCategories() throws -> [UserCategoryModel] {
         let request: NSFetchRequest<UserCategory> = UserCategory.fetchRequest()
         request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+        return try context.fetch(request).map(UserCategoryModel.init)
+    }
+
+    /// 실패해도 빈 배열 (검증·중복 검사용). 실패는 로그만 남긴다.
+    func fetchUserCategories() -> [UserCategoryModel] {
         do {
-            return try context.fetch(request).map(UserCategoryModel.init)
+            return try loadUserCategories()
         } catch {
-            // 조회 실패 시 사용자 카테고리 기록이 모두 기타로 보인다 — 오류 상태 화면은 후속 이슈
             DebugLogger.log("❌ 사용자 카테고리 fetch 실패: \(error)")
             return []
         }

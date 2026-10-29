@@ -135,7 +135,9 @@ struct CategoryManageView: View {
 
     private var userSection: some View {
         Section {
-            if viewModel.rows.isEmpty {
+            if viewModel.loadError {
+                errorRow.listRowBackground(Color.gagaeCardBackground)
+            } else if viewModel.rows.isEmpty {
                 emptyRow.listRowBackground(Color.gagaeCardBackground)
             }
             ForEach(viewModel.rows) { row in
@@ -214,6 +216,19 @@ struct CategoryManageView: View {
         .accessibilityLabel("\(row.model.name), 내가 만든 카테고리, 기록 \(row.usageCount)건")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "삭제") { viewModel.requestDelete(row.model) }
+    }
+
+    private var errorRow: some View {
+        VStack(spacing: 8) {
+            Text("카테고리를 불러오지 못했어요")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(.gagaeText)
+            Button("다시 시도") { viewModel.load() }
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(.gagaePinkDark)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
     }
 
     private var emptyRow: some View {

@@ -50,7 +50,8 @@ struct HistorySpendEditView: View {
         return wishId == oldTripWallet
     }
     private var draft: SpendingEditDraft {
-        SpendingEditDraft(title: title, amount: amount, category: category, date: date,
+        // 열려 있는 동안 지워진 카테고리면 고아 ID 대신 기타로 저장한다
+        SpendingEditDraft(title: title, amount: amount, category: CategoryCatalog.shared.normalize(category), date: date,
                           tripId: tripId, participants: participants, paidByMe: paidByMe,
                           hasPayback: hasPayback, payback: payback, clearsWallet: clearsWallet)
     }

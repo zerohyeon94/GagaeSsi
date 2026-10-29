@@ -210,7 +210,8 @@ struct CategoryDetailView: View {
         records = CoreDataManager.shared.fetchSpendingRecords(year: year, month: monthValue)
             .filter { CategoryCatalog.shared.normalize($0.category) == CategoryCatalog.shared.normalize(category) }
             .sorted { $0.date > $1.date }
-        items = CategorySpendingAnalyzer.itemSummaries(from: records)
+        items = CategorySpendingAnalyzer.itemSummaries(from: records,
+                                                       untitledName: info.isBuiltIn ? nil : info.name)
     }
 
     private var monthLabel: String {

@@ -219,6 +219,7 @@ extension SpendView {
             CategoryEditSheet(mode: .add) { created in
                 viewModel.tempCategory = .user(created.id)
                 scrollToCategory = .user(created.id)
+                eventBus.notifyCategoryChanged()
             }
         }
     }
