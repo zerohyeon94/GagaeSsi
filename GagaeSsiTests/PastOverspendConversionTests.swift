@@ -15,10 +15,12 @@ import XCTest
 final class PastOverspendConversionTests: XCTestCase {
     var sut: CoreDataManager!
     private let cal = Calendar.current
-    /// 테스트 한 건 안에서 기준 시각이 바뀌지 않게 한 번만 잡는다 (자정을 넘기면 day()가 어긋난다)
-    private let now = Date()
+    /// 테스트 한 건 안에서 기준 시각이 바뀌지 않게 setUp에서 한 번만 잡는다.
+    /// (프로퍼티 초기값은 스위트를 만들 때 평가되어 테스트 시작보다 앞선 시각이 된다)
+    private var now: Date!
 
     override func setUpWithError() throws {
+        now = Date()
         sut = CoreDataManager(inMemory: true)
         sut.resetAllData()
     }
