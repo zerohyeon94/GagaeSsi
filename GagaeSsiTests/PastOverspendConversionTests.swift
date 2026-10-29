@@ -15,6 +15,8 @@ import XCTest
 final class PastOverspendConversionTests: XCTestCase {
     var sut: CoreDataManager!
     private let cal = Calendar.current
+    /// 테스트 한 건 안에서 기준 시각이 바뀌지 않게 한 번만 잡는다 (자정을 넘기면 day()가 어긋난다)
+    private let now = Date()
 
     override func setUpWithError() throws {
         sut = CoreDataManager(inMemory: true)
@@ -25,13 +27,13 @@ final class PastOverspendConversionTests: XCTestCase {
     // MARK: - Helpers
 
     private func day(_ offset: Int) -> Date {
-        cal.startOfDay(for: cal.date(byAdding: .day, value: offset, to: Date())!)
+        cal.startOfDay(for: cal.date(byAdding: .day, value: offset, to: now)!)
     }
 
     /// 테스트 구간(day(-5) ~ day(0))에 급여일이 걸리면 부채가 새 기간 예산으로 흡수돼
     /// 실행일에 따라 단정이 깨진다. 오늘에서 13일 떨어뜨려 겹치지 않게 한다.
     private var safePayday: Int {
-        ((cal.component(.day, from: Date()) + 13 - 1) % 28) + 1
+        ((cal.component(.day, from: now) + 13 - 1) % 28) + 1
     }
 
     private func setup(debtPlanEnabled: Bool = true) {
