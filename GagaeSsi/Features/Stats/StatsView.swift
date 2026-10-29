@@ -10,6 +10,7 @@ import Charts
 
 struct StatsView: View {
     @State private var viewModel = StatsViewModel()
+    @Environment(AppEventBus.self) private var eventBus
 
     var body: some View {
         ZStack {
@@ -36,6 +37,8 @@ struct StatsView: View {
         }
         .navigationBarHidden(true)
         .onAppear { viewModel.load() }
+        // 카테고리 이름·색이 바뀌거나 지워지면 집계를 다시 계산한다
+        .onChange(of: eventBus.categoryChangedTrigger) { viewModel.load() }
     }
 }
 
@@ -556,4 +559,5 @@ private struct DashLine: Shape {
     NavigationStack {
         StatsView()
     }
+    .environment(AppEventBus())
 }
