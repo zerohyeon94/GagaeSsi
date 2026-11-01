@@ -29,14 +29,14 @@ final class PaybackLinkTests: XCTestCase {
                                                        carryOverSources: [], spendingRecords: []))
         }
         XCTAssertTrue(sut.createSpendingRecord(
-            SpendingRecordModel(title: "지출", amount: amount, date: day(offset), category: category)))
+            SpendingRecordModel(title: "지출", amount: amount, date: day(offset), category: .builtIn(category))))
     }
 
     private func periodPayback(category: SpendingCategory?, rate: Int = 0,
                                from: Int = -10, to: Int = 0) -> PaybackModel {
         PaybackModel(title: "K-패스", type: .period, status: .estimated,
                      periodStart: day(from), periodEnd: day(to),
-                     linkedCategory: category, refundRatePercent: rate)
+                     linkedCategory: category.map { .builtIn($0) }, refundRatePercent: rate)
     }
 
     // MARK: - 자동 묶기
@@ -73,7 +73,7 @@ final class PaybackLinkTests: XCTestCase {
     func test_연결형은_묶지_않는다() {
         spend(21_000, -3, .transport)
         let payback = PaybackModel(title: "카드 캐시백", type: .transaction,
-                                   linkedCategory: .transport, refundRatePercent: 20)
+                                   linkedCategory: .builtIn(.transport), refundRatePercent: 20)
 
         XCTAssertFalse(payback.canLinkSpending, "기간이 없으면 묶을 수 없다")
         XCTAssertTrue(sut.linkedSpending(for: payback).isEmpty)
@@ -109,7 +109,7 @@ final class PaybackLinkTests: XCTestCase {
         XCTAssertTrue(sut.createPayback(payback))
 
         let loaded = sut.fetchPaybacks().first { $0.id == payback.id }
-        XCTAssertEqual(loaded?.linkedCategory, .transport)
+        XCTAssertEqual(loaded?.linkedCategory, .builtIn(.transport))
         XCTAssertEqual(loaded?.refundRatePercent, 30)
     }
 

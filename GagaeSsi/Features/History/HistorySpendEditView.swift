@@ -20,7 +20,7 @@ struct HistorySpendEditView: View {
     @State private var title = ""
     @State private var amountText = ""
     @State private var amount = 0
-    @State private var category: SpendingCategory = .other
+    @State private var category: CategoryKey = .other
     @State private var date = Date()
     @State private var hasPayback = false
     @State private var paybackText = ""
@@ -50,7 +50,8 @@ struct HistorySpendEditView: View {
         return wishId == oldTripWallet
     }
     private var draft: SpendingEditDraft {
-        SpendingEditDraft(title: title, amount: amount, category: category, date: date,
+        // 열려 있는 동안 지워진 카테고리면 고아 ID 대신 기타로 저장한다
+        SpendingEditDraft(title: title, amount: amount, category: CategoryCatalog.shared.normalize(category), date: date,
                           tripId: tripId, participants: participants, paidByMe: paidByMe,
                           hasPayback: hasPayback, payback: payback, clearsWallet: clearsWallet)
     }
@@ -82,15 +83,10 @@ struct HistorySpendEditView: View {
                                 .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 7) {
-                                    ForEach(SpendingCategory.allCases, id: \.self) { c in
-                                        Button { category = c } label: {
-                                            Text("\(c.emoji) \(c.rawValue)")
-                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                                .foregroundStyle(category == c ? .white : .gagaeTextSecondary)
-                                                .padding(.horizontal, 12).padding(.vertical, 7)
-                                                .background(category == c ? c.color : Color.gagaeSurface)
-                                                .clipShape(Capsule())
-                                        }.buttonStyle(.plain)
+                                    ForEach(CategoryCatalog.shared.all) { info in
+                                        CategoryChip(info: info, isSelected: category == info.key) {
+                                            category = info.key
+                                        }
                                     }
                                 }
                             }
@@ -214,7 +210,7 @@ struct HistorySpendEditView: View {
         title = record.title
         amount = record.amount
         amountText = FormatterUtils.inputAmountString(from: record.amount)
-        category = record.category
+        category = CategoryCatalog.shared.normalize(record.category)
         date = record.date
         payback = record.expectedPayback
         paybackText = record.expectedPayback > 0 ? FormatterUtils.inputAmountString(from: record.expectedPayback) : ""

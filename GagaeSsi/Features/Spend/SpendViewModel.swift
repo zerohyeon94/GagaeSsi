@@ -21,7 +21,7 @@ final class SpendViewModel {
     var tempAmount: Int = 0
     var tempAmountText: String = ""
     var tempDate: Date = Date()
-    var tempCategory: SpendingCategory = .other
+    var tempCategory: CategoryKey = .other
     /// 환급/페이백 예정 입력
     var tempHasPayback: Bool = false
     var tempExpectedPayback: Int = 0
@@ -155,7 +155,8 @@ final class SpendViewModel {
     /// 추천 항목 적용: 항목명 + 최근 카테고리 (금액은 자동 입력하지 않음)
     func applySuggestion(_ s: SpendingSuggestion) {
         tempTitle = s.title
-        tempCategory = s.category
+        // 지워진 사용자 카테고리면 기타로
+        tempCategory = CategoryCatalog.shared.normalize(s.category)
     }
     
     func updateAmountFromText(_ text: String) {
@@ -179,7 +180,8 @@ final class SpendViewModel {
         // 지갑 연결(tempWishItemId)은 이 드래프트가 다루지 않는다 — 아래에서 저장 후
         // linkSpendingToWish/unlinkSpendingFromWish로 따로 붙인다(여행이 아니라 지갑
         // 피커가 있는 화면은 이쪽뿐이라, "옮겨 붙이는" 동작까지 있어야 한다).
-        let draft = SpendingEditDraft(title: tempTitle, amount: tempAmount, category: tempCategory,
+        let draft = SpendingEditDraft(title: tempTitle, amount: tempAmount,
+                                      category: CategoryCatalog.shared.normalize(tempCategory),
                                       date: tempDate, tripId: tempTripId, participants: tempParticipants,
                                       paidByMe: tempPaidByMe, hasPayback: tempHasPayback,
                                       payback: tempExpectedPayback)
@@ -234,7 +236,7 @@ final class SpendViewModel {
         tempAmount = record.amount
         tempAmountText = FormatterUtils.inputAmountString(from: record.amount)
         tempDate = record.date
-        tempCategory = record.category
+        tempCategory = CategoryCatalog.shared.normalize(record.category)
         tempExpectedPayback = record.expectedPayback
         tempExpectedPaybackText = record.expectedPayback > 0 ? FormatterUtils.inputAmountString(from: record.expectedPayback) : ""
         tempHasPayback = record.expectedPayback > 0

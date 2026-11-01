@@ -25,6 +25,9 @@ final class AppEventBus {
     /// 위시리스트(저금)가 변경되었을 때 트리거
     var wishChangedTrigger: UUID = UUID()
 
+    /// 사용자 카테고리가 추가·수정·삭제되었을 때 트리거
+    var categoryChangedTrigger: UUID = UUID()
+
     // MARK: - Event Methods
     func notifySpendingAdded() {
         spendingAddedTrigger = UUID()
@@ -40,5 +43,9 @@ final class AppEventBus {
 
     func notifyWishChanged() {
         wishChangedTrigger = UUID()
+    }
+
+    func notifyCategoryChanged() {
+        categoryChangedTrigger = UUID()
     }
 }

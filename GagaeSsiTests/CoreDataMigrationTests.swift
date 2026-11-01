@@ -375,4 +375,55 @@ final class CoreDataMigrationTests: XCTestCase {
         XCTAssertNoThrow(try newContext.save())
         try unload(newContainer)
     }
+
+    /// 사용자 카테고리(UserCategory)가 추가된 13으로 올라와도 기존 한글 카테고리 기록·페이백 연결은 그대로여야 한다
+    func test_GagaeSsi12에서_13으로_마이그레이션되고_기존_카테고리는_그대로다() throws {
+        let oldContainer = try container(with: try model(named: "GagaeSsi 12"))
+        let oldContext = oldContainer.viewContext
+
+        let budget = NSEntityDescription.insertNewObject(forEntityName: "DailyBudget", into: oldContext)
+        budget.setValue(NSDecimalNumber(value: 50_000), forKey: "availableAmount")
+        budget.setValue(Date(), forKey: "date")
+
+        let record = NSEntityDescription.insertNewObject(forEntityName: "SpendingRecord", into: oldContext)
+        record.setValue(UUID(), forKey: "id")
+        record.setValue("점심", forKey: "title")
+        record.setValue("식비", forKey: "category")
+        record.setValue(NSDecimalNumber(value: 9_000), forKey: "amount")
+        record.setValue(Date(), forKey: "date")
+        record.setValue(budget, forKey: "dailyBudget")
+
+        let payback = NSEntityDescription.insertNewObject(forEntityName: "Payback", into: oldContext)
+        payback.setValue(UUID(), forKey: "id")
+        payback.setValue("교통 페이백", forKey: "title")
+        payback.setValue("교통", forKey: "linkedCategory")
+
+        try oldContext.save()
+        try unload(oldContainer)
+
+        let newContainer = try container(with: try currentModel())
+        let newContext = newContainer.viewContext
+
+        let records = try newContext.fetch(NSFetchRequest<SpendingRecord>(entityName: "SpendingRecord"))
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0].category, "식비")
+        XCTAssertEqual(SpendingRecordModel(entity: records[0]).category, .builtIn(.food))
+
+        let paybacks = try newContext.fetch(NSFetchRequest<Payback>(entityName: "Payback"))
+        XCTAssertEqual(paybacks.count, 1)
+        XCTAssertEqual(paybacks[0].linkedCategory, "교통")
+        XCTAssertEqual(PaybackModel(entity: paybacks[0]).linkedCategory, .builtIn(.transport))
+
+        // 신규 UserCategory 엔티티는 비어 있고 저장이 가능해야 한다
+        let none = try newContext.fetch(NSFetchRequest<NSManagedObject>(entityName: "UserCategory"))
+        XCTAssertEqual(none.count, 0)
+        let user = NSEntityDescription.insertNewObject(forEntityName: "UserCategory", into: newContext)
+        user.setValue(UUID(), forKey: "id")
+        user.setValue("반려동물", forKey: "name")
+        user.setValue("🐶", forKey: "emoji")
+        user.setValue("rose", forKey: "colorKey")
+        user.setValue(Date(), forKey: "createdAt")
+        XCTAssertNoThrow(try newContext.save())
+        try unload(newContainer)
+    }
 }

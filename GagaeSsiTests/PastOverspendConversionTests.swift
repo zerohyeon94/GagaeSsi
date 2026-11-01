@@ -60,8 +60,12 @@ enum PastOverspendFixture {
 final class PastOverspendConversionTests: XCTestCase {
     var sut: CoreDataManager!
     private let cal = Calendar.current
+    /// 테스트 한 건 안에서 기준 시각이 바뀌지 않게 setUp에서 한 번만 잡는다.
+    /// (프로퍼티 초기값은 스위트를 만들 때 평가되어 테스트 시작보다 앞선 시각이 된다)
+    private var now: Date!
 
     override func setUpWithError() throws {
+        now = Date()
         sut = CoreDataManager(inMemory: true)
         sut.resetAllData()
     }
@@ -70,10 +74,10 @@ final class PastOverspendConversionTests: XCTestCase {
     // MARK: - Helpers
 
     private func day(_ offset: Int) -> Date {
-        PastOverspendFixture.day(offset, from: Date())
+        PastOverspendFixture.day(offset, from: now)
     }
 
-    private var safePayday: Int { PastOverspendFixture.safePayday(today: Date()) }
+    private var safePayday: Int { PastOverspendFixture.safePayday(today: now) }
 
     private func setup(debtPlanEnabled: Bool = true) {
         // 전제: 테스트 구간 전체가 같은 (주말 보정 후) 급여 기간이어야 한다.
@@ -236,7 +240,7 @@ final class PastOverspendConversionTests: XCTestCase {
     // 이전 급여 기간의 초과는 이미 정산됐으므로 뒤늦게 넣어도 빚이 되지 않는다
     func test_이전_급여_기간의_초과는_전환하지_않는다() {
         // 어제를 명목 급여일로 잡되, 경계는 주말 보정 후 실제 기간 시작일로 읽는다
-        let c = PastOverspendFixture.previousPeriodCase(today: Date())
+        let c = PastOverspendFixture.previousPeriodCase(today: now)
         _ = sut.createBudgetConfig(from: BudgetConfigModel(
             salary: 3_000_000, payday: c.payday, fixedCosts: [],
             carryOverMode: .full, debtPlanEnabled: true))

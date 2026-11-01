@@ -8,7 +8,9 @@
 import SwiftUI
 
 struct CategoryDetailView: View {
-    let category: SpendingCategory
+    let category: CategoryKey
+
+    private var info: CategoryInfo { category.info }
     /// 조회할 달 (그 달 1일 기준)
     let month: Date
     /// 그 달 전체 지출 (비중 계산용)
@@ -55,7 +57,7 @@ struct CategoryDetailView: View {
                 .padding(.vertical, GagaeSpacing.md)
             }
         }
-        .navigationTitle("\(category.emoji) \(category.rawValue)")
+        .navigationTitle("\(info.emoji) \(info.name)")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
     }
@@ -70,7 +72,7 @@ struct CategoryDetailView: View {
                         .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
                     Spacer()
                     Text(FormatterUtils.currencyString(from: total))
-                        .font(.gagaeTitle3).foregroundStyle(category.color)
+                        .font(.gagaeTitle3).foregroundStyle(info.color)
                 }
 
                 GagaeDivider()
@@ -107,8 +109,8 @@ struct CategoryDetailView: View {
     private var emptyCard: some View {
         GagaeCard {
             VStack(spacing: GagaeSpacing.sm) {
-                Text(category.emoji).font(.system(size: 32))
-                Text("이 달에는 \(category.rawValue) 지출이 없어요")
+                Text(info.emoji).font(.system(size: 32))
+                Text("이 달에는 \(info.name) 지출이 없어요")
                     .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
             }
             .frame(maxWidth: .infinity)
@@ -167,7 +169,9 @@ struct CategoryDetailView: View {
             ForEach(records) { record in
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(record.title.isEmpty ? CategorySpendingAnalyzer.untitledLabel : record.title)
+                        Text(record.title.isEmpty
+                             ? (info.isBuiltIn ? CategorySpendingAnalyzer.untitledLabel : info.name)
+                             : record.title)
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                             .foregroundStyle(.gagaeText).lineLimit(1)
                         Text(dayLabel(record.date))
@@ -204,9 +208,10 @@ struct CategoryDetailView: View {
         guard let year = comps.year, let monthValue = comps.month else { return }
 
         records = CoreDataManager.shared.fetchSpendingRecords(year: year, month: monthValue)
-            .filter { $0.category == category }
+            .filter { CategoryCatalog.shared.normalize($0.category) == CategoryCatalog.shared.normalize(category) }
             .sorted { $0.date > $1.date }
-        items = CategorySpendingAnalyzer.itemSummaries(from: records)
+        items = CategorySpendingAnalyzer.itemSummaries(from: records,
+                                                       untitledName: info.isBuiltIn ? nil : info.name)
     }
 
     private var monthLabel: String {
@@ -226,6 +231,6 @@ struct CategoryDetailView: View {
 
 #Preview {
     NavigationStack {
-        CategoryDetailView(category: .cafe, month: Date(), monthlyTotal: 500_000)
+        CategoryDetailView(category: .builtIn(.cafe), month: Date(), monthlyTotal: 500_000)
     }
 }

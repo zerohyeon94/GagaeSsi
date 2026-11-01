@@ -462,6 +462,39 @@ enum SpendingCategory: String, CaseIterable, Codable {
     }
 }
 
+/// 사용자 카테고리 색 팔레트 (8색, 흰 글자가 올라가므로 깊은 톤).
+/// 저장은 rawValue 키로 하고 hex는 저장하지 않는다 — 값을 다듬어도 기존 카테고리가 따라온다.
+enum UserCategoryColor: String, CaseIterable, Codable {
+    case rose, mustard, olive, forest, teal, ocean, navy, plum
+
+    var color: Color {
+        switch self {
+        case .rose:    return .adaptive(light: "#C2255C", dark: "#D6336C")
+        case .mustard: return .adaptive(light: "#8A6500", dark: "#946C00")
+        case .olive:   return .adaptive(light: "#5B7A16", dark: "#637F1A")
+        case .forest:  return .adaptive(light: "#2E7D32", dark: "#34843A")
+        case .teal:    return .adaptive(light: "#0F7C78", dark: "#12807C")
+        case .ocean:   return .adaptive(light: "#00739E", dark: "#0A7AA6")
+        case .navy:    return .adaptive(light: "#3A55A0", dark: "#4560AC")
+        case .plum:    return .adaptive(light: "#8E3B8A", dark: "#9C4898")
+        }
+    }
+
+    /// VoiceOver 라벨
+    var label: String {
+        switch self {
+        case .rose: return "장미"
+        case .mustard: return "겨자"
+        case .olive: return "올리브"
+        case .forest: return "숲"
+        case .teal: return "청록"
+        case .ocean: return "바다"
+        case .navy: return "남색"
+        case .plum: return "자두"
+        }
+    }
+}
+
 /// 배경 그라디언트
 struct GagaeBackground: View {
     var body: some View {
