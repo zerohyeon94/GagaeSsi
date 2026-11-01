@@ -32,6 +32,8 @@ struct HistorySpendEditView: View {
     @State private var participants = 1
     @State private var paidByMe = true
     @State private var trips: [TripModel] = []
+    /// 이 화면에서 여행 선택이 인원·결제자를 자동으로 채웠으면 그 값 (#31)
+    @State private var shareAutofill: TripShareAutofill?
 
     private var selectedTrip: TripModel? { trips.first { $0.id == tripId } }
     /// 정산 완료 여행의 소비는 여행·인원·결제자·금액을 못 바꾼다
@@ -230,6 +232,7 @@ struct HistorySpendEditView: View {
         trips = CoreDataManager.shared.fetchSelectableTrips(on: date, keeping: record.tripId)
         if let id = tripId, id != record.tripId, !trips.contains(where: { $0.id == id }) {
             tripId = nil
+            revertAutofilledShare()
         }
     }
 
@@ -241,14 +244,23 @@ struct HistorySpendEditView: View {
     /// 호출되므로 그 문제 자체가 없다.
     private func selectTrip(_ newValue: UUID?) {
         tripId = newValue
-        // 여행을 고르면 인원 기본값과 결제자를 채운다. "여행 아님"으로 풀 때는
-        // participants/paidByMe를 건드리지 않는다 — 여행이 지워져(deleteTrip) 이미
-        // 분담 상태였던 기록을 여기서 1/true로 되돌리면, 화면엔 안 보이던 값이 저장 때
-        // 조용히 바뀐다. 분담 블록이 그 값을 그대로 보여주므로 사용자가 직접 고칠 수 있다.
+        // 여행을 고르면 인원 기본값과 결제자를 채운다. "여행 아님"으로 풀 때는 이 화면에서
+        // 여행 선택이 채운 값 그대로일 때만 1/true로 되돌린다(#31) — 기록에서 불러온 분담값
+        // (예: 여행이 지워진 분담 기록)이나 사용자가 손댄 값은 그대로 둔다.
         if let t = trips.first(where: { $0.id == newValue }) {
             participants = max(1, t.defaultParticipants)
             paidByMe = true
+            shareAutofill = TripShareAutofill(participants: participants, paidByMe: paidByMe)
+        } else {
+            revertAutofilledShare()
         }
+    }
+
+    private func revertAutofilledShare() {
+        if let fill = shareAutofill {
+            (participants, paidByMe) = fill.released(participants: participants, paidByMe: paidByMe)
+        }
+        shareAutofill = nil
     }
 
     private func save() {

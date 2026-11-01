@@ -138,3 +138,85 @@ final class TripSelectionTests: XCTestCase {
         XCTAssertEqual(vm.tempTripId, trip.id, "원래 묶인 여행은 날짜를 옮겼다고 조용히 풀지 않는다")
     }
 }
+
+// MARK: - '여행 아님'으로 되돌릴 때 분담값 (#31)
+
+extension TripSelectionTests {
+    func test_새_소비에서_여행을_골랐다_풀면_개인_소비로_돌아간다() {
+        let trip = makeTrip("지금 여행", from: -1, to: 1, participants: 4)
+        let vm = SpendViewModel(manager: sut)
+        vm.loadActiveTrips()
+        vm.selectTrip(trip.id)
+        XCTAssertEqual(vm.tempParticipants, 4)
+
+        vm.selectTrip(nil)
+        XCTAssertEqual(vm.tempParticipants, 1, "그대로 저장하면 평소 소비의 내 몫이 1/4로 잡힌다")
+        XCTAssertTrue(vm.tempPaidByMe)
+    }
+
+    func test_인원을_직접_바꾼_뒤_여행을_풀면_그_값을_유지한다() {
+        let trip = makeTrip("지금 여행", from: -1, to: 1, participants: 4)
+        let vm = SpendViewModel(manager: sut)
+        vm.loadActiveTrips()
+        vm.selectTrip(trip.id)
+        vm.tempParticipants = 3   // 사용자가 직접 넣은 값
+
+        vm.selectTrip(nil)
+        XCTAssertEqual(vm.tempParticipants, 3)
+    }
+
+    func test_결제자를_직접_바꾼_뒤_여행을_풀면_그_값을_유지한다() {
+        let trip = makeTrip("지금 여행", from: -1, to: 1, participants: 4)
+        let vm = SpendViewModel(manager: sut)
+        vm.loadActiveTrips()
+        vm.selectTrip(trip.id)
+        vm.tempPaidByMe = false
+
+        vm.selectTrip(nil)
+        XCTAssertEqual(vm.tempParticipants, 4)
+        XCTAssertFalse(vm.tempPaidByMe)
+    }
+
+    func test_날짜를_옮겨_여행이_풀려도_자동으로_채운_인원은_돌아간다() {
+        _ = makeTrip("지금 여행", from: -1, to: 1, participants: 4)
+        let vm = SpendViewModel(manager: sut)
+        vm.loadActiveTrips()
+        XCTAssertEqual(vm.tempParticipants, 4, "기간 안이라 자동 선택되며 인원이 채워진다")
+
+        vm.tempDate = day(-5)
+        vm.loadActiveTrips()
+        XCTAssertNil(vm.tempTripId)
+        XCTAssertEqual(vm.tempParticipants, 1)
+    }
+
+    func test_여행이_삭제된_분담_기록을_편집하다_여행_아님을_눌러도_분담은_유지된다() {
+        let record = SpendingRecordModel(title: "저녁", amount: 80_000, date: day(0),
+                                         tripId: nil, participants: 4, paidByMe: true)
+        XCTAssertTrue(sut.createSpendingRecord(record))
+
+        let vm = SpendViewModel(manager: sut)
+        vm.beginEdit(record)
+        vm.selectTrip(nil)
+        XCTAssertEqual(vm.tempParticipants, 4)
+    }
+
+    func test_여행에_묶인_기록을_편집하다_여행_아님을_눌러도_불러온_분담은_유지된다() {
+        let trip = makeTrip("지금 여행", from: -1, to: 1, participants: 4)
+        let record = SpendingRecordModel(title: "숙소", amount: 80_000, date: day(0),
+                                         tripId: trip.id, participants: 4, paidByMe: true)
+        XCTAssertTrue(sut.createSpendingRecord(record))
+
+        let vm = SpendViewModel(manager: sut)
+        vm.beginEdit(record)
+        vm.selectTrip(nil)
+        XCTAssertNil(vm.tempTripId)
+        XCTAssertEqual(vm.tempParticipants, 4, "기록에서 불러온 값은 사용자 소유 — 분담 블록이 그대로 보여준다")
+    }
+
+    func test_자동_채움_값_판정() {
+        let fill = TripShareAutofill(participants: 4, paidByMe: true)
+        XCTAssertTrue(fill.released(participants: 4, paidByMe: true) == (1, true))
+        XCTAssertTrue(fill.released(participants: 3, paidByMe: true) == (3, true))
+        XCTAssertTrue(fill.released(participants: 4, paidByMe: false) == (4, false))
+    }
+}

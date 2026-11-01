@@ -97,6 +97,25 @@ struct TripModel: Identifiable, Equatable {
     }
 }
 
+// MARK: - 여행 선택이 채운 분담값
+
+/// 여행을 골라 인원·결제자를 **자동으로** 채웠을 때 그 값을 기억한다 (#31).
+///
+/// "여행 아님"으로 풀 때 되돌릴지를 가르는 기준이다. 이 화면에서 여행 선택이 채운 값이면 되돌리고,
+/// 사용자가 손댔거나 기록에서 불러온 값(예: 여행이 지워진 분담 기록)이면 그대로 둔다 —
+/// 후자를 1/true로 되돌리면 화면엔 안 보이던 값이 저장 때 조용히 바뀐다.
+/// (`walletManuallyPicked`가 지갑에 하는 것과 같은 방식)
+struct TripShareAutofill: Equatable {
+    let participants: Int
+    let paidByMe: Bool
+
+    /// 여행을 풀 때 쓸 분담값. 자동으로 채운 값 그대로면 개인 소비(1명·내가 냄)로, 손댔으면 지금 값 그대로.
+    func released(participants: Int, paidByMe: Bool) -> (participants: Int, paidByMe: Bool) {
+        guard participants == self.participants, paidByMe == self.paidByMe else { return (participants, paidByMe) }
+        return (1, true)
+    }
+}
+
 // MARK: - 정산 집계 (순수 계산)
 
 /// 여행에 묶인 소비들을 한 번에 집계한다. 정산 화면·목록 요약이 이 값을 그대로 보여준다.
