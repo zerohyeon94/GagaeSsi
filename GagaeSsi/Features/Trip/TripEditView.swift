@@ -24,11 +24,17 @@ struct TripEditView: View {
     @State private var participants = 2
     @State private var wishItemId: UUID?
     @State private var wallets: [WishItemModel] = []
+    /// 편집 중인 여행에 묶인 소비 날짜 — 기간을 바꿨을 때 밖으로 밀려나는 건수를 알린다 (#32)
+    @State private var recordDates: [Date] = []
     @State private var errorMessage: String?
     @FocusState private var focused: Bool
 
     private var isValid: Bool { !title.isEmpty && endDate >= startDate && participants >= 1 }
     private var selectedWallet: WishItemModel? { wallets.first { $0.id == wishItemId } }
+    /// 지금 고른 기간 밖이 되는 묶인 소비 건수. 연결은 자동으로 풀지 않는다 — 정산 금액이 조용히 바뀌기 때문
+    private var outsideCount: Int {
+        TripModel(title: title, startDate: startDate, endDate: endDate).outsidePeriodCount(of: recordDates)
+    }
 
     var body: some View {
         NavigationStack {
@@ -53,6 +59,11 @@ struct TripEditView: View {
                                 }
                             DatePicker("종료일", selection: $endDate, in: startDate..., displayedComponents: .date)
                                 .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary).tint(.gagaePinkDark)
+                            if outsideCount > 0 {
+                                Text("묶인 소비 \(outsideCount)건이 이 기간 밖이에요. 여행에는 그대로 묶여 있어요 — 빼려면 그 소비를 열어 '여행 아님'을 골라주세요.")
+                                    .font(.gagaeCaption).foregroundStyle(.gagaeWarning)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
 
                             HStack {
                                 Label("인원", systemImage: "person.2.fill")
@@ -123,6 +134,7 @@ struct TripEditView: View {
             endDate = t.endDate
             participants = t.defaultParticipants
             wishItemId = t.wishItemId
+            recordDates = CoreDataManager.shared.fetchSpendingRecords(tripId: t.id).map(\.date)
             // 연결된 지갑은 잔액이 0이 됐어도 후보로 남겨야 한다
             if let id = t.wishItemId, !list.contains(where: { $0.id == id }),
                let linked = CoreDataManager.shared.fetchWishItems().first(where: { $0.id == id }) {

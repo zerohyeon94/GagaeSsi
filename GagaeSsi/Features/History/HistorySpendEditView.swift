@@ -294,6 +294,9 @@ extension HistorySpendEditView {
             }
             .pickerStyle(.menu).tint(.gagaePinkDark)
             .disabled(isTripLocked)
+            // 여기서는 고르기만 한다 — 기간·기본 인원은 여행 화면에서 고친다 (#32)
+            Text(TripModel.editHint)
+                .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
         }
     }
 
@@ -302,7 +305,7 @@ extension HistorySpendEditView {
     private var tripShareFields: some View {
         VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
             HStack {
-                Text("나누는 인원")
+                Text("이 소비를 나누는 인원")
                     .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
                 Spacer()
                 // 999명까지 허용한다 — 범위를 좁히면 999명짜리 여행에서 온 값을 조정할 수 없다.
@@ -312,6 +315,10 @@ extension HistorySpendEditView {
                 }
                 .fixedSize()
                 .disabled(isTripLocked)
+            }
+
+            if let note = selectedTrip?.shareOverrideNote(participants: participants) {
+                Text(note).font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
             }
 
             if participants > 1 {

@@ -48,6 +48,23 @@ struct TripModel: Identifiable, Equatable {
         !isSettled && calendar.startOfDay(for: endDate) < calendar.startOfDay(for: today)
     }
 
+    /// 소비 입력 화면은 여행을 고르기만 한다 — 기간·기본 인원·지갑은 여행 화면에서만 고친다 (#32)
+    static let editHint = "여행 기간·기본 인원은 설정 › 여행에서 고쳐요"
+
+    /// 이 소비 한 건의 인원이 여행 기본 인원과 다르면 그 차이를 한 줄로. 같으면 nil.
+    /// 소비 입력에서 바꾼 인원이 여행 자체를 고친 것처럼 읽히지 않게 한다 (#32).
+    func shareOverrideNote(participants: Int) -> String? {
+        guard participants != defaultParticipants else { return nil }
+        let mine = participants == 1 ? "이 소비는 나 혼자 쓴 거예요" : "이 소비만 \(participants)명이에요"
+        return "\(mine) · 여행 기본 인원은 \(defaultParticipants)명"
+    }
+
+    /// 묶인 소비 중 여행 기간 밖 날짜의 건수. 기간을 줄여도 연결은 자동으로 풀지 않으므로
+    /// (정산 금액이 조용히 바뀐다) 여행 수정·상세에서 눈에 띄게 알리는 데 쓴다 (#32).
+    func outsidePeriodCount(of dates: [Date], calendar: Calendar = .current) -> Int {
+        dates.filter { !contains($0, calendar: calendar) }.count
+    }
+
     /// 소비 날짜에 고를 수 있는 여행.
     ///
     /// 기준은 '오늘'이 아니라 **소비 날짜**다 — 여행 다녀와서 며칠 뒤 영수증을 입력해도 그 여행이 떠야 한다.

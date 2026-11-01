@@ -220,3 +220,31 @@ extension TripSelectionTests {
         XCTAssertTrue(fill.released(participants: 4, paidByMe: false) == (4, false))
     }
 }
+
+// MARK: - 소비 입력은 고르기만, 여행은 여행 화면에서 (#32)
+
+extension TripSelectionTests {
+    func test_이_소비의_인원이_여행_기본과_다를_때만_안내한다() {
+        let trip = TripModel(title: "제주", startDate: day(0), endDate: day(2), defaultParticipants: 4)
+        XCTAssertNil(trip.shareOverrideNote(participants: 4))
+        XCTAssertEqual(trip.shareOverrideNote(participants: 3), "이 소비만 3명이에요 · 여행 기본 인원은 4명")
+        XCTAssertEqual(trip.shareOverrideNote(participants: 1), "이 소비는 나 혼자 쓴 거예요 · 여행 기본 인원은 4명")
+    }
+
+    func test_기간을_줄이면_밖으로_밀려난_소비를_세지만_연결은_유지한다() {
+        let trip = makeTrip("제주", from: -4, to: 0)
+        for offset in [-4, -1] {
+            makeDay(offset)
+            XCTAssertTrue(sut.createSpendingRecord(SpendingRecordModel(
+                title: "소비", amount: 10_000, date: day(offset), tripId: trip.id, participants: 4, paidByMe: true)))
+        }
+
+        XCTAssertTrue(sut.updateTrip(id: trip.id, title: trip.title, startDate: day(-2), endDate: day(0),
+                                     defaultParticipants: 4, wishItemId: nil))
+        let shrunk = sut.fetchTrip(id: trip.id)!
+        let records = sut.fetchSpendingRecords(tripId: trip.id)
+
+        XCTAssertEqual(records.count, 2, "기간을 줄였다고 연결을 자동으로 풀면 정산 금액이 조용히 바뀐다")
+        XCTAssertEqual(shrunk.outsidePeriodCount(of: records.map(\.date)), 1)
+    }
+}
