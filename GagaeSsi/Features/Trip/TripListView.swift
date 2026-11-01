@@ -13,7 +13,10 @@ struct TripListView: View {
     @State private var summaries: [UUID: TripSettlementModel] = [:]
     @State private var showAdd = false
 
-    private var active: [TripModel] { trips.filter { !$0.isSettled } }
+    /// 기간 중이거나 아직 시작 전인 여행
+    private var active: [TripModel] { trips.filter { !$0.isSettled && !$0.isAwaitingSettlement() } }
+    /// 기간은 끝났는데 아직 정산하지 않은 여행 — 진행 중과 섞이지 않게 따로 묶는다 (#30)
+    private var awaiting: [TripModel] { trips.filter { $0.isAwaitingSettlement() } }
     private var settled: [TripModel] { trips.filter { $0.isSettled } }
 
     var body: some View {
@@ -29,6 +32,7 @@ struct TripListView: View {
                         }
                     } else {
                         section("진행 중", active)
+                        section("정산 대기", awaiting)
                         section("정산 완료", settled)
                     }
                 }

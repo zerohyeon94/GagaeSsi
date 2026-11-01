@@ -36,10 +36,28 @@ struct TripModel: Identifiable, Equatable {
 
     var isSettled: Bool { status == .settled }
 
-    /// 소비 날짜가 여행 기간(시작일·종료일 포함) 안인지. 자동 선택 판단에만 쓴다 — 기간 밖 소비도 묶을 수 있다.
+    /// 소비 날짜가 여행 기간(시작일·종료일 포함) 안인지. 소비 입력의 여행 목록과 자동 선택이 이 판정을 쓴다.
+    /// 이미 묶인 소비는 기간 밖이어도 연결을 유지한다 — 여행 기간을 줄여도 자동으로 풀지 않는다(#32).
     func contains(_ date: Date, calendar: Calendar = .current) -> Bool {
         let day = calendar.startOfDay(for: date)
         return calendar.startOfDay(for: startDate) <= day && day <= calendar.startOfDay(for: endDate)
+    }
+
+    /// 기간이 끝났는데 아직 정산하지 않은 여행 — 여행 목록에서 '정산 대기'로 따로 묶는다
+    func isAwaitingSettlement(asOf today: Date = Date(), calendar: Calendar = .current) -> Bool {
+        !isSettled && calendar.startOfDay(for: endDate) < calendar.startOfDay(for: today)
+    }
+
+    /// 소비 날짜에 고를 수 있는 여행.
+    ///
+    /// 기준은 '오늘'이 아니라 **소비 날짜**다 — 여행 다녀와서 며칠 뒤 영수증을 입력해도 그 여행이 떠야 한다.
+    /// - 정산 안 했고 소비 날짜가 기간 안인 여행
+    /// - 편집 중인 기록이 원래 묶여 있던 여행(`linkedId`)은 기간·정산과 무관하게 남긴다 (정산 완료면 잠긴 채로)
+    static func selectable(from trips: [TripModel], on date: Date, keeping linkedId: UUID?,
+                           calendar: Calendar = .current) -> [TripModel] {
+        trips.filter { trip in
+            trip.id == linkedId || (!trip.isSettled && trip.contains(date, calendar: calendar))
+        }
     }
 
     init(id: UUID = UUID(), title: String, startDate: Date, endDate: Date,

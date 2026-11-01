@@ -69,7 +69,8 @@ struct SpendView: View {
             viewModel.loadSpendableWishes()
             viewModel.loadActiveTrips()
         }
-        .onChange(of: viewModel.tempDate) { _, _ in viewModel.autoSelectTrip() }
+        // 여행 목록은 소비 날짜로 거르므로 날짜가 바뀌면 다시 불러온다 (끝에서 자동 선택도 다시 판정)
+        .onChange(of: viewModel.tempDate) { _, _ in viewModel.loadActiveTrips() }
         .onChange(of: viewModel.tempParticipants) { _, _ in viewModel.revalidateAutoWallet() }
         .onChange(of: viewModel.tempPaidByMe) { _, _ in viewModel.revalidateAutoWallet() }
         .alert("오류", isPresented: $viewModel.showErrorAlert) {

@@ -2329,9 +2329,14 @@ final class CoreDataManager {
         return models.filter { !$0.isSettled } + models.filter { $0.isSettled }
     }
 
-    /// 소비 입력에서 고를 수 있는 여행들 (정산 완료는 제외)
+    /// 정산하지 않은 여행들 (기간과 무관). 소비 입력 목록은 `fetchSelectableTrips(on:keeping:)`을 쓴다.
     func fetchActiveTrips() -> [TripModel] {
         fetchTrips().filter { !$0.isSettled }
+    }
+
+    /// 소비 입력·내역 편집에서 고를 수 있는 여행 — 규칙은 `TripModel.selectable`
+    func fetchSelectableTrips(on date: Date, keeping linkedId: UUID? = nil) -> [TripModel] {
+        TripModel.selectable(from: fetchTrips(), on: date, keeping: linkedId)
     }
 
     func fetchTrip(id: UUID) -> TripModel? {

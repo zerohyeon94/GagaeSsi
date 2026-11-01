@@ -127,7 +127,7 @@ struct HistorySpendEditView: View {
                             DatePicker("날짜", selection: $date, displayedComponents: .date)
                                 .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary).tint(.gagaePinkDark)
 
-                            // 여행 (진행 중 여행이 있거나 이미 묶여 있을 때만)
+                            // 여행 (소비 날짜에 걸린 여행이 있거나 이미 묶여 있을 때만)
                             if !trips.isEmpty {
                                 tripField
                             }
@@ -201,6 +201,8 @@ struct HistorySpendEditView: View {
                 ToolbarItem(placement: .topBarLeading) { Button("취소") { dismiss() }.foregroundStyle(.gagaePinkDark) }
             }
             .onAppear { loadRecord() }
+            // 여행 목록은 소비 날짜로 거른다 — `loadRecord()`의 대입으로 한 번 더 불려도 결과가 같다
+            .onChange(of: date) { _, _ in loadTrips() }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -219,13 +221,16 @@ struct HistorySpendEditView: View {
         tripId = record.tripId
         participants = record.participants
         paidByMe = record.paidByMe
-        var active = CoreDataManager.shared.fetchActiveTrips()
-        // 편집 중인 기록이 정산 완료 여행에 묶여 있으면 그 여행도 보여야 한다 (잠긴 채로)
-        if let id = record.tripId, !active.contains(where: { $0.id == id }),
-           let linked = CoreDataManager.shared.fetchTrip(id: id) {
-            active.append(linked)
+        loadTrips()
+    }
+
+    /// 고를 수 있는 여행 — 소비 날짜가 기간 안인 진행 중 여행 + 이 기록이 원래 묶인 여행(정산 완료면 잠긴 채로).
+    /// 날짜를 옮겨 이 화면에서 고른 여행이 목록에서 빠지면 선택도 푼다 (#30).
+    private func loadTrips() {
+        trips = CoreDataManager.shared.fetchSelectableTrips(on: date, keeping: record.tripId)
+        if let id = tripId, id != record.tripId, !trips.contains(where: { $0.id == id }) {
+            tripId = nil
         }
-        trips = active
     }
 
     /// 여행을 고르거나(id) 푼다(nil). 피커의 selection Binding에서만 호출된다(아래 `tripField`) —
