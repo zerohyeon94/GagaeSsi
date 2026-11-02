@@ -69,7 +69,8 @@ struct SpendView: View {
             viewModel.loadSpendableWishes()
             viewModel.loadActiveTrips()
         }
-        .onChange(of: viewModel.tempDate) { _, _ in viewModel.autoSelectTrip() }
+        // 여행 목록은 소비 날짜로 거르므로 날짜가 바뀌면 다시 불러온다 (끝에서 자동 선택도 다시 판정)
+        .onChange(of: viewModel.tempDate) { _, _ in viewModel.loadActiveTrips() }
         .onChange(of: viewModel.tempParticipants) { _, _ in viewModel.revalidateAutoWallet() }
         .onChange(of: viewModel.tempPaidByMe) { _, _ in viewModel.revalidateAutoWallet() }
         .alert("오류", isPresented: $viewModel.showErrorAlert) {
@@ -406,6 +407,11 @@ extension SpendView {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.gagaeDivider, lineWidth: 1.5)
             )
+
+            // 여기서는 고르기만 한다 — 기간·기본 인원은 읽기 전용 정보다 (#32)
+            Text(TripModel.editHint)
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(.gagaeTextTertiary)
         }
     }
 
@@ -416,7 +422,7 @@ extension SpendView {
     private var tripShareFields: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("나누는 인원")
+                Text("이 소비를 나누는 인원")
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(.gagaeText)
                 Spacer()
@@ -429,6 +435,12 @@ extension SpendView {
                 }
                 .fixedSize()
                 .disabled(viewModel.isTripLocked)
+            }
+
+            if let note = viewModel.selectedTrip?.shareOverrideNote(participants: viewModel.tempParticipants) {
+                Text(note)
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
             }
 
             if viewModel.tempParticipants > 1 {

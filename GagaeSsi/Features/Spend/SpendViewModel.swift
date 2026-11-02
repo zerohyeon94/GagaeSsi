@@ -56,12 +56,16 @@ final class SpendViewModel {
     var tempParticipants: Int = 1
     /// 내가 냈는지
     var tempPaidByMe: Bool = true
-    /// 고를 수 있는 여행들 — 진행 중 + (편집 중이면) 그 기록이 묶인 정산 완료 여행
+    /// 고를 수 있는 여행들 — 소비 날짜가 기간 안인 진행 중 여행 + (편집 중이면) 그 기록이 원래 묶인 여행
     var activeTrips: [TripModel] = []
+    /// 편집 중인 기록이 원래 묶여 있던 여행. 기간·정산과 무관하게 목록에 남긴다
+    private var editingTripId: UUID?
     /// 사용자가 "여행 아님"을 직접 골랐으면 날짜를 바꿔도 다시 자동 선택하지 않는다
     private var tripAutoSelectDismissed = false
     /// 사용자가 지갑을 직접 골랐으면 자동 선택이 더는 손대지 않는다
     private var walletManuallyPicked = false
+    /// 여행 선택이 인원·결제자를 자동으로 채웠으면 그 값. "여행 아님"으로 풀 때 되돌릴지 판단한다 (#31)
+    private var shareAutofill: TripShareAutofill?
 
     var selectedTrip: TripModel? {
         activeTrips.first { $0.id == tempTripId }
@@ -243,8 +247,11 @@ final class SpendViewModel {
         editingPaybackReceived = record.paybackReceived
         tempWishItemId = record.wishItemId
         tempTripId = record.tripId
+        editingTripId = record.tripId
         tempParticipants = record.participants
         tempPaidByMe = record.paidByMe
+        // 기록에서 불러온 분담값은 사용자 소유다 — 여행을 풀어도 되돌리지 않는다
+        shareAutofill = nil
         // 저장돼 있던 지갑은 사용자 소유다 — 자동 선택 로직이 "아무도 안 골랐다"고 착각해
         // 편집 중 다른 여행을 고르는 순간 이 지갑을 가로채거나, "여행 아님"으로 되돌아갈 때
         // 조용히 풀어버리면 안 된다.
@@ -264,15 +271,16 @@ final class SpendViewModel {
         spendableWishes = wishes
     }
 
-    /// 고를 수 있는 여행을 불러온다 (화면 진입·편집 시작·저장 후)
+    /// 고를 수 있는 여행을 불러온다 (화면 진입·편집 시작·저장 후·소비 날짜 변경)
+    ///
+    /// 목록은 소비 날짜(`tempDate`)로 거른다 — 기간이 끝난 여행이 평소 소비 입력에 계속 뜨지 않게(#30).
+    /// 날짜를 옮겨 이 화면에서 고른 여행이 목록에서 빠지면 선택도 푼다 — 화면에 없는 여행에
+    /// 묶인 채 저장되면 안 된다. 편집 중인 기록이 원래 묶여 있던 여행은 목록에 남으므로 풀리지 않는다.
     func loadActiveTrips() {
-        var trips = manager.fetchActiveTrips()
-        // 편집 중인 기록이 정산 완료 여행에 묶여 있으면 그 여행도 보여야 한다 (잠긴 채로)
-        if let id = tempTripId, !trips.contains(where: { $0.id == id }),
-           let linked = manager.fetchTrip(id: id) {
-            trips.append(linked)
+        activeTrips = manager.fetchSelectableTrips(on: tempDate, keeping: editingTripId)
+        if let id = tempTripId, id != editingTripId, !activeTrips.contains(where: { $0.id == id }) {
+            releaseTrip()
         }
-        activeTrips = trips
         autoSelectTrip()
     }
 
@@ -288,10 +296,10 @@ final class SpendViewModel {
     /// id가 `activeTrips`에 없으면 손대지 않고 돌아간다 — 검증 없이 커밋하면 `tempTripId`가
     /// 화면에 나오지도 않는 여행을 가리킨 채로 저장될 수 있다.
     ///
-    /// "여행 아님"으로 풀 때 `tempParticipants`/`tempPaidByMe`는 일부러 그대로 둔다. 편집 중인
-    /// 기록이 이미 분담(participants > 1) 상태였다면 — 예: 여행이 지워졌지만 분담은 남은 기록 —
-    /// 여기서 1/true로 되돌리면 화면엔 안 보이던 값이 저장 때 조용히 바뀐다. 대신 (이제 여행과
-    /// 무관하게 뜨는) 분담 블록이 현재 값을 그대로 보여주므로 사용자가 직접 확인하고 고칠 수 있다.
+    /// "여행 아님"으로 풀 때 인원·결제자는 **이 화면에서 여행 선택이 채운 값 그대로일 때만**
+    /// 1명·내가 냄으로 되돌린다(#31). 사용자가 손댔거나 기록에서 불러온 값 — 예: 여행이 지워졌지만
+    /// 분담은 남은 기록 — 은 그대로 둔다. 1/true로 되돌리면 화면엔 안 보이던 값이 저장 때 조용히
+    /// 바뀐다. 남은 분담 값은 (여행과 무관하게 뜨는) 분담 블록이 그대로 보여준다.
     func selectTrip(_ id: UUID?) {
         guard id == nil || activeTrips.contains(where: { $0.id == id }) else { return }
         // 여행이 바뀌면 자동으로 골라뒀던 지갑은 놓아준다 — 다른 여행의 지갑에서 돈이 나가면 안 된다
@@ -300,10 +308,28 @@ final class SpendViewModel {
         if let trip = activeTrips.first(where: { $0.id == id }) {
             tempParticipants = max(1, trip.defaultParticipants)
             tempPaidByMe = true
+            shareAutofill = TripShareAutofill(participants: tempParticipants, paidByMe: tempPaidByMe)
             autoSelectWallet(for: trip)
         } else {
+            revertAutofilledShare()
             tripAutoSelectDismissed = true
         }
+    }
+
+    /// 여행 선택이 채운 인원·결제자를 손대지 않았으면 개인 소비로 되돌린다
+    private func revertAutofilledShare() {
+        if let fill = shareAutofill {
+            (tempParticipants, tempPaidByMe) = fill.released(participants: tempParticipants, paidByMe: tempPaidByMe)
+        }
+        shareAutofill = nil
+    }
+
+    /// 날짜를 옮겨 고른 여행이 목록에서 빠졌을 때 선택을 푼다. 사용자가 "여행 아님"을 고른 게
+    /// 아니므로 `tripAutoSelectDismissed`는 건드리지 않는다 — 날짜를 다시 기간 안으로 돌리면 다시 골라준다.
+    private func releaseTrip() {
+        if !walletManuallyPicked { tempWishItemId = nil }
+        tempTripId = nil
+        revertAutofilledShare()
     }
 
     /// 사용자가 지갑을 직접 고름 — 이후 자동 선택이 손대지 않는다
@@ -389,7 +415,9 @@ final class SpendViewModel {
         tempPaidByMe = true
         tripAutoSelectDismissed = false
         walletManuallyPicked = false
+        shareAutofill = nil
         editingRecordId = nil
+        editingTripId = nil
         model = SpendingRecordModel(id: UUID(), title: "", amount: 0, date: Date())
         // `loadActiveTrips()`가 끝에서 `autoSelectTrip()`을 부르므로 따로 또 부르지 않는다.
         // 저장/취소 직후 정산 완료된(또는 막 정산된) 여행을 목록에서 걷어내는 게 이 호출의 핵심 —

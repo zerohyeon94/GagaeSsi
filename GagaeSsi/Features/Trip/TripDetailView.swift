@@ -220,8 +220,15 @@ struct TripDetailView: View {
                 ForEach(groupedByDay, id: \.day) { group in
                     GagaeCard {
                         VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
-                            Text(FormatterUtils.formattedDate(group.day))
-                                .font(.gagaeCaptionMedium).foregroundStyle(.gagaeTextSecondary)
+                            HStack(spacing: 4) {
+                                Text(FormatterUtils.formattedDate(group.day))
+                                    .font(.gagaeCaptionMedium).foregroundStyle(.gagaeTextSecondary)
+                                // 기간을 줄여도 연결은 풀지 않는다 — 대신 여기서 눈에 띄게 알린다 (#32)
+                                if !trip.contains(group.day) {
+                                    Text("· 여행 기간 밖")
+                                        .font(.gagaeCaptionMedium).foregroundStyle(.gagaeWarning)
+                                }
+                            }
                             ForEach(group.records) { r in
                                 recordRow(r, locked: trip.isSettled)
                                 if r.id != group.records.last?.id { GagaeDivider() }
