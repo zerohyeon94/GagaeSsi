@@ -22,7 +22,7 @@ final class SpendingTitleCleanupTests: XCTestCase {
         cal.startOfDay(for: cal.date(byAdding: .day, value: o, to: Date())!)
     }
     private func record(_ title: String, _ amount: Int, _ offset: Int) -> SpendingRecordModel {
-        SpendingRecordModel(title: title, amount: amount, date: day(offset), category: .cafe)
+        SpendingRecordModel(title: title, amount: amount, date: day(offset), category: .builtIn(.cafe))
     }
 
     // MARK: - looseKey
@@ -164,7 +164,7 @@ final class SpendingTitleCleanupTests: XCTestCase {
                                                    carryOverSources: [], spendingRecords: []))
         for title in titles {
             XCTAssertTrue(sut.createSpendingRecord(
-                SpendingRecordModel(title: title, amount: 5_000, date: day(0), category: .cafe)))
+                SpendingRecordModel(title: title, amount: 5_000, date: day(0), category: .builtIn(.cafe))))
         }
     }
 

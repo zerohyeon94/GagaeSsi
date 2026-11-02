@@ -57,7 +57,8 @@ xcodebuild test -project GagaeSsi.xcodeproj -scheme GagaeSsiTests \
 
 ### 디자인 시스템
 
-- `Common/DesignSystem.swift`에 색상 팔레트(`gagaePink` 등 돼지 테마), 타이포그래피, 공용 컴포넌트가 정의되어 있다. 하드코딩 대신 이 토큰을 사용한다.
+- `Common/DesignSystem.swift`에 색상 팔레트(`gagaePink` 등 돼지 테마), 타이포그래피, 공용 컴포넌트가 정의되어 있다. 하드코딩 대신 이 토큰을 사용한다. 토큰 표는 `docs/디자인/6-brand-style-guide.md`.
+- 폰트는 SF Pro Rounded(`Font.system(design: .rounded)`)로 확정 (2026-11-02, #25). 커스텀 폰트는 번들에 넣지 않는다.
 - **라이트/다크 모두 지원** (2026-08-08): 색상 토큰은 `Color.adaptive(light:dark:)`로 정의되어 `UIColor` 동적 제공자를 통해 시스템 트레잇을 따라간다. 새 색을 추가할 땐 반드시 이 헬퍼를 쓰고, 뷰에 hex를 직접 박지 않는다.
   - 테마는 `BudgetConfig.themeMode`(기기 설정/밝게/어둡게)로 사용자가 고르며 `RootView`의 `.preferredColorScheme`에 반영된다.
   - 예전에 라이트로 고정했던 이유(다크에서 TextField 글자가 안 보임)는 배경 토큰이 다크 값을 갖게 되면서 해소됐다.

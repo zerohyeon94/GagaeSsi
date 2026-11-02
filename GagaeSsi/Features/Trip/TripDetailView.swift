@@ -220,8 +220,15 @@ struct TripDetailView: View {
                 ForEach(groupedByDay, id: \.day) { group in
                     GagaeCard {
                         VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
-                            Text(FormatterUtils.formattedDate(group.day))
-                                .font(.gagaeCaptionMedium).foregroundStyle(.gagaeTextSecondary)
+                            HStack(spacing: 4) {
+                                Text(FormatterUtils.formattedDate(group.day))
+                                    .font(.gagaeCaptionMedium).foregroundStyle(.gagaeTextSecondary)
+                                // 기간을 줄여도 연결은 풀지 않는다 — 대신 여기서 눈에 띄게 알린다 (#32)
+                                if !trip.contains(group.day) {
+                                    Text("· 여행 기간 밖")
+                                        .font(.gagaeCaptionMedium).foregroundStyle(.gagaeWarning)
+                                }
+                            }
                             ForEach(group.records) { r in
                                 recordRow(r, locked: trip.isSettled)
                                 if r.id != group.records.last?.id { GagaeDivider() }
@@ -241,11 +248,11 @@ struct TripDetailView: View {
     private func recordRow(_ r: SpendingRecordModel, locked: Bool) -> some View {
         HStack(spacing: 10) {
             ZStack {
-                Circle().fill(r.category.color.opacity(0.13)).frame(width: 34, height: 34)
-                Text(r.category.emoji).font(.system(size: 16))
+                Circle().fill(r.category.info.color.opacity(0.13)).frame(width: 34, height: 34)
+                Text(r.category.info.emoji).font(.system(size: 16))
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(r.title.isEmpty ? r.category.rawValue : r.title)
+                Text(r.title.isEmpty ? r.category.info.name : r.title)
                     .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(.gagaeText).lineLimit(1)
                 HStack(spacing: 4) {
                     if r.isShared {

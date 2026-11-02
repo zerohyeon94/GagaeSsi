@@ -45,7 +45,7 @@ final class StatsViewModel {
 
     struct CategoryTotal: Identifiable {
         let id = UUID()
-        let category: SpendingCategory
+        let category: CategoryKey
         let amount: Int
         var percentage: Double = 0
     }
@@ -166,9 +166,10 @@ final class StatsViewModel {
         expectedPaybackTotal = records.reduce(0) { $0 + $1.expectedPayback }
         dailyAverage = records.isEmpty ? 0 : monthlyTotal / max(1, Calendar.current.component(.day, from: Date()))
 
-        var dict: [SpendingCategory: Int] = [:]
+        // 지워진 사용자 카테고리를 가리키는 기록은 기타로 합친다
+        var dict: [CategoryKey: Int] = [:]
         for record in records {
-            dict[record.category, default: 0] += record.myShare
+            dict[CategoryCatalog.shared.normalize(record.category), default: 0] += record.myShare
         }
 
         var totals = dict.map { CategoryTotal(category: $0.key, amount: $0.value) }

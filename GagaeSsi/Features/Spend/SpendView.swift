@@ -18,6 +18,8 @@ struct SpendView: View {
     @State private var shortfallCover = 0
     @State private var shortfallPool = 0
     @State private var showAssetTransfer = false
+    @State private var showCategoryAdd = false
+    @State private var scrollToCategory: CategoryKey?
 
     enum Field { case title, amount, payback }
 
@@ -67,7 +69,8 @@ struct SpendView: View {
             viewModel.loadSpendableWishes()
             viewModel.loadActiveTrips()
         }
-        .onChange(of: viewModel.tempDate) { _, _ in viewModel.autoSelectTrip() }
+        // 여행 목록은 소비 날짜로 거르므로 날짜가 바뀌면 다시 불러온다 (끝에서 자동 선택도 다시 판정)
+        .onChange(of: viewModel.tempDate) { _, _ in viewModel.loadActiveTrips() }
         .onChange(of: viewModel.tempParticipants) { _, _ in viewModel.revalidateAutoWallet() }
         .onChange(of: viewModel.tempPaidByMe) { _, _ in viewModel.revalidateAutoWallet() }
         .alert("오류", isPresented: $viewModel.showErrorAlert) {
@@ -185,39 +188,41 @@ extension SpendView {
     private var categoryField: some View {
         VStack(alignment: .leading, spacing: 8) {
             fieldLabel("🏷", "카테고리")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 7) {
-                    ForEach(SpendingCategory.allCases, id: \.self) { category in
-                        categoryChip(category)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 7) {
+                        // 지워진 카테고리를 가리키고 있으면 기타가 선택된 것으로 보인다
+                        let selected = CategoryCatalog.shared.normalize(viewModel.tempCategory)
+                        ForEach(CategoryCatalog.shared.all) { info in
+                            CategoryChip(info: info, isSelected: selected == info.key) {
+                                viewModel.tempCategory = info.key
+                            }
+                            .id(info.key)
+                        }
+                        if CategoryCatalog.shared.canAddMore {
+                            CategoryAddChip { showCategoryAdd = true }
+                        }
                     }
+                    .padding(.horizontal, 1)
+                    .padding(.bottom, 2)
                 }
-                .padding(.horizontal, 1)
-                .padding(.bottom, 2)
+                .onChange(of: scrollToCategory) { _, key in
+                    guard let key else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(key, anchor: .center)
+                    }
+                    scrollToCategory = nil
+                }
             }
         }
-    }
-
-    private func categoryChip(_ category: SpendingCategory) -> some View {
-        let isSelected = viewModel.tempCategory == category
-        return Button {
-            viewModel.tempCategory = category
-        } label: {
-            HStack(spacing: 5) {
-                Text(category.emoji).font(.system(size: 14))
-                Text(category.rawValue)
-                    .font(.system(size: 13, weight: isSelected ? .bold : .medium, design: .rounded))
-                    .foregroundStyle(isSelected ? .white : .gagaeTextSecondary)
+        .sheet(isPresented: $showCategoryAdd) {
+            // 입력 중이던 내용·금액은 viewModel에 그대로 있다. 만든 칩을 선택하고 그 칩으로 스크롤한다.
+            CategoryEditSheet(mode: .add) { created in
+                viewModel.tempCategory = .user(created.id)
+                scrollToCategory = .user(created.id)
+                eventBus.notifyCategoryChanged()
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 7)
-            .background(isSelected ? category.color : Color.gagaeSurfaceAlt)
-            .clipShape(Capsule())
-            .overlay(
-                Capsule().stroke(isSelected ? .clear : Color.gagaeDivider, lineWidth: 1.5)
-            )
         }
-        .buttonStyle(.plain)
-        .animation(.easeInOut(duration: 0.12), value: viewModel.tempCategory)
     }
 
     /// ② 내용
@@ -254,7 +259,7 @@ extension SpendView {
                         focusedField = .amount
                     } label: {
                         HStack(spacing: 5) {
-                            Text("\(s.category.emoji) \(s.title)")
+                            Text("\(s.category.info.emoji) \(s.title)")
                                 .font(.system(size: 13, weight: .medium, design: .rounded))
                                 .foregroundStyle(.gagaeText)
                             Text(FormatterUtils.currencyString(from: s.lastAmount))
@@ -402,6 +407,11 @@ extension SpendView {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.gagaeDivider, lineWidth: 1.5)
             )
+
+            // 여기서는 고르기만 한다 — 기간·기본 인원은 읽기 전용 정보다 (#32)
+            Text(TripModel.editHint)
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(.gagaeTextTertiary)
         }
     }
 
@@ -412,7 +422,7 @@ extension SpendView {
     private var tripShareFields: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("나누는 인원")
+                Text("이 소비를 나누는 인원")
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(.gagaeText)
                 Spacer()
@@ -425,6 +435,12 @@ extension SpendView {
                 }
                 .fixedSize()
                 .disabled(viewModel.isTripLocked)
+            }
+
+            if let note = viewModel.selectedTrip?.shareOverrideNote(participants: viewModel.tempParticipants) {
+                Text(note)
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.gagaeTextTertiary)
             }
 
             if viewModel.tempParticipants > 1 {
@@ -681,13 +697,13 @@ extension SpendView {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(record.category.color.opacity(0.13))
+                    .fill(record.category.info.color.opacity(0.13))
                     .frame(width: 40, height: 40)
-                Text(record.category.emoji).font(.system(size: 19))
+                Text(record.category.info.emoji).font(.system(size: 19))
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(record.title.isEmpty ? record.category.rawValue : record.title)
+                Text(record.title.isEmpty ? record.category.info.name : record.title)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(.gagaeText)
                     .lineLimit(1)

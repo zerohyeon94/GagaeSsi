@@ -176,11 +176,11 @@ private extension HistoryView {
     func recordRow(_ record: SpendingRecordModel) -> some View {
         HStack(spacing: 10) {
             ZStack {
-                Circle().fill(record.category.color.opacity(0.13)).frame(width: 34, height: 34)
-                Text(record.category.emoji).font(.system(size: 16))
+                Circle().fill(record.category.info.color.opacity(0.13)).frame(width: 34, height: 34)
+                Text(record.category.info.emoji).font(.system(size: 16))
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(record.title.isEmpty ? record.category.rawValue : record.title)
+                Text(record.title.isEmpty ? record.category.info.name : record.title)
                     .font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(.gagaeText).lineLimit(1)
                 if record.expectedPayback > 0 {
                     Text(record.paybackReceived ? "✅ 환급 완료" : "💳 환급 예정 \(FormatterUtils.currencyString(from: record.expectedPayback))")

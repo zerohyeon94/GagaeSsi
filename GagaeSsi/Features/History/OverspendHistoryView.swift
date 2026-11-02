@@ -350,10 +350,10 @@ struct OverspendHistoryView: View {
                 ForEach(list) { record in
                     HStack(spacing: 10) {
                         ZStack {
-                            Circle().fill(record.category.color.opacity(0.13)).frame(width: 28, height: 28)
-                            Text(record.category.emoji).font(.system(size: 13))
+                            Circle().fill(record.category.info.color.opacity(0.13)).frame(width: 28, height: 28)
+                            Text(record.category.info.emoji).font(.system(size: 13))
                         }
-                        Text(record.title.isEmpty ? record.category.rawValue : record.title)
+                        Text(record.title.isEmpty ? record.category.info.name : record.title)
                             .font(.system(size: 13, weight: .medium, design: .rounded))
                             .foregroundStyle(.gagaeText).lineLimit(1)
                         Spacer()

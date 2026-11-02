@@ -10,6 +10,7 @@ import Charts
 
 struct StatsView: View {
     @State private var viewModel = StatsViewModel()
+    @Environment(AppEventBus.self) private var eventBus
 
     var body: some View {
         ZStack {
@@ -36,6 +37,8 @@ struct StatsView: View {
         }
         .navigationBarHidden(true)
         .onAppear { viewModel.load() }
+        // 카테고리 이름·색이 바뀌거나 지워지면 집계를 다시 계산한다
+        .onChange(of: eventBus.categoryChangedTrigger) { viewModel.load() }
     }
 }
 
@@ -307,15 +310,19 @@ extension StatsView {
                                        month: viewModel.selectedMonth,
                                        monthlyTotal: viewModel.monthlyTotal)
                 } label: {
+                    let info = item.category.info
                     HStack(spacing: 9) {
-                        Circle().fill(item.category.color).frame(width: 9, height: 9)
-                        Text("\(item.category.emoji) \(item.category.rawValue)")
+                        Circle().fill(info.color).frame(width: 9, height: 9)
+                        Text("\(info.emoji) \(info.name)")
                             .font(.system(size: 14, weight: .medium, design: .rounded))
                             .foregroundStyle(.gagaeText)
-                        Spacer()
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 4)
                         Text(FormatterUtils.currencyString(from: item.amount))
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundStyle(.gagaeText)
+                            .layoutPriority(1)
                         Text("\(Int((item.percentage * 100).rounded()))%")
                             .font(.system(size: 12, design: .rounded))
                             .foregroundStyle(.gagaeTextTertiary)
@@ -345,7 +352,7 @@ extension StatsView {
                     angularInset: 2
                 )
                 .cornerRadius(4)
-                .foregroundStyle(item.category.color)
+                .foregroundStyle(item.category.info.color)
             }
             .frame(width: 130, height: 130)
 
@@ -552,4 +559,5 @@ private struct DashLine: Shape {
     NavigationStack {
         StatsView()
     }
+    .environment(AppEventBus())
 }

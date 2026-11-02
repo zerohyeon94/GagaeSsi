@@ -34,6 +34,8 @@ final class AppState {
     
     init() {
         checkSetupStatus()
+        // 첫 화면이 그려지기 전에 사용자 카테고리를 읽어 둔다 (안 그러면 잠깐 기타로 보인다)
+        CategoryCatalog.shared.reload()
     }
     
     func checkSetupStatus() {

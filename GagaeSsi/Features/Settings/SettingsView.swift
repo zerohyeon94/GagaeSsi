@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var pigBreathing = false
     @State private var activeDebt: SpendingDebtModel?
     @State private var showMailUnavailable = false
+    @State private var userCategoryCount: Int = 0
 
     /// 상환 계획 행 우측 요약 (진행 중이면 남은 금액, 아니면 on/off)
     private var debtPlanRightText: String? {
@@ -73,6 +74,7 @@ struct SettingsView: View {
         .onChange(of: eventBus.budgetChangedTrigger) { loadConfig() }
         .onChange(of: eventBus.fixedExpenseChangedTrigger) { loadConfig() }
         .onChange(of: eventBus.spendingAddedTrigger) { loadConfig() }
+        .onChange(of: eventBus.categoryChangedTrigger) { loadConfig() }
         .alert("메일 앱을 열 수 없어요", isPresented: $showMailUnavailable) {
             Button("확인", role: .cancel) {}
         } message: {
@@ -84,6 +86,7 @@ struct SettingsView: View {
         currentConfig = CoreDataManager.shared.fetchBudgetConfig()
         fixedCostsCount = CoreDataManager.shared.fetchFixedCosts().count
         activeDebt = CoreDataManager.shared.fetchActiveDebt()
+        userCategoryCount = CategoryCatalog.shared.userCategories.count
     }
 
     /// 기본 메일 앱을 연다. 메일 계정이 없는 기기에서는 열리지 않으므로 안내한다.
@@ -97,6 +100,8 @@ struct SettingsView: View {
 
     private func handleReset() {
         CoreDataManager.shared.resetAllData()
+        CategoryCatalog.shared.reload()
+        eventBus.notifyCategoryChanged()
         NotificationService.shared.cancelAllVariableCostReminders()
         NotificationService.shared.cancelAllSpendReminders()
         NotificationService.shared.cancelAllPaybackReminders()
@@ -339,6 +344,16 @@ extension SettingsView {
             sectionHeader("데이터")
             VStack(spacing: 0) {
                 NavigationLink {
+                    CategoryManageView()
+                } label: {
+                    settingRow(iconBg: Color(hex: "#E79A3C"), iconContent: AnyView(Text("🗂️").font(.system(size: 15))),
+                               label: "카테고리 관리",
+                               rightText: userCategoryCount == 0 ? "기본 7개" : "\(userCategoryCount)개")
+                }
+                .buttonStyle(.plain)
+
+                rowDivider
+                NavigationLink {
                     SpendingTitleCleanupView()
                 } label: {
                     settingRow(iconBg: Color(hex: "#9B8BF4"), iconContent: AnyView(Text("🏷️").font(.system(size: 15))),
@@ -452,7 +467,7 @@ extension SettingsView {
                     .font(.system(size: 18, weight: .heavy, design: .rounded))
                     .foregroundStyle(.gagaeText)
                     .padding(.bottom, 6)
-                Text("모든 소비 기록과 예산 설정이\n영구적으로 삭제됩니다.")
+                Text("모든 소비 기록, 예산 설정, 내가 만든 카테고리가\n영구적으로 삭제됩니다.")
                     .font(.system(size: 14, design: .rounded))
                     .foregroundStyle(.gagaeTextSecondary)
                     .multilineTextAlignment(.center)

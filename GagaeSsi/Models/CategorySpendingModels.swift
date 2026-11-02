@@ -34,7 +34,10 @@ enum CategorySpendingAnalyzer {
     /// 항목명으로 묶어 금액 큰 순으로 정렬한다.
     /// 묶는 기준은 자동완성과 동일하게 `정규화 + 소문자` — 화면에 보이는 묶임이
     /// 입력할 때 뜨는 추천과 어긋나지 않도록 같은 규칙을 쓴다.
-    static func itemSummaries(from records: [SpendingRecordModel]) -> [CategorySpendingItem] {
+    /// - Parameter untitledName: 제목 없는 기록을 묶을 이름. nil이면 `untitledLabel`.
+    ///   사용자 카테고리는 항목명을 비워 저장하므로 호출부가 카테고리 이름을 넘긴다.
+    static func itemSummaries(from records: [SpendingRecordModel],
+                              untitledName: String? = nil) -> [CategorySpendingItem] {
         struct Accumulator {
             var title: String
             var total: Int
@@ -45,7 +48,7 @@ enum CategorySpendingAnalyzer {
 
         for record in records {
             let normalized = SpendingSuggestionEngine.normalize(record.title)
-            let display = normalized.isEmpty ? untitledLabel : normalized
+            let display = normalized.isEmpty ? (untitledName ?? untitledLabel) : normalized
             let key = display.lowercased()
 
             if var accumulator = map[key] {

@@ -20,7 +20,7 @@ struct HistorySpendEditView: View {
     @State private var title = ""
     @State private var amountText = ""
     @State private var amount = 0
-    @State private var category: SpendingCategory = .other
+    @State private var category: CategoryKey = .other
     @State private var date = Date()
     @State private var hasPayback = false
     @State private var paybackText = ""
@@ -32,6 +32,8 @@ struct HistorySpendEditView: View {
     @State private var participants = 1
     @State private var paidByMe = true
     @State private var trips: [TripModel] = []
+    /// 이 화면에서 여행 선택이 인원·결제자를 자동으로 채웠으면 그 값 (#31)
+    @State private var shareAutofill: TripShareAutofill?
 
     private var selectedTrip: TripModel? { trips.first { $0.id == tripId } }
     /// 정산 완료 여행의 소비는 여행·인원·결제자·금액을 못 바꾼다
@@ -50,7 +52,8 @@ struct HistorySpendEditView: View {
         return wishId == oldTripWallet
     }
     private var draft: SpendingEditDraft {
-        SpendingEditDraft(title: title, amount: amount, category: category, date: date,
+        // 열려 있는 동안 지워진 카테고리면 고아 ID 대신 기타로 저장한다
+        SpendingEditDraft(title: title, amount: amount, category: CategoryCatalog.shared.normalize(category), date: date,
                           tripId: tripId, participants: participants, paidByMe: paidByMe,
                           hasPayback: hasPayback, payback: payback, clearsWallet: clearsWallet)
     }
@@ -82,15 +85,10 @@ struct HistorySpendEditView: View {
                                 .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary)
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 7) {
-                                    ForEach(SpendingCategory.allCases, id: \.self) { c in
-                                        Button { category = c } label: {
-                                            Text("\(c.emoji) \(c.rawValue)")
-                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                                .foregroundStyle(category == c ? .white : .gagaeTextSecondary)
-                                                .padding(.horizontal, 12).padding(.vertical, 7)
-                                                .background(category == c ? c.color : Color.gagaeSurface)
-                                                .clipShape(Capsule())
-                                        }.buttonStyle(.plain)
+                                    ForEach(CategoryCatalog.shared.all) { info in
+                                        CategoryChip(info: info, isSelected: category == info.key) {
+                                            category = info.key
+                                        }
                                     }
                                 }
                             }
@@ -131,7 +129,7 @@ struct HistorySpendEditView: View {
                             DatePicker("날짜", selection: $date, displayedComponents: .date)
                                 .font(.gagaeFootnote).foregroundStyle(.gagaeTextSecondary).tint(.gagaePinkDark)
 
-                            // 여행 (진행 중 여행이 있거나 이미 묶여 있을 때만)
+                            // 여행 (소비 날짜에 걸린 여행이 있거나 이미 묶여 있을 때만)
                             if !trips.isEmpty {
                                 tripField
                             }
@@ -205,6 +203,8 @@ struct HistorySpendEditView: View {
                 ToolbarItem(placement: .topBarLeading) { Button("취소") { dismiss() }.foregroundStyle(.gagaePinkDark) }
             }
             .onAppear { loadRecord() }
+            // 여행 목록은 소비 날짜로 거른다 — `loadRecord()`의 대입으로 한 번 더 불려도 결과가 같다
+            .onChange(of: date) { _, _ in loadTrips() }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -214,7 +214,7 @@ struct HistorySpendEditView: View {
         title = record.title
         amount = record.amount
         amountText = FormatterUtils.inputAmountString(from: record.amount)
-        category = record.category
+        category = CategoryCatalog.shared.normalize(record.category)
         date = record.date
         payback = record.expectedPayback
         paybackText = record.expectedPayback > 0 ? FormatterUtils.inputAmountString(from: record.expectedPayback) : ""
@@ -223,13 +223,17 @@ struct HistorySpendEditView: View {
         tripId = record.tripId
         participants = record.participants
         paidByMe = record.paidByMe
-        var active = CoreDataManager.shared.fetchActiveTrips()
-        // 편집 중인 기록이 정산 완료 여행에 묶여 있으면 그 여행도 보여야 한다 (잠긴 채로)
-        if let id = record.tripId, !active.contains(where: { $0.id == id }),
-           let linked = CoreDataManager.shared.fetchTrip(id: id) {
-            active.append(linked)
+        loadTrips()
+    }
+
+    /// 고를 수 있는 여행 — 소비 날짜가 기간 안인 진행 중 여행 + 이 기록이 원래 묶인 여행(정산 완료면 잠긴 채로).
+    /// 날짜를 옮겨 이 화면에서 고른 여행이 목록에서 빠지면 선택도 푼다 (#30).
+    private func loadTrips() {
+        trips = CoreDataManager.shared.fetchSelectableTrips(on: date, keeping: record.tripId)
+        if let id = tripId, id != record.tripId, !trips.contains(where: { $0.id == id }) {
+            tripId = nil
+            revertAutofilledShare()
         }
-        trips = active
     }
 
     /// 여행을 고르거나(id) 푼다(nil). 피커의 selection Binding에서만 호출된다(아래 `tripField`) —
@@ -240,14 +244,23 @@ struct HistorySpendEditView: View {
     /// 호출되므로 그 문제 자체가 없다.
     private func selectTrip(_ newValue: UUID?) {
         tripId = newValue
-        // 여행을 고르면 인원 기본값과 결제자를 채운다. "여행 아님"으로 풀 때는
-        // participants/paidByMe를 건드리지 않는다 — 여행이 지워져(deleteTrip) 이미
-        // 분담 상태였던 기록을 여기서 1/true로 되돌리면, 화면엔 안 보이던 값이 저장 때
-        // 조용히 바뀐다. 분담 블록이 그 값을 그대로 보여주므로 사용자가 직접 고칠 수 있다.
+        // 여행을 고르면 인원 기본값과 결제자를 채운다. "여행 아님"으로 풀 때는 이 화면에서
+        // 여행 선택이 채운 값 그대로일 때만 1/true로 되돌린다(#31) — 기록에서 불러온 분담값
+        // (예: 여행이 지워진 분담 기록)이나 사용자가 손댄 값은 그대로 둔다.
         if let t = trips.first(where: { $0.id == newValue }) {
             participants = max(1, t.defaultParticipants)
             paidByMe = true
+            shareAutofill = TripShareAutofill(participants: participants, paidByMe: paidByMe)
+        } else {
+            revertAutofilledShare()
         }
+    }
+
+    private func revertAutofilledShare() {
+        if let fill = shareAutofill {
+            (participants, paidByMe) = fill.released(participants: participants, paidByMe: paidByMe)
+        }
+        shareAutofill = nil
     }
 
     private func save() {
@@ -281,6 +294,9 @@ extension HistorySpendEditView {
             }
             .pickerStyle(.menu).tint(.gagaePinkDark)
             .disabled(isTripLocked)
+            // 여기서는 고르기만 한다 — 기간·기본 인원은 여행 화면에서 고친다 (#32)
+            Text(TripModel.editHint)
+                .font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
         }
     }
 
@@ -289,7 +305,7 @@ extension HistorySpendEditView {
     private var tripShareFields: some View {
         VStack(alignment: .leading, spacing: GagaeSpacing.sm) {
             HStack {
-                Text("나누는 인원")
+                Text("이 소비를 나누는 인원")
                     .font(.gagaeCalloutMedium).foregroundStyle(.gagaeText)
                 Spacer()
                 // 999명까지 허용한다 — 범위를 좁히면 999명짜리 여행에서 온 값을 조정할 수 없다.
@@ -299,6 +315,10 @@ extension HistorySpendEditView {
                 }
                 .fixedSize()
                 .disabled(isTripLocked)
+            }
+
+            if let note = selectedTrip?.shareOverrideNote(participants: participants) {
+                Text(note).font(.gagaeCaption).foregroundStyle(.gagaeTextTertiary)
             }
 
             if participants > 1 {

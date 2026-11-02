@@ -458,7 +458,7 @@ struct SpendingRecordModel: Identifiable {
     var title: String
     var amount: Int
     var date: Date
-    var category: SpendingCategory
+    var category: CategoryKey
     /// 나중에 돌려받을 환급/페이백 예정 금액 (0이면 없음)
     var expectedPayback: Int
     /// 환급을 실제로 받았는지 여부
@@ -503,7 +503,7 @@ struct SpendingRecordModel: Identifiable {
     var receivable: Int { paidByMe ? amount - myShare : 0 }
 
     init(id: UUID = UUID(), title: String, amount: Int, date: Date,
-         category: SpendingCategory = .other,
+         category: CategoryKey = .other,
          expectedPayback: Int = 0, paybackReceived: Bool = false,
          wishItemId: UUID? = nil,
          tripId: UUID? = nil, participants: Int = 1, paidByMe: Bool = true) {
@@ -527,7 +527,7 @@ struct SpendingRecordModel: Identifiable {
         self.title = entity.title ?? ""
         self.amount = Int(truncating: entity.amount ?? 0)
         self.date = entity.date ?? Date()
-        self.category = SpendingCategory.from(rawValue: entity.category)
+        self.category = CategoryKey(storageValue: entity.category)
         self.expectedPayback = Int(entity.expectedPayback)
         self.paybackReceived = entity.paybackReceived
         self.wishItemId = entity.wishItem?.id

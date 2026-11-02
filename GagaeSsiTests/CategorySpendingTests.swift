@@ -16,7 +16,7 @@ final class CategorySpendingTests: XCTestCase {
     }
     private func record(_ title: String, _ amount: Int, _ offset: Int,
                         _ category: SpendingCategory = .cafe) -> SpendingRecordModel {
-        SpendingRecordModel(title: title, amount: amount, date: day(offset), category: category)
+        SpendingRecordModel(title: title, amount: amount, date: day(offset), category: .builtIn(category))
     }
 
     func test_같은_항목명끼리_묶어_합계와_건수를_낸다() {
